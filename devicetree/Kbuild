@@ -1,0 +1,10 @@
+ifeq ($(CONFIG_TARGET), msm.cinder)
+dtbo-$(CONFIG_ARCH_CINDER) += cinder-transceiver-du-x100-overlay.dtbo \
+                              cinder-transceiver-du-idp-overlay.dtbo \
+                              cinder-transceiver-ru-idp-overlay.dtbo \
+                              cinder-transceiver-rumi-overlay.dtbo
+endif
+
+always-y    := $(dtb-y) $(dtbo-y)
+subdir-y    := $(dts-dirs)
+clean-files    := *.dtb *.dtbo

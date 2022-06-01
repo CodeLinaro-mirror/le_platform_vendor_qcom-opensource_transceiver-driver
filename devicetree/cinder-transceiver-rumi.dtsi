@@ -1,0 +1,96 @@
+&qupv3_se9_i2c {
+	status = "ok";
+};
+
+&qupv3_se10_i2c {
+	status = "ok";
+};
+
+&soc {
+	fpc402_0: fpc402@0 {
+		compatible = "sff,fpc402";
+		i2c-bus = <&qupv3_se9_i2c>;
+		i2c-address = <0x18>;
+		interrupt-gpio = <&tlmm 86 0>;
+	};
+
+	qsfp_0: qsfp@0 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_0>;
+		port-num = <0>;
+		i2c-address-device0 = <0xC0>;
+		i2c-address-device1 = <0xC2>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	qsfp_1: qsfp@1 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_0>;
+		port-num = <1>;
+		i2c-address-device0 = <0xC4>;
+		i2c-address-device1 = <0xC6>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	qsfp_2: qsfp@2 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_0>;
+		port-num = <2>;
+		i2c-address-device0 = <0xC8>;
+		i2c-address-device1 = <0xCA>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	qsfp_3: qsfp@3 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_0>;
+		port-num = <3>;
+		i2c-address-device0 = <0xCC>;
+		i2c-address-device1 = <0xCE>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	fpc402_1: fpc402@1 {
+		compatible = "sff,fpc402";
+		i2c-bus = <&qupv3_se10_i2c>;
+		i2c-address = <0x1A>;
+		interrupt-gpio = <&tlmm 87 0>;
+	};
+
+	qsfp_4: qsfp@4 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_1>;
+		port-num = <0>;
+		i2c-address-device0 = <0xD0>;
+		i2c-address-device1 = <0xD2>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	qsfp_5: qsfp@5 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_1>;
+		port-num = <1>;
+		i2c-address-device0 = <0xD4>;
+		i2c-address-device1 = <0xD6>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	qsfp_6: qsfp@6 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_1>;
+		port-num = <2>;
+		i2c-address-device0 = <0xD8>;
+		i2c-address-device1 = <0xDA>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+	qsfp_7: qsfp@7 {
+		compatible = "sff,qsfp";
+		fpc = <&fpc402_1>;
+		port-num = <3>;
+		i2c-address-device0 = <0xDC>;
+		i2c-address-device1 = <0xDE>;
+		maximum-power-milliwatt = <4500>;
+	};
+
+};
