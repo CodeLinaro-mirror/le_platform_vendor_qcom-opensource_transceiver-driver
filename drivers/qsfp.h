@@ -215,7 +215,6 @@ extern struct qsfp_spec_ops sff8636_spec_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
-extern void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state);
 extern int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device,
                                    u8 offset, u8 len, u8 period);
 extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);

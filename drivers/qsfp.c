@@ -14,6 +14,7 @@
 #include "fpc.h"
 #include "qsfp.h"
 #include "transceiver_debugfs.h"
+#include "fpc_led.h"
 
 /* QSFP Device tree example
  *
@@ -496,7 +497,7 @@ static void qsfp_sm_link_up(struct qsfp *qsfp)
 {
     sfp_link_up(qsfp->sfp_bus);
     dev_notice(qsfp->dev, "%s: sfp_link_up upstream ops called\n", __func__);
-    fpc_qsfp_set_led(qsfp, QSFP_LED2, QSFP_LED_ON);
+    transceiver_led_on(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED2);
     qsfp_sm_next(qsfp, QSFP_S_LINK_UP, 0);
 }
 
@@ -505,7 +506,7 @@ static void qsfp_sm_link_down(const struct qsfp *qsfp)
     sfp_link_down(qsfp->sfp_bus);
     dev_notice(qsfp->dev, "%s: sfp_link_down upstream ops called\n",
                            __func__);
-    fpc_qsfp_set_led(qsfp, QSFP_LED2, QSFP_LED_OFF);
+    transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED2);
 }
 
 static void qsfp_sm_link_check_los(struct qsfp *qsfp)
@@ -668,7 +669,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
                                __func__);
     }
 
-    fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
+    transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1 | QSFP_LED2);
 
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     qsfp->module_revision = 0;
@@ -762,15 +763,18 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
         if (err == -E_UNSUPPORTED_SPEC) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_SPEC, 0);
-            fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
+            transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
+                                           QSFP_LED1 | QSFP_LED2);
             break;
         } else if (err == -E_MAX_POWER_EXCEED) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_PWR, 0);
-            fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
+            transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
+                                      QSFP_LED1 | QSFP_LED2);
             break;
         } else if (err < 0) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
-            fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
+            transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
+                                      QSFP_LED1 | QSFP_LED2);
             break;
         }
 
@@ -823,7 +827,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
     insert:
         qsfp_sm_mod_next(qsfp, QSFP_MOD_PRESENT, 0);
-        fpc_qsfp_set_led(qsfp, QSFP_LED1, QSFP_LED_ON);
+        transceiver_led_on(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1);
         break;
 
     case QSFP_MOD_PRESENT:
@@ -1395,7 +1399,8 @@ int qsfp_probe(struct platform_device *pdev)
 
     qsfp_debugfs_init(qsfp);
 
-    fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
+    transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
+                                    QSFP_LED1 | QSFP_LED2);
 
     return 0;
 }

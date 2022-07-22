@@ -21,6 +21,7 @@
  *
  * fpc402_0: fpc402_0 {
  *    compatible = "sff,fpc402";
+ *    instance-num = <0>;
  *    i2c-bus = <&qupv3_se9_i2c>;
  *    i2c-address = <0x04>;
  *    interrupt-gpio = <&tlmm 86 0>;
@@ -31,6 +32,8 @@
 #define FPC_COMPATIBLE "sff,fpc402"
 
 #define FPC_MAX_PORTS (4)
+
+#define FPC_MAX_INSTANCES (2)
 
 #define FPC_DEFAULT_I2C_ADDRESS (0x1E)
 
@@ -95,6 +98,7 @@ struct fpc {
     struct device *dev;
     int gpio_irq;
     u8 i2c_address;
+    u8 instance_num;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
