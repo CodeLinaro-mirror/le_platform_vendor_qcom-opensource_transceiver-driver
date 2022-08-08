@@ -4,6 +4,7 @@
  */
 #include "fpc.h"
 #include "qsfp.h"
+#include "transceiver_debugfs.h"
 
 static const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     /* FPC_LED_MODE_SELECT */
@@ -517,6 +518,8 @@ static int fpc_probe(struct platform_device *pdev)
     /* Reset all 4 ports using reset gpio line */
     fpc_reset_qsfp_ports(fpc);
 
+    fpc_debugfs_init(fpc);
+
     return 0;
 }
 
@@ -570,6 +573,8 @@ static int fpc_remove(struct platform_device *pdev)
 
     fpc_reset(fpc);
 
+    fpc_debugfs_exit(fpc);
+
     return 0;
 }
 
@@ -612,6 +617,7 @@ static struct platform_driver fpc_qsfp_driver = {
 
 static int fpc_qsfp_init(void)
 {
+    transceiver_debugfs_init();
     return platform_driver_register(&fpc_qsfp_driver);
 }
 module_init(fpc_qsfp_init);
@@ -619,6 +625,7 @@ module_init(fpc_qsfp_init);
 static void fpc_qsfp_exit(void)
 {
     platform_driver_unregister(&fpc_qsfp_driver);
+    transceiver_debugfs_exit();
 }
 module_exit(fpc_qsfp_exit);
 

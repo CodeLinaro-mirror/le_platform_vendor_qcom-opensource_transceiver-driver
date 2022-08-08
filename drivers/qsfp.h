@@ -70,6 +70,11 @@ struct qsfp {
 
     struct qsfp_eeprom_id id;
     struct qsfp_spec_ops *spec_ops;
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    struct dentry *debugfs_dir;
+#endif
+
 };
 
 struct qsfp_spec_ops {

@@ -16,6 +16,11 @@
 enum {
 #define SFF8636_ADDR(page, addr)    ((page) << 8 | (addr))
     SFF8636_IRQ_FLAGS                   = SFF8636_ADDR(0,   2),
+    SFF8636_TEMPERATURE                 = SFF8636_ADDR(0,  22),
+    SFF8636_SUPPLY_VOLTAGE              = SFF8636_ADDR(0,  26),
+    SFF8636_RX_POWER                    = SFF8636_ADDR(0,  34),
+    SFF8636_TX_BIAS                     = SFF8636_ADDR(0,  42),
+    SFF8636_TX_POWER                    = SFF8636_ADDR(0,  50),
     SFF8636_TX_DISABLE                  = SFF8636_ADDR(0,  86),
     SFF8636_POWER_ENABLE                = SFF8636_ADDR(0,  93),
     SFF8636_INTERRUPT_MASK              = SFF8636_ADDR(0, 100),

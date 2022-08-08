@@ -10,6 +10,7 @@
  */
 #include "fpc.h"
 #include "qsfp.h"
+#include "transceiver_debugfs.h"
 
 /* QSFP Device tree example
  *
@@ -36,7 +37,7 @@ static const char  * const mod_state_strings[] = {
     [QSFP_MOD_PRESENT] = "Present",
 };
 
-static const char *mod_state_to_str(unsigned short mod_state)
+const char *mod_state_to_str(unsigned short mod_state)
 {
     if (mod_state >= ARRAY_SIZE(mod_state_strings))
         return "Unknown module state";
@@ -49,7 +50,7 @@ static const char * const dev_state_strings[] = {
     [QSFP_DEV_UP] = "Up",
 };
 
-static const char *dev_state_to_str(unsigned short dev_state)
+const char *dev_state_to_str(unsigned short dev_state)
 {
     if (dev_state >= ARRAY_SIZE(dev_state_strings))
         return "Unknown device state";
@@ -90,7 +91,7 @@ static const char * const sm_state_strings[] = {
     [QSFP_S_TX_DISABLE] = "TX_Disable",
 };
 
-static const char *sm_state_to_str(unsigned short sm_state)
+const char *sm_state_to_str(unsigned short sm_state)
 {
     if (sm_state >= ARRAY_SIZE(sm_state_strings))
         return "Unknown state";
@@ -266,28 +267,30 @@ int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len)
 static int qsfp_set_spec_ops(struct qsfp *qsfp)
 {
     int ret;
-    u8 spec_id;
+    u8* spec_id;
 
     if (qsfp->spec_ops)
         return 0;
 
-    ret = qsfp_read(qsfp, 0, &spec_id, 1);
+    ret = qsfp_read(qsfp, 0, &qsfp->id, 1);
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read spec id. ret %d\n",
                            __func__, ret);
         return -EAGAIN;
     }
 
-    switch (spec_id) {
+    spec_id =(u8*)&qsfp->id;
+
+    switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
          qsfp->spec_ops = &sff8636_spec_ops;
          dev_notice(qsfp->dev, "%s: SFF8636 spec id %02X\n",
-                               __func__, spec_id);
+                               __func__, *spec_id);
          break;
     default:
          dev_warn(qsfp->dev, "%s: Unsupported spec id %02X\n",
-                           __func__, spec_id);
+                           __func__,*spec_id);
          return -E_UNSUPPORTED_SPEC;
     }
 
@@ -1316,6 +1319,8 @@ int qsfp_probe(struct platform_device *pdev)
         return -ENOMEM;
     }
 
+    qsfp_debugfs_init(qsfp);
+
     fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
 
     return 0;
@@ -1330,6 +1335,8 @@ int qsfp_remove(struct platform_device *pdev)
     rtnl_lock();
     qsfp_sm_event(qsfp, QSFP_E_REMOVE);
     rtnl_unlock();
+
+    qsfp_debugfs_exit(qsfp);
 
     return 0;
 }
