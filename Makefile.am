@@ -4,7 +4,6 @@ KBUILD_OPTIONS := LASSEN_ROOT=$(LASSEN_ROOT) \
 			CONFIG_LASSEN_LOADER=$(CONFIG_LASSEN_LOADER) \
 
 obj-m += drivers/
-obj-m += devicetree/
 
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) modules $(KBUILD_OPTIONS)

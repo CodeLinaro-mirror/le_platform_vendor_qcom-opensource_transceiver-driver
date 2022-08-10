@@ -41,11 +41,15 @@
 
 /* Enable interrupt for QSFP input lines
  * input A (interrupt) on both rising and falling edge
- * input B (module present) on falling edge
- * input C not used, 110001
+ * input B (module present) on both rising and falling edge
+ * input C not used, 110011
  */
-#define FPC_ENABLE_INPUT_A_B_INTERRUPT (BIT(5)|BIT(4)|BIT(1))
+#define FPC_ENABLE_INPUT_A_B_INTERRUPT (BIT(5)|BIT(4)|BIT(1)|BIT(0))
+#define FPC_IN_A_INT_RISING_EDGE_MASK (BIT(0))
 #define FPC_IN_A_INT_FALLING_EDGE_MASK (BIT(1))
+#define FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK (BIT(4))
+#define FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK (BIT(5))
+
 
 #define FPC_LED1_ON (BIT(0))
 #define FPC_LED2_ON (BIT(2))
@@ -73,10 +77,7 @@ struct fpc {
     struct device *dev;
     int gpio_irq;
     u8 i2c_address;
-    bool need_poll;
     u16 interrupt_input_status;
-    struct delayed_work poll;
-    struct mutex irq_mutex;
 };
 
 extern int qsfp_probe(struct platform_device *pdev);

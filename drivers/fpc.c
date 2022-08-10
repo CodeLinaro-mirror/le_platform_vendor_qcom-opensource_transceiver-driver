@@ -25,8 +25,6 @@ const struct of_device_id fpc_qsfp_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
 
-static unsigned long poll_jiffies;
-
 /*
  * Reads FPC402 register memory map using i2c transaction
  * returns 0 on successful read of 'len' bytes otherwise error
@@ -164,12 +162,26 @@ bool fpc_is_qsfp_interrupt(const struct qsfp *qsfp)
         return false;
     }
 
-    dev_notice(qsfp->dev, "%s: Input pin interrupt status %X\n",
+    if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
+        dev_notice(qsfp->dev, "%s: QSFP Falling edge interrupt 0x%X\n",
                           __func__, buf);
-
-    if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK)
         return true;
+    } else if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
+        dev_notice(qsfp->dev, "%s: QSFP Rising edge interrupt 0x%X\n",
+                          __func__, buf);
+        return true;
+    }
 
+    if (buf & FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK) {
+        dev_notice(qsfp->dev, "%s: ModulePresent Rising edge interrupt 0x%X\n",
+                          __func__, buf);
+    } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
+        dev_notice(qsfp->dev, "%s: ModulePresent Falling edge interrupt 0x%X\n",
+                          __func__, buf);
+    }
+
+    dev_notice(qsfp->dev, "%s: Not QSFP interrupt 0x%X\n",
+                          __func__, buf);
     return false;
 }
 
@@ -185,12 +197,12 @@ void fpc_enable_i2c_stuck_interrupt(const struct fpc *fpc)
 
     ret = fpc_write(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf, 1);
     if (ret < 0)
-        dev_err(fpc->dev, "%s: Failed to enable SCL stuck interrupt. "
+        dev_warn(fpc->dev, "%s: Failed to enable SCL stuck interrupt. "
                           "ret %d\n", __func__, ret);
 
     ret = fpc_write(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf, 1);
     if (ret < 0)
-        dev_err(fpc->dev, "%s: Failed to enable SDA stuck interrupt. "
+        dev_warn(fpc->dev, "%s: Failed to enable SDA stuck interrupt. "
                           "ret %d\n", __func__, ret);
 
 }
@@ -205,7 +217,7 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
         dev_err(fpc->dev, "%s: Failed to read SCL stuck status. "
                           "ret %d\n", __func__, ret);
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
-        dev_err(fpc->dev, "%s: SCL stuck error %X\n", __func__, buf);
+        dev_err(fpc->dev, "%s: SCL stuck error 0x%X\n", __func__, buf);
     }
 
     ret = fpc_read(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf, 1);
@@ -213,7 +225,7 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
         dev_err(fpc->dev, "%s: Failed to read SDA stuck status. "
                           "ret %d\n", __func__, ret);
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
-        dev_err(fpc->dev, "%s: SDA stuck error %X\n", __func__, buf);
+        dev_err(fpc->dev, "%s: SDA stuck error 0x%X\n", __func__, buf);
     }
 }
 
@@ -245,6 +257,8 @@ int fpc_read_agr_interrupt_input_status(struct fpc *fpc)
 
 /*
  * FPC Interrupt service routine
+ * There will not be multiple instance of this function call at the same time
+ * so no need of mutex lock
  */
 static irqreturn_t fpc_irq(int irq, void *data)
 {
@@ -252,19 +266,16 @@ static irqreturn_t fpc_irq(int irq, void *data)
     u8 port_interrupt, port_num;
     int ret;
 
-    mutex_lock(&fpc->irq_mutex);
-
     fpc_read_i2c_stuck_status(fpc);
 
     ret = fpc_read_agr_interrupt_input_status(fpc);
     if (ret < 0) {
-        mutex_unlock(&fpc->irq_mutex);
         dev_err(fpc->dev, "%s: Fail to read FPC interrupt status. "
                           "ret %d\n", __func__, ret);
         return IRQ_HANDLED;
     }
 
-    dev_notice(fpc->dev, "%s Interrupt_Input_status %X\n", __func__,
+    dev_notice(fpc->dev, "%s Interrupt_Input_status 0x%X\n", __func__,
                          fpc->interrupt_input_status);
 
     port_interrupt = fpc->interrupt_input_status & FPC_INTERRUPT_MASK;
@@ -276,41 +287,7 @@ static irqreturn_t fpc_irq(int irq, void *data)
         port_interrupt >>= 1;
     }
 
-    mutex_unlock(&fpc->irq_mutex);
-
     return IRQ_HANDLED;
-}
-
-/*
- * FPC poll service in case ISR registration fails
- */
-static void fpc_poll(struct work_struct *work)
-{
-    struct fpc *fpc = container_of(work, struct fpc, poll.work);
-    int ret;
-    u8 port_num;
-
-    mutex_lock(&fpc->irq_mutex);
-
-    ret = fpc_read_agr_interrupt_input_status(fpc);
-    if (ret < 0) {
-        mutex_unlock(&fpc->irq_mutex);
-        dev_err(fpc->dev, "%s: Fail to read FPC interrupt status. "
-                          "ret %d\n", __func__, ret);
-        return;
-    }
-
-    dev_notice_ratelimited(fpc->dev, "%s: Interrupt_Input_status %X\n",
-                           __func__, fpc->interrupt_input_status);
-
-    for (port_num = 0 ; port_num < FPC_MAX_PORTS ; port_num++) {
-        qsfp_check_state(fpc->qsfp[port_num]);
-    }
-
-    mutex_unlock(&fpc->irq_mutex);
-
-    if (fpc->need_poll)
-        mod_delayed_work(system_wq, &fpc->poll, poll_jiffies);
 }
 
 /*
@@ -324,30 +301,23 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
     buf = i2c_address;
     ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, 1);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Unable to write i2c address\n", __func__);
-        return ret;
-    }
-
+        /* if it fails try with i2c address that you are about to configure
+         * this logic is needed to make sure driver works even after
+         * rmmod and insmod as fpc reset wont reset configured i2c address
+         */
+        fpc->i2c_address = i2c_address >> 1;
+        ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, 1);
+        if (ret < 0) {
+            dev_info(fpc->dev, "%s: Unable to write i2c address\n", __func__);
+            return ret;
+        }
+    } else {
     /* Convert 8-bit to 7-bit i2c address
      * In HW spec they mention i2c address in 8-bit form with last bit 0
      * but in actual i2c_transfer we have to use 7-bit i2c address so
      * it need right shift by one position.
      */
-    fpc->i2c_address = i2c_address >> 1;
-
-    buf = 0;
-    ret = fpc_read(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, 1);
-    if (ret < 0) {
-        dev_err(fpc->dev, "%s: Unable to read i2c address\n", __func__);
-        fpc->i2c_address = FPC_DEFAULT_I2C_ADDRESS >> 1;
-        return ret;
-    }
-
-    if (buf != i2c_address) {
-        dev_err(fpc->dev, "%s: Read i2c device id register %0X is not "
-                "matching %0X\n", __func__, buf, i2c_address);
-        fpc->i2c_address = FPC_DEFAULT_I2C_ADDRESS >> 1;
-        return -1;
+        fpc->i2c_address = i2c_address >> 1;
     }
 
     return 0;
@@ -370,9 +340,6 @@ static struct fpc *fpc_alloc(struct device *dev)
         return ERR_PTR(-ENOMEM);
 
     fpc->dev = dev;
-
-    INIT_DELAYED_WORK(&fpc->poll, fpc_poll);
-    mutex_init(&fpc->irq_mutex);
 
     for (i = 0 ; i < FPC_MAX_PORTS ; i++)
            fpc->qsfp[i] = NULL;
@@ -412,32 +379,6 @@ static int fpc_reset(const struct fpc *fpc)
     return ret;
 }
 
-/*
- * FPC402 i2c address not resetting to default even after fpc reset so
- * this function was added for time being to avoid HW powercycle
- * after every boot/rmmod to reset i2c address.
- * It will be removed when fpc reset issue gets fixed.
- * It is works only for one FPC402 device in the i2c bus.
- */
-static int fpc_i2c_address_quirk(struct fpc *fpc, u8 i2c_address)
-{
-    int ret;
-    u8 buf;
-
-    /* Read from default address if it succed return success */
-    ret = fpc_read(fpc, FPC_I2C_DEVICE_ID_REGISTER,
-                   &buf, 1);
-    if (ret == 0)
-        return 0;
-
-    fpc->i2c_address = i2c_address >> 1;
-
-    /* Read from default address failed now try with i2c address from
-     * devicetree even if it fails is probe failure */
-    return fpc_read(fpc, FPC_I2C_DEVICE_ID_REGISTER,
-                   &i2c_address, 1);
-}
-
 /* Reset all 4 ports using reset gpio line */
 static void fpc_reset_qsfp_ports(const struct fpc *fpc)
 {
@@ -447,7 +388,7 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     buf = FPC_QSFP_RESET_SEQUENCE;
     ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, 1);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Fail to write Reset sequence. ret %d\n",
+        dev_warn(fpc->dev, "%s: Fail to write Reset sequence. ret %d\n",
                           __func__, ret);
         return;
     }
@@ -455,7 +396,7 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     buf = FPC_OUT_A_ENABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, 1);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Fail to enable Reset gpio. ret %d\n",
+        dev_warn(fpc->dev, "%s: Fail to enable Reset gpio. ret %d\n",
                           __func__, ret);
         return;
     }
@@ -463,7 +404,7 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     buf = FPC_OUT_A_DISABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, 1);
     if (ret < 0)
-        dev_err(fpc->dev, "%s: Fail to disable Reset gpio. ret %d\n",
+        dev_warn(fpc->dev, "%s: Fail to disable Reset gpio. ret %d\n",
                           __func__, ret);
 }
 
@@ -492,6 +433,7 @@ static int fpc_probe(struct platform_device *pdev)
     if (ret < 0) {
         dev_err(fpc->dev, "%s: devm_add_action failed. "
                           "ret %d\n", __func__, ret);
+        fpc_cleanup(fpc);
         return ret;
     }
 
@@ -522,11 +464,11 @@ static int fpc_probe(struct platform_device *pdev)
 
     dev_notice(fpc->dev, "%s: i2c adapter i2c-%d\n", __func__, fpc->i2c->nr);
 
-    ret = fpc_i2c_address_quirk(fpc, i2c_address & 0xFF);
+    ret = fpc_configure_i2c_address(fpc, i2c_address & 0xFF);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: FPC402 i2c quirk fail. ret %d\n",
-                          __func__, ret);
-        return -EPROBE_DEFER;
+        dev_info(fpc->dev, "%s: Not able to configure i2c address. ret %d\n",
+                            __func__, ret);
+        return ret;
     }
 
     ret = fpc_reset(fpc);
@@ -536,50 +478,43 @@ static int fpc_probe(struct platform_device *pdev)
         return -EPROBE_DEFER;
     }
 
-    ret = fpc_configure_i2c_address(fpc, i2c_address & 0xFF);
-    if (ret < 0) {
-        dev_err(fpc->dev, "%s: Not able to configure i2c address. ret %d "
-                          "Probe failed\n", __func__, ret);
-        return ret;
-    }
-
     fpc->interrupt_gpio = devm_gpiod_get_optional(fpc->dev, "interrupt",
                                                   GPIOD_IN);
 
     fpc->gpio_irq = gpiod_to_irq(fpc->interrupt_gpio);
 
+    if (fpc->gpio_irq < 0) {
+        dev_err(fpc->dev, "%s: Unable to get gpio for interrupt %d\n",
+                          __func__, fpc->gpio_irq);
+        return -EPROBE_DEFER;
+    }
+
     fpc_irq_name = devm_kasprintf(fpc->dev, GFP_KERNEL,
                                   "%s-%s", dev_name(fpc->dev),
                                   "Interrupt");
 
+    if (!fpc_irq_name) {
+        dev_err(fpc->dev, "%s: Unable to get interrupt name\n", __func__);
+        return -EPROBE_DEFER;
+    }
+
     dev_notice(fpc->dev, "%s: gpio_irq %0X fpc_irq_name %s\n", __func__,
                           fpc->gpio_irq, fpc_irq_name);
-
-    if ((fpc->gpio_irq < 0) || !fpc_irq_name) {
-        fpc->gpio_irq = 0;
-        fpc->need_poll = true;
-        mod_delayed_work(system_wq, &fpc->poll, poll_jiffies);
-        dev_err(fpc->dev, "%s: GPIO Interrpt parsing failed. "
-                          "Going with polling approach\n", __func__);
-        return 0;
-    }
 
     ret = devm_request_threaded_irq(fpc->dev, fpc->gpio_irq,
                                     NULL, fpc_irq,
                                     IRQF_ONESHOT |
                                     IRQF_TRIGGER_FALLING,
                                     fpc_irq_name, fpc);
-    if (ret) {
-        fpc->gpio_irq = 0;
-        fpc->need_poll = true;
-        mod_delayed_work(system_wq, &fpc->poll, poll_jiffies);
-        dev_err(fpc->dev, "%s: Interrpt register failed. ret %d . "
-                          "Going with polling approach\n", __func__, ret);
+    if (ret < 0) {
+        dev_err(fpc->dev, "%s: Interrupt register failed. ret %d\n",
+                          __func__, ret);
+        return -EPROBE_DEFER;
     }
 
     fpc_enable_i2c_stuck_interrupt(fpc);
 
-    /* Reset all 4 ports usinig reset gpio line */
+    /* Reset all 4 ports using reset gpio line */
     fpc_reset_qsfp_ports(fpc);
 
     return 0;
@@ -654,7 +589,6 @@ static void fpc_shutdown(struct platform_device *pdev)
     if (fpc->gpio_irq)
         devm_free_irq(fpc->dev, fpc->gpio_irq, fpc);
 
-    cancel_delayed_work_sync(&fpc->poll);
 }
 
 static void fpc_qsfp_shutdown(struct platform_device *pdev)
@@ -678,8 +612,6 @@ static struct platform_driver fpc_qsfp_driver = {
 
 static int fpc_qsfp_init(void)
 {
-    poll_jiffies = msecs_to_jiffies(100);
-
     return platform_driver_register(&fpc_qsfp_driver);
 }
 module_init(fpc_qsfp_init);
