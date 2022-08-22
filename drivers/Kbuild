@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+ifeq ($(LASSEN_ROOT),)
+LASSEN_ROOT=$(srctree)/../transceiver-driver/drivers
+endif
+
+obj-m += fpc_qsfp.o
+fpc_qsfp-y += fpc.o qsfp.o sff8636.o
+
+ccflags-y := -I$(KERNEL_SRC)/include
+ccflags-y += -I$(KERNEL_SRC)/drivers/net/phy
