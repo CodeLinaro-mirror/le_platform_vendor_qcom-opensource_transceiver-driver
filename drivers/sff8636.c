@@ -9,8 +9,8 @@
 static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
 {
     /* QSFP module inserted - read I2C data */
-    struct sff8636_id_stat id_stat;
-    struct qsfp_eeprom_id id;
+    struct sff8636_id_stat id_stat = {0};
+    struct qsfp_eeprom_id id = {0};
     u8 check;
     int ret;
 
@@ -25,7 +25,7 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
     dev_notice(qsfp->dev, "%s: id_stat id 0x%X rev 0x%X flat_mem 0x%X\n", __func__,
                id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem);
 
-    // Early setup - we need to know if this module has a page register
+    /* Early setup - we need to know if this module has a page register */
     qsfp->module_flat_mem = id_stat.flat_mem;
     qsfp->module_revision = id_stat.rev_spec;
 
@@ -44,7 +44,7 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
         return -EINVAL;
     }
 
-    // Validate the checksum over the base structure
+    /* Validate the checksum over the base structure */
     check = qsfp_check(&id.sff8636.base, sizeof(id.sff8636.base) - 1);
     if (check != id.sff8636.base.cc_base) {
         dev_err(qsfp->dev,
@@ -53,7 +53,7 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
         return -EINVAL;
     }
 
-    // Validate the checksum over the extended structure
+    /* Validate the checksum over the extended structure */
     check = qsfp_check(&id.sff8636.ext, sizeof(id.sff8636.ext) - 1);
     if (check != id.sff8636.ext.cc_ext) {
         dev_err(qsfp->dev,
@@ -67,16 +67,22 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
     return 0;
 }
 
-static int sff8636_check_feature_impl(const struct qsfp *qsfp)
+static int sff8636_check_feature_impl(struct qsfp *qsfp)
 {
     if (!qsfp->id.sff8636.ext.tx_los_impl)
         dev_warn(qsfp->dev, "%s: TX LOS not implemented\n", __func__);
+    else
+        qsfp->features |= QSFP_F_LOS;
 
     if (!qsfp->id.sff8636.ext.tx_fault_impl)
         dev_warn(qsfp->dev, "%s: TX Fault not implemented\n", __func__);
+    else
+        qsfp->features |= QSFP_F_TX_FAULT;
 
     if (!qsfp->id.sff8636.ext.tx_dis_impl)
         dev_warn(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+    else
+        qsfp->features |= QSFP_F_TX_DISABLE;
 
     return 0;
 }
@@ -84,7 +90,7 @@ static int sff8636_check_feature_impl(const struct qsfp *qsfp)
 static int sff8636_module_parse_power(struct qsfp *qsfp)
 {
     u32 power_mW, power_class;
-    u8 pwr, mask;
+    u8 pwr = 0, mask;
     int ret;
 
     if (qsfp->module_revision >= SFF8636_REV_8636_2_8 &&
@@ -337,14 +343,14 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
 
 }
 
-static u8 sff8636_soft_get_state(struct qsfp *qsfp)
+static u8 sff8636_get_state(struct qsfp *qsfp)
 {
     int ret;
     u8 state = 0;
-    struct sff8636_irq_status irq_status = {0};
+    struct sff8636_irq_flags irq_flags = {0};
 
-    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_status,
-                    sizeof(irq_status));
+    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags,
+                    sizeof(irq_flags));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read QSFP IRQ status. "
                            "ret %d\n", __func__, ret);
@@ -352,26 +358,32 @@ static u8 sff8636_soft_get_state(struct qsfp *qsfp)
         return qsfp->state;
     }
 
-    dev_notice(qsfp->dev, "%s: IntL 0x%X\n", __func__, irq_status.intl);
+    dev_notice(qsfp->dev, "%s: IntL 0x%X\n", __func__, irq_flags.intl);
 
-    if (irq_status.los)
+    if (irq_flags.los) {
         state |= QSFP_F_LOS;
+        /* In case LOS we have to enable fpc prefetch of irq status */
+        qsfp->prefetch = true;
+    }
 
-    if (irq_status.tx_fault)
+    if (irq_flags.tx_fault) {
         state |= QSFP_F_TX_FAULT;
+        /* In case TX Fault we have to enable fpc prefetch of irq status */
+        qsfp->prefetch = true;
+    }
 
     dev_notice(qsfp->dev, "%s: IRQ status dump: LOS 0x%X TX Fault 0x%X "
     "eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor 0x%X "
     "RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
     "TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X\n", __func__,
-    irq_status.los, irq_status.tx_fault, irq_status.tx_adap_eq_fault,
-    irq_status.lol, irq_status.init_complete, irq_status.tc_ready,
-    irq_status.temp_alarm, irq_status.volt_alarm, irq_status.vendor_specific1,
-    irq_status.rx12_pow_alarm, irq_status.rx34_pow_alarm,
-    irq_status.tx12_bias_alarm, irq_status.tx34_bias_alarm,
-    irq_status.tx12_pow_alarm, irq_status.tx34_pow_alarm,
-    irq_status.vendor_specific2[0], irq_status.vendor_specific2[1],
-    irq_status.vendor_specific2[2]);
+    irq_flags.los, irq_flags.tx_fault, irq_flags.tx_adap_eq_fault,
+    irq_flags.lol, irq_flags.init_complete, irq_flags.tc_ready,
+    irq_flags.temp_alarm, irq_flags.volt_alarm, irq_flags.vendor_specific1,
+    irq_flags.rx12_pow_alarm, irq_flags.rx34_pow_alarm,
+    irq_flags.tx12_bias_alarm, irq_flags.tx34_bias_alarm,
+    irq_flags.tx12_pow_alarm, irq_flags.tx34_pow_alarm,
+    irq_flags.vendor_specific2[0], irq_flags.vendor_specific2[1],
+    irq_flags.vendor_specific2[2]);
 
     return state;
 }
@@ -480,10 +492,21 @@ const char *sff8636_mod_encoding_to_str(u8 mod_encoding)
     }
 }
 
+void sff8636_irq_status_prefetch_start(const struct qsfp *qsfp)
+{
+    fpc_data_prefetch_start(qsfp, SFF8636_DEVICE0, SFF8636_IRQ_OFFSET,
+    SFF8636_IRQ_PREFETCH_LEN, SFF8636_PREFETCH_PERIOD);
+}
+
+u8 sff8636_get_connector_type(const struct qsfp *qsfp)
+{
+    return qsfp->id.sff8636.base.connector;
+}
+
 struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
-    .soft_get_state = sff8636_soft_get_state,
+    .get_state = sff8636_get_state,
     .tx_enable = sff8636_tx_enable,
     .tx_disable = sff8636_tx_disable,
     .check_features_impl = sff8636_check_feature_impl,
@@ -493,4 +516,6 @@ struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_low_power = sff8636_mod_low_power,
     .eeprom_print = sff8636_eeprom_print,
     .module_info = sff8636_module_info,
+    .irq_status_prefetch_start = sff8636_irq_status_prefetch_start,
+    .get_connector_type = sff8636_get_connector_type,
 };

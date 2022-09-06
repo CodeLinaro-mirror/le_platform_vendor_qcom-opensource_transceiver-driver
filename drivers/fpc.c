@@ -13,15 +13,17 @@ static const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     {0x20 , 0x40 , 0x60 , 0x80},
     /* FPC_INPUT_PIN_INTERRUPT_STATUS */
     {0x21 , 0x41 , 0x61 , 0x81},
-};
-
-static const struct sff_data fpc_data = {
-    .module_supported = NULL,
+    /* FPC_PREFETCH_CONTROL */
+    {0x1D , 0x3D, 0x5D , 0x7D},
+    /* FPC_PREFETCH_OFFSET */
+    {0x1E , 0x3E, 0x5E , 0x7E},
+    /* FPC_PREFETCH_PERIOD */
+    {0x1F , 0x3F, 0x5F , 0x7F},
 };
 
 const struct of_device_id fpc_qsfp_of_match[] = {
-    { .compatible = "sff,fpc402", .data = &fpc_data, },
-    { .compatible = "sff,qsfp",   .data = &qsfp_data, },
+    { .compatible = FPC_COMPATIBLE },
+    { .compatible = QSFP_COMPATIBLE },
     { },
 };
 MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
@@ -90,7 +92,7 @@ static int fpc_write(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
  */
 void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state)
 {
-    u8 buf;
+    u8 buf = 0;
     int ret;
 
     dev_notice(qsfp->dev, "%s: %s %s %s\n", __func__, (led & QSFP_LED1) ? "LED1 ":"",
@@ -98,7 +100,7 @@ void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state)
 
     ret = fpc_read(qsfp->fpc,
           FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
-          &buf, 1);
+          &buf, sizeof(buf));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Fail to read LED mode for LED %u state %u. "
                            "ret %d\n", __func__, led, state, ret);
@@ -121,7 +123,7 @@ void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state)
 
     ret = fpc_write(qsfp->fpc,
           FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
-          &buf, 1);
+          &buf, sizeof(buf));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Fail to write LED mode for LED %u state %u. "
                            "ret %d\n", __func__, led, state, ret);
@@ -130,60 +132,176 @@ void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state)
 
 /*
  * Checks whether transceiver module is present or not
- * at port_num of FPC using input status 'interrupt_input_status'
- * which is read before making call to this function
  */
-bool fpc_is_module_present(const struct fpc *fpc, u8 port_num)
+int fpc_is_module_present(const struct qsfp *qsfp)
 {
-    u8 mod_present = (fpc->interrupt_input_status >> 8) & 0xF;
+    int ret;
+    u8 mod_present = 0;
 
-    if ((mod_present >> port_num) & 1) {
-        /* active low. Bit will be 0 when active */
-        return false;
+    ret = fpc_read(qsfp->fpc, FPC_IN_B_STATUS_REGISTER, &mod_present,
+                   sizeof(mod_present));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Fail to read ModulePresent GPIO status\n",
+                            __func__);
+        return ret;
     }
 
-    return true;
+    if ((mod_present >> qsfp->port_num) & 1) {
+        /* active low. Bit will be 0 when active */
+        return QSFP_NOT_PRESENT;
+    }
+
+    return QSFP_PRESENT;
 }
 
 /*
- * Reads particular port interrupt input line to decide
- * whether qsfp interrupt or not
+ * Configures FPC402 data prefetch with device, offset, length and period.
  */
-bool fpc_is_qsfp_interrupt(const struct qsfp *qsfp)
+int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device, u8 offset,
+                            u8 len, u8 period)
 {
     int ret;
     u8 buf;
 
+    dev_notice(qsfp->dev, "%s: Device %u Offset 0x%X Length %u Perioid %u"
+                          " ms\n", __func__, device, offset, len, period);
+
+    buf = period / FPC_PREFETCH_PERIOID_STEP;
+    ret = fpc_write(qsfp->fpc,
+          FPC_PORT_REG[FPC_PREFETCH_PERIOD][qsfp->port_num],
+          &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to write prefetch period. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    buf = offset;
+    ret = fpc_write(qsfp->fpc,
+          FPC_PORT_REG[FPC_PREFETCH_OFFSET][qsfp->port_num],
+          &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to write prefetch offset. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    buf = FPC_PREFETCH_START | device | ((len - 1) << 3);
+    ret = fpc_write(qsfp->fpc,
+          FPC_PORT_REG[FPC_PREFETCH_CONTROL][qsfp->port_num],
+          &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to write prefetch control. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+/*
+ * Stops FPC402 data prefetch.
+ */
+int fpc_data_prefetch_stop(const struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf;
+
+    dev_notice(qsfp->dev, "%s:\n", __func__);
+
+    buf = FPC_PREFETCH_STOP;
+    ret = fpc_write(qsfp->fpc,
+          FPC_PORT_REG[FPC_PREFETCH_CONTROL][qsfp->port_num],
+          &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to write prefetch control. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    buf = 0;
+    ret = fpc_write(qsfp->fpc,
+          FPC_PORT_REG[FPC_PREFETCH_PERIOD][qsfp->port_num],
+          &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to write prefetch period. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+   buf = 0;
+   ret = fpc_write(qsfp->fpc,
+         FPC_PORT_REG[FPC_PREFETCH_OFFSET][qsfp->port_num],
+         &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to write prefetch offset. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    buf = 0;
+    ret = fpc_read(qsfp->fpc, FPC_PREFETCH_GATE, &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to read prefetch gate. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    buf |= (1 << qsfp->port_num);
+    ret = fpc_write(qsfp->fpc, FPC_PREFETCH_GATE, &buf, sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to read prefetch gate. "
+                           "ret %d\n", __func__, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+/*
+ * Process QSFP presence and QSFP module interrupts
+ */
+static int fpc_qsfp_irq(struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf = 0;
+
+    if (!qsfp)
+        return 0;
+
     ret = fpc_read(qsfp->fpc,
           FPC_PORT_REG[FPC_INPUT_PIN_INTERRUPT_STATUS][qsfp->port_num],
-          &buf, 1);
+          &buf, sizeof(buf));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read input pin interrupt status. "
                            "ret %d\n", __func__, ret);
-        return false;
+        return ret;
+    }
+
+    dev_notice(qsfp->dev, "%s: Input Interrupt status 0x%X\n", __func__, buf);
+
+    if (buf & FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK) {
+        dev_notice(qsfp->dev, "%s: ModulePresent Rising edge interrupt 0x%X\n",
+                          __func__, buf);
+        qsfp_module_remove_irq(qsfp);
+        return 0;
+    } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
+        dev_notice(qsfp->dev, "%s: ModulePresent Falling edge interrupt 0x%X\n",
+                          __func__, buf);
+        qsfp_module_insert_irq(qsfp);
     }
 
     if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
         dev_notice(qsfp->dev, "%s: QSFP Falling edge interrupt 0x%X\n",
                           __func__, buf);
-        return true;
+        qsfp_falling_edge_irq(qsfp);
     } else if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
         dev_notice(qsfp->dev, "%s: QSFP Rising edge interrupt 0x%X\n",
                           __func__, buf);
-        return true;
+        qsfp_rising_edge_irq(qsfp);
     }
 
-    if (buf & FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK) {
-        dev_notice(qsfp->dev, "%s: ModulePresent Rising edge interrupt 0x%X\n",
-                          __func__, buf);
-    } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
-        dev_notice(qsfp->dev, "%s: ModulePresent Falling edge interrupt 0x%X\n",
-                          __func__, buf);
-    }
-
-    dev_notice(qsfp->dev, "%s: Not QSFP interrupt 0x%X\n",
-                          __func__, buf);
-    return false;
+    return 0;
 }
 
 /*
@@ -196,24 +314,30 @@ void fpc_enable_i2c_stuck_interrupt(const struct fpc *fpc)
 
     buf = FPC_ENABLE_I2C_STUCK_INTERRUPT;
 
-    ret = fpc_write(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf,
+                    sizeof(buf));
     if (ret < 0)
         dev_warn(fpc->dev, "%s: Failed to enable SCL stuck interrupt. "
                           "ret %d\n", __func__, ret);
 
-    ret = fpc_write(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf,
+                    sizeof(buf));
     if (ret < 0)
         dev_warn(fpc->dev, "%s: Failed to enable SDA stuck interrupt. "
                           "ret %d\n", __func__, ret);
 
 }
 
+/*
+ * Check i2c errors SCL,SDA stuck condition and logs error message
+ */
 static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
 {
     int ret;
-    u8 buf;
+    u8 buf = 0;
 
-    ret = fpc_read(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf, 1);
+    ret = fpc_read(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf,
+                   sizeof(buf));
     if (ret < 0) {
         dev_err(fpc->dev, "%s: Failed to read SCL stuck status. "
                           "ret %d\n", __func__, ret);
@@ -221,7 +345,9 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
         dev_err(fpc->dev, "%s: SCL stuck error 0x%X\n", __func__, buf);
     }
 
-    ret = fpc_read(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf, 1);
+    buf = 0;
+    ret = fpc_read(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf,
+                   sizeof(buf));
     if (ret < 0) {
         dev_err(fpc->dev, "%s: Failed to read SDA stuck status. "
                           "ret %d\n", __func__, ret);
@@ -241,19 +367,7 @@ int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp)
 
     return fpc_write(qsfp->fpc,
            FPC_PORT_REG[FPC_INPUT_PIN_INTERRUPT_ENABLE][qsfp->port_num],
-           &buf, 1);
-}
-
-/*
- * Reads aggregated interrupt status and input lines status
- */
-int fpc_read_agr_interrupt_input_status(struct fpc *fpc)
-{
-    fpc->interrupt_input_status = 0;
-
-    return fpc_read(fpc, FPC_INTERRUPT_INPUT_STATUS_REGISTER,
-                    &fpc->interrupt_input_status,
-                    sizeof(fpc->interrupt_input_status));
+           &buf, sizeof(buf));
 }
 
 /*
@@ -264,26 +378,26 @@ int fpc_read_agr_interrupt_input_status(struct fpc *fpc)
 static irqreturn_t fpc_irq(int irq, void *data)
 {
     struct fpc *fpc = data;
-    u8 port_interrupt, port_num;
+    u8 port_interrupt = 0, port_num;
     int ret;
 
     fpc_read_i2c_stuck_status(fpc);
 
-    ret = fpc_read_agr_interrupt_input_status(fpc);
+    /* Reads aggregated interrupt status */
+    ret = fpc_read(fpc, FPC_INTERRUPT_STATUS_REGISTER,
+                   &port_interrupt, sizeof(port_interrupt));
     if (ret < 0) {
         dev_err(fpc->dev, "%s: Fail to read FPC interrupt status. "
                           "ret %d\n", __func__, ret);
         return IRQ_HANDLED;
     }
 
-    dev_notice(fpc->dev, "%s Interrupt_Input_status 0x%X\n", __func__,
-                         fpc->interrupt_input_status);
-
-    port_interrupt = fpc->interrupt_input_status & FPC_INTERRUPT_MASK;
+    dev_notice(fpc->dev, "%s Aggregated Interrupt status 0x%X\n", __func__,
+                         port_interrupt);
 
     for (port_num = 0 ; port_num < FPC_MAX_PORTS ; port_num++) {
         if (port_interrupt & 1) {
-            qsfp_check_state(fpc->qsfp[port_num]);
+            fpc_qsfp_irq(fpc->qsfp[port_num]);
         }
         port_interrupt >>= 1;
     }
@@ -300,14 +414,14 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
     u8 buf;
 
     buf = i2c_address;
-    ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         /* if it fails try with i2c address that you are about to configure
          * this logic is needed to make sure driver works even after
          * rmmod and insmod as fpc reset wont reset configured i2c address
          */
         fpc->i2c_address = i2c_address >> 1;
-        ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, 1);
+        ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, sizeof(buf));
         if (ret < 0) {
             dev_info(fpc->dev, "%s: Unable to write i2c address\n", __func__);
             return ret;
@@ -364,7 +478,7 @@ static int fpc_reset(const struct fpc *fpc)
     /* Reset the FPC402 */
     buf = FPC_RESET_SEQUENCE;
 
-    ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         dev_err(fpc->dev, "%s: Fail to write reset register. ret %d\n",
                           __func__, ret);
@@ -372,7 +486,7 @@ static int fpc_reset(const struct fpc *fpc)
     }
 
     buf = 0;
-    ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
     if (ret < 0)
         dev_err(fpc->dev, "%s: Fail to revert port reset sequence. ret %d\n",
                           __func__, ret);
@@ -387,7 +501,7 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     u8 buf;
 
     buf = FPC_QSFP_RESET_SEQUENCE;
-    ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, 1);
+    ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
     if (ret < 0) {
         dev_warn(fpc->dev, "%s: Fail to write Reset sequence. ret %d\n",
                           __func__, ret);
@@ -395,7 +509,7 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     }
 
     buf = FPC_OUT_A_ENABLE;
-    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         dev_warn(fpc->dev, "%s: Fail to enable Reset gpio. ret %d\n",
                           __func__, ret);
@@ -403,7 +517,7 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     }
 
     buf = FPC_OUT_A_DISABLE;
-    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, 1);
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0)
         dev_warn(fpc->dev, "%s: Fail to disable Reset gpio. ret %d\n",
                           __func__, ret);
@@ -528,11 +642,10 @@ static int fpc_probe(struct platform_device *pdev)
  */
 static bool is_fpc_device(const struct platform_device *pdev)
 {
-    const struct sff_data *sff;
     struct device_node *node = pdev->dev.of_node;
     const struct of_device_id *id;
 
-    if (!pdev->dev.of_node) {
+    if (!node) {
         dev_err(&pdev->dev, "%s: No dev of_node\n", __func__);
         return -EINVAL;
     }
@@ -543,15 +656,10 @@ static bool is_fpc_device(const struct platform_device *pdev)
         return -EINVAL;
     }
 
-    sff = id->data;
-    /* module_supported() is defined for QSFP module
-     * but not defined for FPC402
-     */
-    if (sff->module_supported) {
+    if (strcmp(id->compatible, FPC_COMPATIBLE))
         return false;
-    } else {
+    else
         return true;
-    }
 }
 
 /*
@@ -615,6 +723,9 @@ static struct platform_driver fpc_qsfp_driver = {
     },
 };
 
+/*
+ * Init function gets called during insmod/modprobe
+ */
 static int fpc_qsfp_init(void)
 {
     transceiver_debugfs_init();
@@ -622,6 +733,9 @@ static int fpc_qsfp_init(void)
 }
 module_init(fpc_qsfp_init);
 
+/*
+ * Exit function gets called during rmmod
+ */
 static void fpc_qsfp_exit(void)
 {
     platform_driver_unregister(&fpc_qsfp_driver);

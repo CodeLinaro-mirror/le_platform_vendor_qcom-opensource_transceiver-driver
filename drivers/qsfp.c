@@ -7,6 +7,9 @@
  * http://git.armlinux.org.uk/cgit/linux-arm.git/tree/drivers/
  * net/phy/sfp.c?h=cex7
  *
+ * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/tree/
+ * drivers/net/phy/sfp-bus.c
+ *
  */
 #include "fpc.h"
 #include "qsfp.h"
@@ -14,7 +17,7 @@
 
 /* QSFP Device tree example
  *
- * qsfp_0: qsfp@0 {
+ * qsfp_0: qsfp_0 {
  *    compatible = "sff,qsfp";
  *    fpc = <&fpc402_0>;
  *    port-num = <0>;
@@ -24,6 +27,80 @@
  * };
  *
  */
+
+/*
+ * API to determine whether link type is optics or copper
+ */
+int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+{
+    struct device_node *qsfp_node;
+    struct platform_device *qsfp_pdev;
+    struct qsfp *qsfp;
+    u8 connector;
+
+    qsfp_node = of_find_node_by_phandle(qsfp_phandle);
+    if (!qsfp_node)
+        return -EINVAL;
+
+    qsfp_pdev = of_find_device_by_node(qsfp_node);
+    if (!qsfp_pdev)
+        return -EINVAL;
+
+    qsfp = platform_get_drvdata(qsfp_pdev);
+    if (!qsfp)
+        return -EINVAL;
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_connector_type) {
+        connector = qsfp->spec_ops->get_connector_type(qsfp);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        return -EINVAL;
+    }
+
+    switch (connector) {
+    case SFF8024_CONNECTOR_SC:
+    case SFF8024_CONNECTOR_FIBERJACK:
+    case SFF8024_CONNECTOR_LC:
+    case SFF8024_CONNECTOR_MT_RJ:
+    case SFF8024_CONNECTOR_MU:
+    case SFF8024_CONNECTOR_OPTICAL_PIGTAIL:
+    case SFF8024_CONNECTOR_MPO_1X12:
+    case SFF8024_CONNECTOR_MPO_2X16:
+    case SFF8024_CONNECTOR_MPO_2X12:
+    case SFF8024_CONNECTOR_MPO_1X16:
+    case SFF8024_CONNECTOR_CS_OPTICAL:
+    case SFF8024_CONNECTOR_SN_OPTICAL:
+        *link_info = PORT_FIBRE;
+        break;
+    case SFF8024_CONNECTOR_RJ45:
+        *link_info = PORT_TP;
+        break;
+    case SFF8024_CONNECTOR_COPPER_PIGTAIL:
+        *link_info = PORT_DA;
+        break;
+    case SFF8024_CONNECTOR_UNSPEC:
+    case SFF8024_CONNECTOR_SG:
+    case SFF8024_CONNECTOR_HSSDC_II:
+    case SFF8024_CONNECTOR_NOSEPARATE:
+    case SFF8024_CONNECTOR_MXC_2X16:
+    case SFF8024_CONNECTOR_FC1_COPPER:
+    case SFF8024_CONNECTOR_FC2_COPPER:
+        *link_info = PORT_OTHER;
+        break;
+    case SFF8024_CONNECTOR_BNC_TNC:
+        *link_info = PORT_BNC;
+        break;
+    default:
+        dev_warn(qsfp->dev, "Unknown connector id 0x%X\n", connector);
+        *link_info = PORT_OTHER;
+        break;
+    }
+
+    dev_notice(qsfp->dev, "%s: link info %X\n", __func__, *link_info);
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(qsfp_eth_get_link_type);
 
 static const char  * const mod_state_strings[] = {
     [QSFP_MOD_EMPTY] = "Empty",
@@ -96,35 +173,6 @@ const char *sm_state_to_str(unsigned short sm_state)
     if (sm_state >= ARRAY_SIZE(sm_state_strings))
         return "Unknown state";
     return sm_state_strings[sm_state];
-}
-
-/*
- * dummy function not used by this driver
- */
-static bool qsfp_module_supported(const struct qsfp_eeprom_id *id)
-{
-    return true;
-}
-
-const struct sff_data qsfp_data = {
-    .module_supported = qsfp_module_supported,
-};
-
-static void qsfp_gpio_set_state(const struct qsfp *qsfp, u8 state)
-{
-/* Input GPIOs 'interrupt' and 'module present' cannot be set */
-}
-
-/*
- * Gets state of gpio connected from QSFP transceiver to FPC
- */
-static u8 qsfp_gpio_get_state(const struct qsfp *qsfp)
-{
-    if (fpc_is_module_present(qsfp->fpc, qsfp->port_num)) {
-        return QSFP_F_PRESENT;
-    }
-
-    return 0;
 }
 
 /*
@@ -267,7 +315,7 @@ int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len)
 static int qsfp_set_spec_ops(struct qsfp *qsfp)
 {
     int ret;
-    u8* spec_id;
+    u8 *spec_id;
 
     if (qsfp->spec_ops)
         return 0;
@@ -279,7 +327,7 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
         return -EAGAIN;
     }
 
-    spec_id =(u8*)&qsfp->id;
+    spec_id = (u8*)&qsfp->id;
 
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
@@ -295,22 +343,6 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     }
 
     return 0;
-}
-
-static u8 qsfp_soft_get_state(struct qsfp *qsfp)
-{
-    /* if it is not qsfp interrupt then return */
-    if (!fpc_is_qsfp_interrupt(qsfp)) {
-        /* Preserve the current state */
-        return qsfp->state;
-    }
-
-    if (qsfp_set_spec_ops(qsfp) < 0) {
-        dev_err(qsfp->dev, "%s: Unable to set the spec ops\n", __func__);
-        return qsfp->state;
-    }
-
-    return qsfp->spec_ops->soft_get_state(qsfp);
 }
 
 static char* qsfp_state_to_str(u8 state, char *str, int len)
@@ -345,28 +377,17 @@ static char* qsfp_state_to_str(u8 state, char *str, int len)
     return str;
 }
 
-/*
- * Only TX enable/disable handled by this function
- */
-static void qsfp_soft_set_state(const struct qsfp *qsfp, u8 state)
-{
-    if (state & QSFP_F_TX_DISABLE)
-        qsfp->spec_ops->tx_disable(qsfp);
-    else
-        qsfp->spec_ops->tx_enable(qsfp);
-
-}
-
 static u8 qsfp_get_state(struct qsfp *qsfp)
 {
-    u8 state = qsfp->get_state(qsfp);
-    u8 soft_state;
+    u8 state;
     char state_str[QSFP_STATE_STR_MAX_LEN];
 
-    soft_state = qsfp_soft_get_state(qsfp);
+    if (qsfp_set_spec_ops(qsfp) < 0) {
+        dev_err(qsfp->dev, "%s: Unable to set the spec ops\n", __func__);
+        return qsfp->state;
+    }
 
-    if (state & QSFP_F_PRESENT)
-        state |= soft_state;
+    state = qsfp->spec_ops->get_state(qsfp);
 
     dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
                qsfp_state_to_str(state, state_str, sizeof(state_str)));
@@ -374,6 +395,9 @@ static u8 qsfp_get_state(struct qsfp *qsfp)
     return state;
 }
 
+/*
+ * Only TX enable/disable handled by this function
+ */
 static void qsfp_set_state(const struct qsfp *qsfp, u8 state)
 {
     char state_str[QSFP_STATE_STR_MAX_LEN];
@@ -381,10 +405,12 @@ static void qsfp_set_state(const struct qsfp *qsfp, u8 state)
     dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
                qsfp_state_to_str(state, state_str, sizeof(state_str)));
 
-    qsfp->set_state(qsfp, state);
-
-    if (state & QSFP_F_PRESENT)
-        qsfp_soft_set_state(qsfp, state);
+    if (state & QSFP_F_PRESENT) {
+        if (state & QSFP_F_TX_DISABLE)
+            qsfp->spec_ops->tx_disable(qsfp);
+        else
+            qsfp->spec_ops->tx_enable(qsfp);
+    }
 }
 
 u32 qsfp_check(void *buf, size_t len)
@@ -397,19 +423,28 @@ u32 qsfp_check(void *buf, size_t len)
     return check;
 }
 
-/* Helpers */
 static void qsfp_module_tx_disable(struct qsfp *qsfp)
 {
-    dev_notice(qsfp->dev, "%s: TX Disable %u -> %u\n", __func__,
-               qsfp->state & QSFP_F_TX_DISABLE ? 1 : 0, 1);
+    if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
+        dev_info(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        return;
+    }
+
+    dev_notice(qsfp->dev, "%s: TX Disable %s -> Disable\n", __func__,
+               qsfp->state & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
     qsfp->state |= QSFP_F_TX_DISABLE;
     qsfp_set_state(qsfp, qsfp->state);
 }
 
 static void qsfp_module_tx_enable(struct qsfp *qsfp)
 {
-    dev_notice(qsfp->dev, "%s: TX Enable %u -> %u\n", __func__,
-               qsfp->state & QSFP_F_TX_DISABLE ? 1 : 0, 0);
+    if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
+        dev_info(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        return;
+    }
+
+    dev_notice(qsfp->dev, "%s: TX Enable: %s -> Enable\n", __func__,
+               qsfp->state & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
     qsfp->state &= ~QSFP_F_TX_DISABLE;
     qsfp_set_state(qsfp, qsfp->state);
 }
@@ -420,6 +455,11 @@ static void qsfp_module_tx_fault_reset(struct qsfp *qsfp)
 
     if (state & QSFP_F_TX_DISABLE)
         return;
+
+    if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
+        dev_info(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        return;
+    }
 
     qsfp_set_state(qsfp, state | QSFP_F_TX_DISABLE);
 
@@ -546,6 +586,9 @@ static int qsfp_sm_mod_hpower(const struct qsfp *qsfp, bool enable)
     return 0;
 }
 
+/*
+ * Reads power details from EEPROM and assign power fields in qsfp instance
+ */
 static int qsfp_module_parse_power(struct qsfp *qsfp)
 {
     int ret;
@@ -581,6 +624,13 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
         return ret;
     }
 
+    ret = qsfp->spec_ops->check_features_impl(qsfp);
+    if (ret < 0) {
+        dev_warn(qsfp->dev, "%s: required features not implemented so rejecting"
+                           " module. ret %d\n", __func__, ret);
+        return ret;
+    }
+
     qsfp->spec_ops->disable_redundant_irq(qsfp);
 
     /* TX disable when module inserted */
@@ -605,13 +655,6 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
         }
     }
 
-    ret = qsfp->spec_ops->check_features_impl(qsfp);
-    if (ret < 0) {
-        dev_warn(qsfp->dev, "%s: required features not implemented so rejecting"
-                           " module. ret %d\n", __func__, ret);
-        return ret;
-    }
-
     qsfp->spec_ops->eeprom_print(qsfp);
 
     return 0;
@@ -628,7 +671,10 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
 
     memset(&qsfp->id, 0, sizeof(qsfp->id));
+    qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
+    qsfp->module_power_class = 0;
+    qsfp->features = 0;
     qsfp->spec_ops = NULL;
 
     dev_notice(qsfp->dev, "%s: Module removed\n", __func__);
@@ -1050,22 +1096,19 @@ static void qsfp_timeout(struct work_struct *work)
     rtnl_unlock();
 }
 
+/*
+ * Checks QSFP status for LOS and TX Fault
+ */
 void qsfp_check_state(struct qsfp *qsfp)
 {
     u8 state, changed;
     char cur_state_str[QSFP_STATE_STR_MAX_LEN];
     char next_state_str[QSFP_STATE_STR_MAX_LEN];
     char changed_state_str[QSFP_STATE_STR_MAX_LEN];
-    u32 presence_event = QSFP_E_INSERT;
-
-    if (!qsfp)
-        return;
-
-    mutex_lock(&qsfp->st_mutex);
 
     state = qsfp_get_state(qsfp);
     changed = state ^ qsfp->state;
-    changed &= QSFP_F_PRESENT | QSFP_F_LOS | QSFP_F_TX_FAULT;
+    changed &= QSFP_F_LOS | QSFP_F_TX_FAULT;
 
     dev_notice(qsfp->dev, "%s: Current state %s 0x%X, Next state %s 0x%X, "
     "Changed state to be processed %s 0x%X\n",__func__,
@@ -1076,35 +1119,72 @@ void qsfp_check_state(struct qsfp *qsfp)
     qsfp_state_to_str(changed, changed_state_str, sizeof(changed_state_str)),
     changed);
 
-    state |= qsfp->state & QSFP_F_TX_DISABLE;
+    state |= qsfp->state & (QSFP_F_PRESENT | QSFP_F_TX_DISABLE);
     qsfp->state = state;
 
     rtnl_lock();
 
-    if (changed & QSFP_F_PRESENT) {
-        presence_event = state & QSFP_F_PRESENT ? QSFP_E_INSERT :
-                         QSFP_E_REMOVE;
-        qsfp_sm_event(qsfp, presence_event);
-    }
+    if (changed & QSFP_F_TX_FAULT)
+        qsfp_sm_event(qsfp, state & QSFP_F_TX_FAULT ?
+                      QSFP_E_TX_FAULT : QSFP_E_TX_CLEAR);
 
-    /* if it is remove module event then no need to process LOS
-     * and TX Fault events
-     */
-    if (presence_event != QSFP_E_REMOVE) {
-        if (changed & QSFP_F_TX_FAULT)
-            qsfp_sm_event(qsfp, state & QSFP_F_TX_FAULT ?
-                          QSFP_E_TX_FAULT : QSFP_E_TX_CLEAR);
-
-        if (changed & QSFP_F_LOS)
-            qsfp_sm_event(qsfp, state & QSFP_F_LOS ?
-                          QSFP_E_LOS_HIGH : QSFP_E_LOS_LOW);
-    }
+    if (changed & QSFP_F_LOS)
+        qsfp_sm_event(qsfp, state & QSFP_F_LOS ?
+                      QSFP_E_LOS_HIGH : QSFP_E_LOS_LOW);
 
     rtnl_unlock();
-
-    mutex_unlock(&qsfp->st_mutex);
 }
 
+void qsfp_falling_edge_irq(struct qsfp *qsfp)
+{
+    qsfp_check_state(qsfp);
+
+    if (qsfp->prefetch)
+        qsfp->spec_ops->irq_status_prefetch_start(qsfp);
+}
+
+static void qsfp_data_prefetch_stop(struct qsfp *qsfp)
+{
+    if (qsfp->prefetch) {
+        fpc_data_prefetch_stop(qsfp);
+        qsfp->prefetch = false;
+    }
+}
+
+void qsfp_rising_edge_irq(struct qsfp *qsfp)
+{
+    qsfp_data_prefetch_stop(qsfp);
+
+    qsfp_check_state(qsfp);
+}
+
+void qsfp_module_insert_irq(struct qsfp *qsfp)
+{
+    dev_notice(qsfp->dev, "%s:\n", __func__);
+
+    qsfp->state |= QSFP_F_PRESENT;
+
+    rtnl_lock();
+    qsfp_sm_event(qsfp, QSFP_E_INSERT);
+    rtnl_unlock();
+}
+
+void qsfp_module_remove_irq(struct qsfp *qsfp)
+{
+    dev_notice(qsfp->dev, "%s:\n", __func__);
+
+    qsfp_data_prefetch_stop(qsfp);
+
+    qsfp->state &= (~QSFP_F_PRESENT);
+
+    rtnl_lock();
+    qsfp_sm_event(qsfp, QSFP_E_REMOVE);
+    rtnl_unlock();
+}
+
+/*
+ * Allocates QSFP instance
+ */
 static struct qsfp *qsfp_alloc(struct device *dev)
 {
     struct qsfp *qsfp;
@@ -1116,7 +1196,6 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->dev = dev;
 
     mutex_init(&qsfp->sm_mutex);
-    mutex_init(&qsfp->st_mutex);
     INIT_DELAYED_WORK(&qsfp->timeout, qsfp_timeout);
 
     /* valid port numbers are 0,1,2,3.
@@ -1184,8 +1263,6 @@ int qsfp_probe(struct platform_device *pdev)
         return -EINVAL;
     }
 
-    qsfp->type = &qsfp_data;
-
     ret = of_property_read_u32(node, "fpc", &fpc_handle);
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Unable to read property 'fpc'. ret %d\n",
@@ -1217,9 +1294,6 @@ int qsfp_probe(struct platform_device *pdev)
                             __func__, ret);
         return ret;
     }
-
-    qsfp->get_state = qsfp_gpio_get_state;
-    qsfp->set_state = qsfp_gpio_set_state;
 
     ret = device_property_read_u32(&pdev->dev, "port-num", &temp);
     if (ret < 0) {
@@ -1289,20 +1363,20 @@ int qsfp_probe(struct platform_device *pdev)
         qsfp->fpc->qsfp[qsfp->port_num] = qsfp;
     }
 
-    ret = fpc_read_agr_interrupt_input_status(qsfp->fpc);
+    /* During probe if QSFP module already inserted then we are not getting
+     * interrupt for same so we are reading Module Present GPIO line to know
+     * its presence
+     */
+    ret = fpc_is_module_present(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read fpc interrupt input status. "
-                           "ret %d\n", __func__, ret);
+        dev_err(qsfp->dev, "%s: fpc_is_module_present failed. ret %d\n",
+                           __func__, ret);
         return -EPROBE_DEFER;
+    } else if (ret == QSFP_PRESENT) {
+        dev_notice(qsfp->dev, "%s: QSFP present during probe\n", __func__);
+        qsfp_module_insert_irq(qsfp);
     } else {
-        qsfp->state = qsfp_get_state(qsfp);
-
-        if (qsfp->state & QSFP_F_PRESENT) {
-            dev_notice(qsfp->dev, "%s: QSFP present during probe\n", __func__);
-            rtnl_lock();
-            qsfp_sm_event(qsfp, QSFP_E_INSERT);
-            rtnl_unlock();
-        }
+        dev_notice(qsfp->dev, "%s: QSFP Port Empty during probe\n", __func__);
     }
 
     ret = fpc_enable_qsfp_interrupt(qsfp);
