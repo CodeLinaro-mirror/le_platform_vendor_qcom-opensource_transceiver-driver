@@ -22,11 +22,11 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
         return -EAGAIN;
     }
 
-    dev_notice(qsfp->dev, "%s: id_stat id %X rev %X status %X\n", __func__,
-               id_stat.phys_id, id_stat.rev_spec, id_stat.status);
+    dev_notice(qsfp->dev, "%s: id_stat id 0x%X rev 0x%X flat_mem 0x%X\n", __func__,
+               id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem);
 
     // Early setup - we need to know if this module has a page register
-    qsfp->module_flat_mem = id_stat.status & SFF8636_STAT_FLAT_MEM;
+    qsfp->module_flat_mem = id_stat.flat_mem;
     qsfp->module_revision = id_stat.rev_spec;
 
     ret = qsfp_read(qsfp, SFF8636_ID, &id, sizeof(id.sff8636));
@@ -69,20 +69,14 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
 
 static int sff8636_check_feature_impl(const struct qsfp *qsfp)
 {
-    if (!(qsfp->id.sff8636.ext.options[2] & SFF8636_TX_LOS_IMPLEMENTED)) {
-        dev_err(qsfp->dev, "%s: TX LOS not implemented\n", __func__);
-        return -E_NOT_IMPL;
-    }
+    if (!qsfp->id.sff8636.ext.tx_los_impl)
+        dev_warn(qsfp->dev, "%s: TX LOS not implemented\n", __func__);
 
-    if (!(qsfp->id.sff8636.ext.options[2] & SFF8636_TX_FAULT_IMPLEMENTED)) {
-        dev_err(qsfp->dev, "%s: TX Fault not implemented\n", __func__);
-        return -E_NOT_IMPL;
-    }
+    if (!qsfp->id.sff8636.ext.tx_fault_impl)
+        dev_warn(qsfp->dev, "%s: TX Fault not implemented\n", __func__);
 
-    if (!(qsfp->id.sff8636.ext.options[2] & SFF8636_TX_DISABLE_IMPLEMENTED)) {
-        dev_err(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
-        return -E_NOT_IMPL;
-    }
+    if (!qsfp->id.sff8636.ext.tx_dis_impl)
+        dev_warn(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
 
     return 0;
 }
@@ -154,13 +148,24 @@ static int sff8636_module_parse_power(struct qsfp *qsfp)
 static void sff8636_disable_redundant_irq(const struct qsfp *qsfp)
 {
     int ret;
-    u8 buf[] = {0xFF, 0xFF, 0xFF, 0xFF};
+    /* Enable only TX/RX LOS and TX Fault intterupts */
+    u8 buf1[] = {0x00, /* TX LOS , RX LOS enable */
+                 0xF0, /* TX Fault enable */
+                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    u8 buf2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-    ret = qsfp_write(qsfp, SFF8636_TEMPERATURE_INTERRUPT_MASK,
-                     buf, sizeof(buf));
+    ret = qsfp_write(qsfp, SFF8636_INTERRUPT_MASK,
+                     buf1, sizeof(buf1));
     if (ret < 0)
         dev_err(qsfp->dev, "%s: Failed to mask redundant interrupts. "
                            "ret %d\n", __func__, ret);
+
+    ret = qsfp_write(qsfp, SFF8636_CHANNEL_INTERRUPT_MASK,
+                     buf2, sizeof(buf2));
+    if (ret < 0)
+        dev_err(qsfp->dev, "%s: Failed to mask redundant channel interrupts."
+                           " ret %d\n", __func__, ret);
+
 }
 
 static int sff8636_handle_max_power_exceed(const struct qsfp *qsfp)
@@ -174,12 +179,24 @@ static int sff8636_mod_high_power(const struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_HIGH;
 
+    /* As power class 1 is the lowest we can not push module for
+     * further high power class
+     */
+    if (qsfp->module_power_class == 1)
+        return 0;
+
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
 
 static int sff8636_mod_low_power(const struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_LOW;
+
+    /* As power class 1 is the lowest we can not push module for
+     * further low power class
+     */
+    if (qsfp->module_power_class == 1)
+        return 0;
 
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
@@ -189,78 +206,80 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
     char date[9];
 
-    dev_notice(qsfp->dev, "%s: phys_id %X  phys_ext_id %X  connector %X\n",
+    dev_notice(qsfp->dev, "%s: phys_id 0x%X  phys_ext_id 0x%X  connector 0x%X\n",
     __func__, id->base.phys_id, id->base.phys_ext_id, id->base.connector);
 
-    dev_notice(qsfp->dev, "%s: ecom_extended %X   e10g_base_lrm %X   "
-    "e10g_base_lr %X  e10g_base_sr %X  e40g_base_cr4 %X  e40g_base_sr4 %X   "
-    "e40g_base_lr4 %X   e40g_active %X\n", __func__, id->base.ecom_extended,
+    dev_notice(qsfp->dev, "%s: ecom_extended 0x%X   e10g_base_lrm 0x%X   "
+    "e10g_base_lr 0x%X  e10g_base_sr 0x%X  e40g_base_cr4 0x%X  e40g_base_sr4 0x%X   "
+    "e40g_base_lr4 0x%X   e40g_active 0x%X\n", __func__, id->base.ecom_extended,
     id->base.e10g_base_lrm, id->base.e10g_base_lr, id->base.e10g_base_sr,
     id->base.e40g_base_cr4, id->base.e40g_base_sr4, id->base.e40g_base_lr4,
     id->base.e40g_active);
 
-    dev_notice(qsfp->dev, "%s: reserved_2 %X  sonet_oc48_smf_long_reach %X  "
-    "sonet_oc48_smf_intermediate_reach %X   sonet_oc48_short_reach %X\n",
-    __func__, id->base.reserved_2, id->base.sonet_oc48_smf_long_reach,
+    dev_notice(qsfp->dev, "%s: reserved_2 0x%X  "
+    "sonet_oc48_smf_long_reach 0x%X  sonet_oc48_smf_intermediate_reach 0x%X"
+    "   sonet_oc48_short_reach 0x%X\n", __func__, id->base.reserved_2,
+    id->base.sonet_oc48_smf_long_reach,
     id->base.sonet_oc48_smf_intermediate_reach,
     id->base.sonet_oc48_short_reach);
 
-    dev_notice(qsfp->dev, "%s: sas_24gbps %X  sas_12gbps %X  sas_6gbps %X "
-    "sas_3gbps %X   reserved_3 %X\n", __func__, id->base.sas_24gbps,
-    id->base.sas_12gbps,id->base.sas_6gbps, id->base.sas_3gbps,
-    id->base.reserved_3);
+    dev_notice(qsfp->dev, "%s: sas_24gbps 0x%X  sas_12gbps 0x%X  "
+    "sas_6gbps 0x%X  sas_3gbps 0x%X   reserved_3 0x%X\n", __func__,
+    id->base.sas_24gbps, id->base.sas_12gbps,id->base.sas_6gbps,
+    id->base.sas_3gbps, id->base.reserved_3);
 
-    dev_notice(qsfp->dev, "%s: reserved_4 %X   e1000_base_t %X   "
-    "e1000_base_cx %X   e1000_base_lx %X   e1000_base_sx %X\n", __func__,
+    dev_notice(qsfp->dev, "%s: reserved_4 0x%X   e1000_base_t 0x%X   "
+    "e1000_base_cx 0x%X   e1000_base_lx 0x%X   e1000_base_sx 0x%X\n", __func__,
     id->base.reserved_4, id->base.e1000_base_t, id->base.e1000_base_cx,
     id->base.e1000_base_lx, id->base.e1000_base_sx);
 
-    dev_notice(qsfp->dev, "%s: fc_ll_v %X  fc_ll_s %X  fc_ll_i %X  fc_ll_l %X"
-    "  fc_ll_m %X   reserved_5 %X   fc_tech_lc %X   "
-    "fc_tech_electrical_inter_enclosure %X\n", __func__, id->base.fc_ll_v,
+    dev_notice(qsfp->dev, "%s: fc_ll_v 0x%X  fc_ll_s 0x%X  fc_ll_i 0x%X"
+    "  fc_ll_l 0x%X  fc_ll_m 0x%X   reserved_5 0x%X   fc_tech_lc 0x%X   "
+    "fc_tech_electrical_inter_enclosure 0x%X\n", __func__, id->base.fc_ll_v,
     id->base.fc_ll_s, id->base.fc_ll_i, id->base.fc_ll_l, id->base.fc_ll_m,
     id->base.reserved_5, id->base.fc_tech_lc,
     id->base.fc_tech_electrical_inter_enclosure);
 
-    dev_notice(qsfp->dev, "%s: electrical_intra_enclosure %X   "
-    "longwave_laser_wo_ofc %X   longwave_laser_w_ofc %X   longwave_laser %X  "
-    "reserved_6 %X\n", __func__, id->base.electrical_intra_enclosure,
+    dev_notice(qsfp->dev, "%s: electrical_intra_enclosure 0x%X   "
+    "longwave_laser_wo_ofc 0x%X   longwave_laser_w_ofc 0x%X   "
+    "longwave_laser 0x%X  reserved_6 %X\n", __func__,
+    id->base.electrical_intra_enclosure,
     id->base.longwave_laser_wo_ofc, id->base.longwave_laser_w_ofc,
     id->base.longwave_laser, id->base.reserved_6);
 
-    dev_notice(qsfp->dev, "%s: fc_media_tw %X   fc_media_tp %X   "
-    "fc_media_mi %X   fc_media_tv %X   fc_media_m6 %X   fc_media_m5 %X   "
-    "fc_media_om3 %X   fc_media_sm %X\n", __func__, id->base.fc_media_tw,
-    id->base.fc_media_tp, id->base.fc_media_mi, id->base.fc_media_tv,
-    id->base.fc_media_m6, id->base.fc_media_m5, id->base.fc_media_om3,
-    id->base.fc_media_sm);
+    dev_notice(qsfp->dev, "%s: fc_media_tw 0x%X   fc_media_tp 0x%X   "
+    "fc_media_mi 0x%X   fc_media_tv 0x%X   fc_media_m6 0x%X   "
+    "fc_media_m5 0x%X   fc_media_om3 0x%X   fc_media_sm 0x%X\n", __func__,
+    id->base.fc_media_tw, id->base.fc_media_tp, id->base.fc_media_mi,
+    id->base.fc_media_tv, id->base.fc_media_m6, id->base.fc_media_m5,
+    id->base.fc_media_om3, id->base.fc_media_sm);
 
-    dev_notice(qsfp->dev, "%s: fc_speed_1200 %X   fc_speed_800 %X   "
-    "fc_speed_1600 %X   fc_speed_400 %X   fc_speed_3200 %X   fc_speed_200 %X "
-    "  fc_extended %X   fc_speed_100 %X\n", __func__, id->base.fc_speed_1200,
-    id->base.fc_speed_800, id->base.fc_speed_1600, id->base.fc_speed_400,
-    id->base.fc_speed_3200, id->base.fc_speed_200, id->base.fc_extended,
-    id->base.fc_speed_100);
+    dev_notice(qsfp->dev, "%s: fc_speed_1200 0x%X   fc_speed_800 0x%X   "
+    "fc_speed_1600 0x%X   fc_speed_400 0x%X   fc_speed_3200 0x%X   "
+    "fc_speed_200 0x%X   fc_extended 0x%X   fc_speed_100 0x%X\n", __func__,
+    id->base.fc_speed_1200, id->base.fc_speed_800, id->base.fc_speed_1600,
+    id->base.fc_speed_400, id->base.fc_speed_3200, id->base.fc_speed_200,
+    id->base.fc_extended, id->base.fc_speed_100);
 
-    dev_notice(qsfp->dev, "%s: encoding %X   br_nominal %X   "
-    "ext_ratesel_spec %X\n", __func__, id->base.encoding,
+    dev_notice(qsfp->dev, "%s: encoding 0x%X   br_nominal 0x%X   "
+    "ext_ratesel_spec 0x%X\n", __func__, id->base.encoding,
     id->base.br_nominal, id->base.ext_ratesel_spec);
 
-    dev_notice(qsfp->dev, "%s: length[]: %X %X %X %X %X\n", __func__,
+    dev_notice(qsfp->dev, "%s: length[]: 0x%X 0x%X 0x%X 0x%X 0x%X\n", __func__,
     id->base.length[4], id->base.length[3], id->base.length[2],
     id->base.length[1], id->base.length[0]);
 
-    dev_notice(qsfp->dev, "%s: device_tech %X\n", __func__,
+    dev_notice(qsfp->dev, "%s: device_tech 0x%X\n", __func__,
                            id->base.device_tech);
 
     dev_notice(qsfp->dev, "%s: vendor name %.*s\n", __func__,
                            (int)sizeof(id->base.vendor_name),
                            id->base.vendor_name);
 
-    dev_notice(qsfp->dev, "%s: ext_module %X\n", __func__,
+    dev_notice(qsfp->dev, "%s: ext_module 0x%X\n", __func__,
                            id->base.ext_module);
 
-    dev_notice(qsfp->dev, "%s: vendor_oui[]: %X %X %X\n", __func__,
+    dev_notice(qsfp->dev, "%s: vendor_oui[]: 0x%X 0x%X 0x%X\n", __func__,
     id->base.vendor_oui[2], id->base.vendor_oui[1], id->base.vendor_oui[0]);
 
     dev_notice(qsfp->dev, "%s: vendor pn %.*s\n", __func__,
@@ -269,16 +288,34 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     dev_notice(qsfp->dev, "%s: vendor rev %.*s\n", __func__,
                (int)sizeof(id->base.vendor_rev), id->base.vendor_rev);
 
-    dev_notice(qsfp->dev, "%s: wavelength %X   wavelength_tolerance %X   "
-    "max_case_temp %X   cc_base %X\n", __func__, id->base.wavelength,
+    dev_notice(qsfp->dev, "%s: wavelength 0x%X   wavelength_tolerance 0x%X   "
+    "max_case_temp 0x%X   cc_base 0x%X\n", __func__, id->base.wavelength,
     id->base.wavelength_tolerance, id->base.max_case_temp,
     id->base.cc_base);
 
-    dev_notice(qsfp->dev, "%s: link_codes %X\n", __func__,
+    dev_notice(qsfp->dev, "%s: link_codes 0x%X\n", __func__,
                            id->ext.link_codes);
 
-    dev_notice(qsfp->dev, "%s: options[]: %X %X %X\n", __func__,
-               id->ext.options[2], id->ext.options[1], id->ext.options[0]);
+    dev_notice(qsfp->dev, "%s: lpmode_gpio 0x%X  intl_gpio 0x%X "
+    "tx_adap_eq_freeze 0x%X  tx_eq_auto_adap 0x%X  tx_eq_prg 0x%X  "
+    "rx_emp_prg 0x%X  rx_amp_prg 0x%X\n", __func__, id->ext.lpmode_gpio,
+    id->ext.intl_gpio, id->ext.tx_adap_eq_freeze, id->ext.tx_eq_auto_adap,
+    id->ext.tx_eq_prg, id->ext.rx_emp_prg, id->ext.rx_amp_prg);
+
+    dev_notice(qsfp->dev, "%s: tx_cdr_ctrl_impl 0x%X  rx_cdr_ctrl_impl 0x%X  "
+    "tx_cdr_lol_impl 0x%X  rx_cdr_lol_impl 0x%X  rx_squelch_dis_impl 0x%X  "
+    "rx_output_dis_impl 0x%X  tx_squelch_dis_impl 0x%X  "
+    "tx_squelch_impl 0x%X\n", __func__, id->ext.tx_cdr_ctrl_impl,
+    id->ext.rx_cdr_ctrl_impl, id->ext.tx_cdr_lol_impl, id->ext.rx_cdr_lol_impl,
+    id->ext.rx_squelch_dis_impl, id->ext.rx_output_dis_impl,
+    id->ext.tx_squelch_dis_impl, id->ext.tx_squelch_impl);
+
+    dev_notice(qsfp->dev, "%s: page2 0x%X  page1 0x%X  rate_select_impl 0x%X  "
+    "tx_dis_impl 0x%X  tx_fault_impl 0x%X  tx_squelch_oma_impl 0x%X  "
+    "tx_los_impl 0x%X  page20_21 0x%X\n", __func__, id->ext.page2,
+    id->ext.page1, id->ext.rate_select_impl, id->ext.tx_dis_impl,
+    id->ext.tx_fault_impl, id->ext.tx_squelch_oma_impl, id->ext.tx_los_impl,
+    id->ext.page20_21);
 
     dev_notice(qsfp->dev, "%s: vendor sn %.*s\n", __func__,
                (int)sizeof(id->ext.vendor_sn), id->ext.vendor_sn);
@@ -294,8 +331,8 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     date[8] = '\0';
 
     dev_notice(qsfp->dev, "%s: date %s\n", __func__, date);
-    dev_notice(qsfp->dev, "%s: diagmon %X   enh_options %X   "
-    "baud_rate_nominal %X    cc_ext %X\n", __func__, id->ext.diagmon,
+    dev_notice(qsfp->dev, "%s: diagmon 0x%X   enh_options 0x%X   "
+    "baud_rate_nominal 0x%X    cc_ext 0x%X\n", __func__, id->ext.diagmon,
     id->ext.enh_options, id->ext.baud_rate_nominal, id->ext.cc_ext);
 
 }
@@ -304,9 +341,9 @@ static u8 sff8636_soft_get_state(struct qsfp *qsfp)
 {
     int ret;
     u8 state = 0;
-    u8 irq_status[SFF8636_INTERRUPT_FLAG_SIZE] = {0};
+    struct sff8636_irq_status irq_status = {0};
 
-    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, irq_status,
+    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_status,
                     sizeof(irq_status));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read QSFP IRQ status. "
@@ -315,40 +352,26 @@ static u8 sff8636_soft_get_state(struct qsfp *qsfp)
         return qsfp->state;
     }
 
-    if (irq_status[0])
-        dev_notice(qsfp->dev, "%s: LOS state %X trigger %X\n",__func__,
-                              qsfp->los_state, irq_status[0]);
+    dev_notice(qsfp->dev, "%s: IntL 0x%X\n", __func__, irq_status.intl);
 
-    /* Either TX or RX LOS in any one of 4 lines
-     * Assuming interrupt coming for LOS recovery as well
-     * los_state stores RX TX LOS for 4 lanes
-     * NoLOS -> 0 -> NoLOS
-     * NoLOS -> 1 -> LOS
-     * LOS   -> 0 -> LOS
-     * LOS   -> 1 -> NoLOS
-     */
-    qsfp->los_state ^= irq_status[0];
-
-    if (qsfp->los_state)
+    if (irq_status.los)
         state |= QSFP_F_LOS;
 
-    if (irq_status[1] & 0xF)
-        dev_notice(qsfp->dev, "%s: TX Fault state %X trigger %X\n", __func__,
-                              qsfp->tx_fault_state, irq_status[1] & 0xF);
-
-    /* TX fault in any one of 4 lines */
-    qsfp->tx_fault_state ^= (irq_status[1] & 0xF);
-
-    if (qsfp->tx_fault_state)
+    if (irq_status.tx_fault)
         state |= QSFP_F_TX_FAULT;
 
-    dev_notice(qsfp->dev, "%s: IRQ status dump: LOS %X TX Fault %X LOL %X "
-    "Init Temp %X VCC %X Vendor %X Power %X %X %X %X %X %X Reserved %X %X "
-    "%X %X Vendor %X %X %X\n", __func__, irq_status[0], irq_status[1],
-    irq_status[2], irq_status[3], irq_status[4], irq_status[5], irq_status[6],
-    irq_status[7], irq_status[8], irq_status[9], irq_status[10],
-    irq_status[11], irq_status[12], irq_status[13], irq_status[14],
-    irq_status[15], irq_status[16], irq_status[17], irq_status[18]);
+    dev_notice(qsfp->dev, "%s: IRQ status dump: LOS 0x%X TX Fault 0x%X "
+    "eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor 0x%X "
+    "RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
+    "TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X\n", __func__,
+    irq_status.los, irq_status.tx_fault, irq_status.tx_adap_eq_fault,
+    irq_status.lol, irq_status.init_complete, irq_status.tc_ready,
+    irq_status.temp_alarm, irq_status.volt_alarm, irq_status.vendor_specific1,
+    irq_status.rx12_pow_alarm, irq_status.rx34_pow_alarm,
+    irq_status.tx12_bias_alarm, irq_status.tx34_bias_alarm,
+    irq_status.tx12_pow_alarm, irq_status.tx34_pow_alarm,
+    irq_status.vendor_specific2[0], irq_status.vendor_specific2[1],
+    irq_status.vendor_specific2[2]);
 
     return state;
 }

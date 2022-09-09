@@ -29,7 +29,6 @@ static const char  * const mod_state_strings[] = {
     [QSFP_MOD_ERROR] = "ERROR",
     [QSFP_MOD_REJECT_SPEC] = "Reject_Spec",
     [QSFP_MOD_REJECT_PWR] = "Reject_Power",
-    [QSFP_MOD_REJECT_IMPL] = "Reject_Impl",
     [QSFP_MOD_PROBE] = "Probe",
     [QSFP_MOD_WAITDEV] = "WaitDev",
     [QSFP_MOD_HPOWER] = "HPower",
@@ -287,7 +286,7 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
                                __func__, spec_id);
          break;
     default:
-         dev_err(qsfp->dev, "%s: Unsupported spec id %02X\n",
+         dev_warn(qsfp->dev, "%s: Unsupported spec id %02X\n",
                            __func__, spec_id);
          return -E_UNSUPPORTED_SPEC;
     }
@@ -366,7 +365,7 @@ static u8 qsfp_get_state(struct qsfp *qsfp)
     if (state & QSFP_F_PRESENT)
         state |= soft_state;
 
-    dev_notice(qsfp->dev, "%s: state %X %s\n", __func__, state,
+    dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
                qsfp_state_to_str(state, state_str, sizeof(state_str)));
 
     return state;
@@ -376,7 +375,7 @@ static void qsfp_set_state(const struct qsfp *qsfp, u8 state)
 {
     char state_str[QSFP_STATE_STR_MAX_LEN];
 
-    dev_notice(qsfp->dev, "%s: state %X %s\n", __func__, state,
+    dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
                qsfp_state_to_str(state, state_str, sizeof(state_str)));
 
     qsfp->set_state(qsfp, state);
@@ -453,6 +452,7 @@ static void qsfp_sm_mod_next(struct qsfp *qsfp, u32 state,
 static void qsfp_sm_link_up(struct qsfp *qsfp)
 {
     sfp_link_up(qsfp->sfp_bus);
+    dev_notice(qsfp->dev, "%s: sfp_link_up upstream ops called\n", __func__);
     fpc_qsfp_set_led(qsfp, QSFP_LED2, QSFP_LED_ON);
     qsfp_sm_next(qsfp, QSFP_S_LINK_UP, 0);
 }
@@ -460,6 +460,8 @@ static void qsfp_sm_link_up(struct qsfp *qsfp)
 static void qsfp_sm_link_down(const struct qsfp *qsfp)
 {
     sfp_link_down(qsfp->sfp_bus);
+    dev_notice(qsfp->dev, "%s: sfp_link_down upstream ops called\n",
+                           __func__);
     fpc_qsfp_set_led(qsfp, QSFP_LED2, QSFP_LED_OFF);
 }
 
@@ -596,13 +598,13 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
         if (ret < 0) {
            dev_err(qsfp->dev, "%s: handle max power exceed failed. "
                               "ret %d\n", __func__, ret);
-            return ret;
+           return ret;
         }
     }
 
     ret = qsfp->spec_ops->check_features_impl(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: required features not implemented so rejecting"
+        dev_warn(qsfp->dev, "%s: required features not implemented so rejecting"
                            " module. ret %d\n", __func__, ret);
         return ret;
     }
@@ -614,15 +616,16 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
 
 static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 {
-    if (qsfp->sm_mod_state > QSFP_MOD_WAITDEV)
+    if (qsfp->sm_mod_state > QSFP_MOD_WAITDEV) {
         sfp_module_remove(qsfp->sfp_bus);
+        dev_notice(qsfp->dev, "%s: sfp_module_remove upstream ops called\n",
+                               __func__);
+    }
 
     fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
 
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     qsfp->module_power_mW = 0;
-    qsfp->los_state = 0;
-    qsfp->tx_fault_state = 0;
     qsfp->spec_ops = NULL;
 
     dev_notice(qsfp->dev, "%s: Module removed\n", __func__);
@@ -710,15 +713,15 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
         if (err == -E_UNSUPPORTED_SPEC) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_SPEC, 0);
+            fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
             break;
         } else if (err == -E_MAX_POWER_EXCEED) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_PWR, 0);
-            break;
-        } else if (err == -E_NOT_IMPL) {
-            qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_IMPL, 0);
+            fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
             break;
         } else if (err < 0) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
+            fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
             break;
         }
 
@@ -735,6 +738,9 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         if (err < 0) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
             break;
+        } else {
+            dev_notice(qsfp->dev, "%s: sfp_module_insert upstream ops "
+                                  "called\n", __func__);
         }
 
         /* If this is a power level 1 module, we are done */
@@ -749,6 +755,8 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         if (err < 0) {
             if (err != -EAGAIN) {
                 sfp_module_remove(qsfp->sfp_bus);
+                dev_notice(qsfp->dev, "%s: sfp_module_remove upstream ops"
+                                      " called\n", __func__);
                 qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
             } else {
                 qsfp_sm_set_timer(qsfp, T_PROBE_RETRY_INIT);
@@ -766,17 +774,13 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
     insert:
         qsfp_sm_mod_next(qsfp, QSFP_MOD_PRESENT, 0);
+        fpc_qsfp_set_led(qsfp, QSFP_LED1, QSFP_LED_ON);
         break;
 
     case QSFP_MOD_PRESENT:
-         fpc_qsfp_set_led(qsfp, QSFP_LED1, QSFP_LED_ON);
-         break;
-
     case QSFP_MOD_REJECT_SPEC:
     case QSFP_MOD_REJECT_PWR:
-    case QSFP_MOD_REJECT_IMPL:
     case QSFP_MOD_ERROR:
-         fpc_qsfp_set_led(qsfp, QSFP_LED1 | QSFP_LED2, QSFP_LED_OFF);
          break;
     }
 }
@@ -1007,7 +1011,7 @@ static int qsfp_module_eeprom_by_page(struct sfp *sfp,
     }
 
     if (page->i2c_address != 0x50) {
-        dev_err(qsfp->dev, "%s: I2C address %X not supported\
+        dev_err(qsfp->dev, "%s: I2C address 0x%X not supported\
                 Only address 0x50 supported", __func__, page->i2c_address);
         NL_SET_ERR_MSG(extack, "Only address 0x50 supported");
         return -EOPNOTSUPP;
@@ -1060,8 +1064,8 @@ void qsfp_check_state(struct qsfp *qsfp)
     changed = state ^ qsfp->state;
     changed &= QSFP_F_PRESENT | QSFP_F_LOS | QSFP_F_TX_FAULT;
 
-    dev_notice(qsfp->dev, "%s: Current state %s %X, Next state %s %X, "
-    "Changed state to be processed %s %X\n",__func__,
+    dev_notice(qsfp->dev, "%s: Current state %s 0x%X, Next state %s 0x%X, "
+    "Changed state to be processed %s 0x%X\n",__func__,
     qsfp_state_to_str(qsfp->state, cur_state_str, sizeof(cur_state_str)),
     qsfp->state,
     qsfp_state_to_str(state, next_state_str, sizeof(next_state_str)),
@@ -1162,6 +1166,7 @@ int qsfp_probe(struct platform_device *pdev)
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: devm_add_action failed. ret %d\n",
                            __func__, ret);
+        qsfp_cleanup(qsfp);
         return ret;
     }
 
@@ -1199,7 +1204,7 @@ int qsfp_probe(struct platform_device *pdev)
 
     qsfp->fpc = platform_get_drvdata(fpc_pdev);
     if (!qsfp->fpc) {
-        dev_err(qsfp->dev, "%s: Unable to get FPC handler\n", __func__);
+        dev_info(qsfp->dev, "%s: Unable to get FPC handler\n", __func__);
         return -EPROBE_DEFER;
     }
 
@@ -1238,9 +1243,6 @@ int qsfp_probe(struct platform_device *pdev)
     }
     dev_notice(qsfp->dev, "%s: Maximum-power-milliwatt %u\n", __func__,
                           qsfp->max_power_mW);
-
-    if (!qsfp->max_power_mW)
-        qsfp->max_power_mW = 4500;
 
     dev_notice(qsfp->dev, "%s: Host maximum power %u.%uW\n", __func__,
                qsfp->max_power_mW / 1000, (qsfp->max_power_mW / 100) % 10);
@@ -1288,6 +1290,7 @@ int qsfp_probe(struct platform_device *pdev)
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Fail to read fpc interrupt input status. "
                            "ret %d\n", __func__, ret);
+        return -EPROBE_DEFER;
     } else {
         qsfp->state = qsfp_get_state(qsfp);
 

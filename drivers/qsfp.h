@@ -45,8 +45,6 @@ struct qsfp {
     u32 module_power_mW;
     u32 module_t_start_up;
     u8 state;
-    u8 los_state;
-    u8 tx_fault_state;
     u8 port_num;
     u8 i2c_address_dev0;
     u8 i2c_address_dev1;
@@ -111,7 +109,6 @@ enum {
     QSFP_MOD_ERROR,
     QSFP_MOD_REJECT_SPEC,
     QSFP_MOD_REJECT_PWR,
-    QSFP_MOD_REJECT_IMPL,
     QSFP_MOD_PROBE,
     QSFP_MOD_WAITDEV,
     QSFP_MOD_HPOWER,
@@ -137,7 +134,6 @@ enum {
 enum {
     E_UNSUPPORTED_SPEC = 1000,
     E_MAX_POWER_EXCEED,
-    E_NOT_IMPL,
 };
 
 /* t_start_up (SFF-8431) or t_init (SFF-8472) is the time required for a
