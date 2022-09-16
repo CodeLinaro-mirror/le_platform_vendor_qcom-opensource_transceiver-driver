@@ -456,14 +456,27 @@ const char *sff8636_mod_revision_to_str(u8 mod_rev_value)
 const char *sff8636_mod_encoding_to_str(u8 mod_encoding)
 {
     switch (mod_encoding) {
+    case 0x00:
+    default:
+        return "Unspecified";
+    case 0x01:
+        return "8B/10B";
+    case 0x02:
+        return "4B/5B";
+    case 0x03:
+        return "NRZ";
     case 0x04:
         return "SONET Scrambled";
     case 0x05:
         return "64B/66B";
     case 0x06:
         return "Manchester";
-    default:
-        return "Unknown encoding format";
+    case 0x07:
+        return "256B/257B";
+    case 0x08:
+        return "PAM4";
+    case 0x09 ... 0xFF:
+        return "Reserved need to be update in future";
     }
 }
 
