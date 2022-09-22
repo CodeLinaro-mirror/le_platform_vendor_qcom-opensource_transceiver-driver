@@ -439,7 +439,7 @@ static int qsfp_debug_qsfp_power_info_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -466,7 +466,7 @@ static int qsfp_debug_qsfp_module_power_class_info_show(struct seq_file *s,
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -486,7 +486,7 @@ static int qsfp_debug_qsfp_module_identifier_info_show(struct seq_file *s,
        showing module identifier type even module was not
        probed to handle un implemented module types       */
     if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -504,7 +504,7 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -522,7 +522,7 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -540,7 +540,7 @@ static int qsfp_debug_phys_ext_id_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -603,7 +603,7 @@ static int qsfp_debug_phys_ext_id_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -621,7 +621,7 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -640,7 +640,7 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -657,7 +657,7 @@ static int qsfp_debug_encoding_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -675,7 +675,7 @@ static int qsfp_debug_encoding_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -692,7 +692,7 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -720,7 +720,7 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -737,7 +737,7 @@ static int qsfp_debug_link_codes_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -755,7 +755,7 @@ static int qsfp_debug_link_codes_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -772,7 +772,7 @@ static int qsfp_debug_max_case_temp_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module was not attached.\n");
+        seq_printf(s, "QSFP module is not attached\n");
         return 0;
     }
 
@@ -789,7 +789,7 @@ static int qsfp_debug_max_case_temp_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -807,7 +807,7 @@ static int qsfp_debug_device_tech_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-          seq_printf(s, "QSFP module was not attached.\n");
+          seq_printf(s, "QSFP module is not attached\n");
           return 0;
     }
 
@@ -888,7 +888,7 @@ static int qsfp_debug_device_tech_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -905,7 +905,7 @@ static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-          seq_printf(s, "QSFP module was not attached.\n");
+          seq_printf(s, "QSFP module is not attached\n");
           return 0;
     }
 
@@ -916,7 +916,7 @@ static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
         seq_printf(s, "Diagnostic Monitoring Type: 0x%X\n",id->ext.diagmon);
         id->ext.diagmon&BIT(5)?seq_printf(s, "BIT[5]: Temperature monitoring"
                                              " implemented\n"):
-            seq_printf(s, "BIT[5]: Temperature monitoring Not implemente"
+            seq_printf(s, "BIT[5]: Temperature monitoring Not implemented"
                               " or pre-Rev 2.8\n");
         id->ext.diagmon&BIT(4)?seq_printf(s, "BIT[4]: Supply voltage"
                                              " monitoring implemented\n"):
@@ -937,7 +937,7 @@ static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
         }
         else {
             seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s transceiver module is not supported.\n",
+                        "%s Transceiver module is not supported\n",
                         *spec_id,mod_identifier_to_str(*spec_id));
         }
     }
@@ -945,6 +945,381 @@ static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_diagmon);
+
+/*
+* Information about the Qsfp status indicators (Page 00h, Byte 2) is being
+* exported to Sysfs.
+*/
+static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
+{
+    struct qsfp *qsfp = s->private;
+    struct sff8636_eeprom_id *id;
+    u8 *spec_id = (u8*)&qsfp->id;
+    u8 status;
+    int ret;
+
+    /* Ensure that the module is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        id = &qsfp->id.sff8636;
+        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &status,
+                         sizeof(status));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        seq_printf(s, "Status Indicators: 0x%X\n",status);
+        status&BIT(2)?seq_printf(s, "BIT[2]: Flat upper memory\n"):
+                      seq_printf(s, "BIT[2]: Paged upper memory\n");
+        status&BIT(1)?seq_printf(s, "BIT[1]: IntL not asserted\n"):
+                      seq_printf(s, "BIT[1]: IntL asserted\n");
+        status&BIT(0)?seq_printf(s, "BIT[0]: Free side does not yet have"
+                                    " valid monitor data due to device reset\n"
+                                    "or power up reset or prior to a valid "
+                                    "suite of monitor readings\n"):
+                      seq_printf(s, "BIT[0]: Free side have valid "
+                                    "monitor data like temperature & supply voltage\n");
+        break;
+    default:
+        if (*spec_id == 0x00) {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "Unknown module\n",*spec_id);
+        }
+        else {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "%s Transceiver module not supported\n",
+                          *spec_id,mod_identifier_to_str(*spec_id));
+        }
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_status_indicators);
+
+/*
+* Information about the Qsfp device temperature (Page 00h Bytes 22-23)
+* is being exported to Sysfs.
+*/
+static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
+{
+    struct qsfp *qsfp = s->private;
+    u8 *spec_id = (u8*)&qsfp->id;
+    char temperature_data[75] = {};
+    int16_t tempc;
+    int32_t temp;
+    int ret;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ret = qsfp_read(qsfp, SFF8636_TEMPERATURE, &tempc,
+                               sizeof(tempc));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        /* Convert tempc info to cpu byte order */
+        tempc = be16_to_cpu(tempc & 0XFFFF);
+
+        /* (tempc * 1000) to get the three digit precision
+           while converting it to celsius. */
+        temp = tempc * 1000;
+
+        /* Convert the temp to degrees Celsius by dividing it by 256. */
+        temp = temp/256;
+
+        /* To avoid printing of the minus(-) symbol in decimal places.
+           Multiply temp with -1 for negative values. */
+        scnprintf(temperature_data,75,"Temperature: %d.%03d °C",temp/1000,
+                                    (temp < 0 ? (temp * -1) : temp)%1000);
+        seq_printf(s, "%s\n", temperature_data);
+        break;
+    default:
+        if (*spec_id == 0x00) {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "Unknown module\n",*spec_id);
+        }
+        else {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "%s Transceiver module is not supported\n",
+                          *spec_id,mod_identifier_to_str(*spec_id));
+       }
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_temperature);
+
+/*
+* Information about the Qsfp device supply voltage (Page 00h Bytes 26-27)
+* is being exported to Sysfs.
+*/
+static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
+                                                    void *data)
+{
+    struct qsfp *qsfp = s->private;
+    u8 *spec_id = (u8*)&qsfp->id;
+    char voltage_data[75] = {};
+    u16 supply_voltage_t = 0;
+    int ret;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ret = qsfp_read(qsfp, SFF8636_SUPPLY_VOLTAGE, &supply_voltage_t,
+                              sizeof(supply_voltage_t));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        /* convert supply_voltage_t info to cpu byte order */
+        supply_voltage_t = be16_to_cpu(supply_voltage_t & 0XFFFF);
+
+        /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
+        scnprintf(voltage_data,75,"Supply Voltage: %d.%03d V",
+                supply_voltage_t/10000, supply_voltage_t%10000);
+        seq_printf(s, "%s\n", voltage_data);
+        break;
+    default:
+        if (*spec_id == 0x00) {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "Unknown module\n",*spec_id);
+        }
+        else {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "%s Transceiver module is not supported\n",
+                          *spec_id,mod_identifier_to_str(*spec_id));
+        }
+    }
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_Supply_Voltage);
+
+/*
+* Information about the Qsfp Channel Monitor value of Rx Power
+* (Page 00h Bytes 34-41) is being exported to Sysfs.
+*/
+static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
+{
+    struct qsfp *qsfp = s->private;
+    u8 *spec_id = (u8*)&qsfp->id;
+    char rx_power_data[250] ={};
+    u16 rx_power_t[4] = {};
+    u8  rx_power[8] = {0};
+    int ret;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ret = qsfp_read(qsfp, SFF8636_RX_POWER, rx_power,
+                              sizeof(rx_power));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        rx_power_t[0] = (( rx_power[0] << 8) | rx_power[1]);
+        rx_power_t[1] = (( rx_power[2] << 8) | rx_power[3]);
+        rx_power_t[2] = (( rx_power[4] << 8) | rx_power[5]);
+        rx_power_t[3] = (( rx_power[6] << 8) | rx_power[7]);
+
+        /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
+        scnprintf(rx_power_data,250,"Rx Power Lane1: %d.%03d mW\n"
+                                    "Rx Power Lane2: %d.%03d mW\n"
+                                    "Rx Power Lane3: %d.%03d mW\n"
+                                    "Rx Power Lane4: %d.%03d mW",
+                          rx_power_t[0]/10000,rx_power_t[0]%10000,
+                          rx_power_t[1]/10000,rx_power_t[1]%10000,
+                          rx_power_t[2]/10000,rx_power_t[2]%10000,
+                          rx_power_t[3]/10000,rx_power_t[3]%10000);
+        seq_printf(s, "%s\n", rx_power_data);
+        break;
+    default:
+        if (*spec_id == 0x00) {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "Unknown module\n",*spec_id);
+        }
+        else {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "%s Transceiver module is not supported\n",
+                          *spec_id,mod_identifier_to_str(*spec_id));
+        }
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_rx_power);
+
+/*
+* Information about the Qsfp Channel Monitor value of Tx Bias Current
+* (Page 00h Bytes 42-49) is being exported to Sysfs.
+*/
+static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
+{
+    struct qsfp *qsfp = s->private;
+    u8 *spec_id = (u8*)&qsfp->id;
+    char tx_bias_current_data[250] = {};
+    u32 tx_bias_current_t[4] = {};
+    u16 tx_bias_current = 0;
+    u8 tx_bias[8] = {0};
+    int ret;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ret = qsfp_read(qsfp, SFF8636_TX_BIAS, tx_bias,
+                              sizeof(tx_bias));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+        tx_bias_current = (( tx_bias[0] << 8) | tx_bias[1]);
+        /* tx_bias_current in  Micro Amp */
+        tx_bias_current_t[0] = tx_bias_current * 2;
+
+        tx_bias_current  = 0;
+        tx_bias_current = (( tx_bias[2] << 8) | tx_bias[3]);
+        /* tx_bias_current in  Micro Amp */
+        tx_bias_current_t[1] = tx_bias_current * 2;
+
+        tx_bias_current  = 0;
+        tx_bias_current = (( tx_bias[4] << 8) | tx_bias[5]);
+        /* tx_bias_current in  Micro Amp */
+        tx_bias_current_t[2] = tx_bias_current * 2;
+
+        tx_bias_current  = 0;
+        tx_bias_current = (( tx_bias[6] << 8) | tx_bias[7]);
+        /* tx_bias_current in  Micro Amp */
+        tx_bias_current_t[3] = tx_bias_current * 2;
+
+        scnprintf(tx_bias_current_data,250,"Tx Bias Current Lane1: %d.%03d"
+                                           " mA\n"
+                                        "Tx Bias Current Lane2: %d.%03d mA\n"
+                                        "Tx Bias Current Lane3: %d.%03d mA\n"
+                                        "Tx Bias Current Lane4: %d.%03d mA",
+                          tx_bias_current_t[0]/1000,tx_bias_current_t[0]%1000,
+                          tx_bias_current_t[1]/1000,tx_bias_current_t[1]%1000,
+                          tx_bias_current_t[2]/1000,tx_bias_current_t[2]%1000,
+                          tx_bias_current_t[3]/1000,tx_bias_current_t[3]%1000);
+        seq_printf(s, "%s\n", tx_bias_current_data);
+        break;
+    default:
+        if (*spec_id == 0x00) {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "Unknown module\n",*spec_id);
+        }
+        else {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "%s Transceiver module is not supported\n",
+                          *spec_id,mod_identifier_to_str(*spec_id));
+        }
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_bias);
+
+/*
+* Information about the Qsfp Channel Monitor value of Tx Power
+* (Page 00h Bytes 50-57) is being exported to Sysfs.
+*/
+static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
+{
+    struct qsfp *qsfp = s->private;
+    struct sff8636_eeprom_id *id;
+    u8 *spec_id = (u8*)&qsfp->id;
+    char tx_power_data[250] ={};
+    u16 tx_power_t[4] = {};
+    u8  tx_power[8] = {0};
+    u8 diagmon;
+    int ret;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        id = &qsfp->id.sff8636;
+        diagmon = id->ext.diagmon;
+        if(!(diagmon & BIT(2))) {
+            seq_printf(s, "Transmitter power measurement not supported\n");
+            return 0;
+        }
+        ret = qsfp_read(qsfp, SFF8636_TX_POWER, tx_power,
+                              sizeof(tx_power));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        tx_power_t[0] = (( tx_power[0] << 8) | tx_power[1]);
+        tx_power_t[1] = (( tx_power[2] << 8) | tx_power[3]);
+        tx_power_t[2] = (( tx_power[4] << 8) | tx_power[5]);
+        tx_power_t[3] = (( tx_power[6] << 8) | tx_power[7]);
+
+        /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
+        scnprintf(tx_power_data,250,"Tx Power Lane1: %d.%03d mW\n"
+                                    "Tx Power Lane2: %d.%03d mW\n"
+                                    "Tx Power Lane3: %d.%03d mW\n"
+                                    "Tx Power Lane4: %d.%03d mW",
+                          tx_power_t[0]/10000,tx_power_t[0]%10000,
+                          tx_power_t[1]/10000,tx_power_t[1]%10000,
+                          tx_power_t[2]/10000,tx_power_t[2]%10000,
+                          tx_power_t[3]/10000,tx_power_t[3]%10000);
+        seq_printf(s, "%s\n", tx_power_data);
+        break;
+    default:
+        if (*spec_id == 0x00) {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "Unknown module\n",*spec_id);
+        }
+        else {
+            seq_printf(s, "Specification Identifier {0x%02X}\n"
+                          "%s Transceiver module is not supported\n",
+                          *spec_id,mod_identifier_to_str(*spec_id));
+        }
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_power);
 
 void qsfp_debugfs_init(struct qsfp *qsfp)
 {
@@ -1109,6 +1484,60 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
                         &qsfp_debug_device_diagmon_fops);
     if (!file || IS_ERR(file)) {
         dev_err(qsfp->dev, "%s: qsfp diagmon debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return;
+    }
+
+    file = debugfs_create_file("status_indicators", 0600, qsfp->debugfs_dir, qsfp,
+                        &qsfp_debug_status_indicators_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp status_indicators debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return;
+    }
+
+    file = debugfs_create_file("temperature", 0600, qsfp->debugfs_dir, qsfp,
+                        &qsfp_debug_device_temperature_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp temperature debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return;
+    }
+
+    file = debugfs_create_file("supply_voltage", 0600, qsfp->debugfs_dir, qsfp,
+                        &qsfp_debug_device_Supply_Voltage_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp supply_voltage debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return;
+    }
+
+    file = debugfs_create_file("rx_power", 0600, qsfp->debugfs_dir, qsfp,
+                        &qsfp_debug_device_rx_power_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp rx_power debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return;
+    }
+
+    file = debugfs_create_file("tx_bias_current", 0600, qsfp->debugfs_dir,
+                        qsfp, &qsfp_debug_device_tx_bias_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp tx_bias debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return;
+    }
+
+    file = debugfs_create_file("tx_power", 0600, qsfp->debugfs_dir, qsfp,
+                        &qsfp_debug_device_tx_power_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp tx_power debugfs_create_file fail,"
                            " error %ld\n", __func__,PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
     }
