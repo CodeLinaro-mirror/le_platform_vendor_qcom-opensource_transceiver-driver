@@ -13,6 +13,10 @@
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+#include <linux/debugfs.h>
+#endif
+
 /* FPC Device tree example
  *
  * fpc402_0: fpc402@0 {
@@ -78,6 +82,10 @@ struct fpc {
     int gpio_irq;
     u8 i2c_address;
     u16 interrupt_input_status;
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    struct dentry *debugfs_dir;
+#endif
 };
 
 extern int qsfp_probe(struct platform_device *pdev);

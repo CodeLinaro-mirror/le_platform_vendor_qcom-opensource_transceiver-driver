@@ -426,6 +426,60 @@ static int sff8636_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinf
     return 0;
 }
 
+const char *sff8636_mod_revision_to_str(u8 mod_rev_value)
+{
+    switch (mod_rev_value) {
+    case 0x00:
+    default:
+        return "Revision not specified";
+    case 0x01:
+        return "SFF-8436 Rev 4.8 or earlier";
+    case 0x02:
+        return "revision 4.8 or earlier of SFF-8436";
+    case 0x03:
+        return "SFF-8636 Rev 1.3 or earlier";
+    case 0x04:
+        return "SFF-8636 Rev 1.4";
+    case 0x05:
+        return "SFF-8636 Rev 1.5";
+    case 0x06:
+        return "SFF-8636 Rev 2.0";
+    case 0x07:
+        return "SFF-8636 Rev 2.5, 2.6 and 2.7";
+    case 0x08:
+        return "SFF-8636 Rev 2.8, 2.9 and 2.10";
+    case 0x09 ... 0xFF:
+        return "Reserved need to be update in future";
+    }
+}
+
+const char *sff8636_mod_encoding_to_str(u8 mod_encoding)
+{
+    switch (mod_encoding) {
+    case 0x00:
+    default:
+        return "Unspecified";
+    case 0x01:
+        return "8B/10B";
+    case 0x02:
+        return "4B/5B";
+    case 0x03:
+        return "NRZ";
+    case 0x04:
+        return "SONET Scrambled";
+    case 0x05:
+        return "64B/66B";
+    case 0x06:
+        return "Manchester";
+    case 0x07:
+        return "256B/257B";
+    case 0x08:
+        return "PAM4";
+    case 0x09 ... 0xFF:
+        return "Reserved need to be update in future";
+    }
+}
+
 struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
