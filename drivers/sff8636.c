@@ -361,13 +361,30 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
     dev_notice(qsfp->dev, "%s: IntL 0x%X\n", __func__, irq_flags.intl);
 
     if (irq_flags.los) {
-        state |= QSFP_F_LOS;
+        /* Dont report LOS even if one lane works fine
+         * 1st Nibble represent LOS for 4 RX lanes
+         * 2nd Nibble represent LOS for 4 TX lanes
+         */
+        if (irq_flags.los == 0xFF)
+            state |= QSFP_F_LOS;
+        else
+            dev_notice(qsfp->dev, "%s: There is LOS on few lanes which is not"
+                       " reported 0x%X\n", __func__, irq_flags.los);
+
         /* In case LOS we have to enable fpc prefetch of irq status */
         qsfp->prefetch = true;
     }
 
     if (irq_flags.tx_fault) {
-        state |= QSFP_F_TX_FAULT;
+        /* Dont report TX Fault even if one lane works fine
+         * Nibble represent TX Fault for 4 TX lanes
+         */
+        if (irq_flags.tx_fault == 0xF)
+            state |= QSFP_F_TX_FAULT;
+        else
+            dev_notice(qsfp->dev, "%s: There is TX Fault on few lanes which "
+                       "is not reported 0x%X\n", __func__, irq_flags.los);
+
         /* In case TX Fault we have to enable fpc prefetch of irq status */
         qsfp->prefetch = true;
     }
