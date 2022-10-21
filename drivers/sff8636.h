@@ -49,11 +49,14 @@ enum {
 
 };
 
+/* Page 0 byte 128 */
 struct sff8636_eeprom_base {
+    // byte 128
     u8 phys_id;
     u8 phys_ext_id;
     u8 connector;
 
+    // byte 131
     u8 e40g_active:1;
     u8 e40g_base_lr4:1;
     u8 e40g_base_sr4:1;
@@ -63,11 +66,13 @@ struct sff8636_eeprom_base {
     u8 e10g_base_lrm:1;
     u8 ecom_extended:1; // byte 192 has details
 
+    // byte 132
     u8 sonet_oc48_short_reach:1;
     u8 sonet_oc48_smf_intermediate_reach:1;
     u8 sonet_oc48_smf_long_reach:1;
     u8 reserved_2:5;
 
+    // byte 133
     u8 reserved_3:4;
     u8 sas_3gbps:1;
     u8 sas_6gbps:1;
@@ -80,6 +85,7 @@ struct sff8636_eeprom_base {
     u8 e1000_base_t:1;
     u8 reserved_4:4;
 
+    // byte 135
     u8 fc_tech_electrical_inter_enclosure:1;
     u8 fc_tech_lc:1;
     u8 reserved_5:1;
@@ -95,6 +101,7 @@ struct sff8636_eeprom_base {
     u8 longwave_laser_wo_ofc:1;
     u8 electrical_intra_enclosure:1;
 
+    // byte 137
     u8 fc_media_sm:1;
     u8 fc_media_om3:1;
     u8 fc_media_m5:1;
@@ -113,26 +120,44 @@ struct sff8636_eeprom_base {
     u8 fc_speed_800:1;
     u8 fc_speed_1200:1;
 
+    // byte 139
     u8 encoding;
     u8 br_nominal;
     u8 ext_ratesel_spec;
+
+    // byte 142
     u8 length[5];
+
+    // byte 147
     u8 device_tech;
+
+    // byte 148
     char vendor_name[16];
+
+    // byte 164
     u8 ext_module;
     char vendor_oui[3];
+
+    // byte 168
     char vendor_pn[16];
+
+    // byte 184
     char vendor_rev[2];
     union {
         __be16 wavelength;
         u8 copper_atten[2];
     } __packed;
     __be16 wavelength_tolerance;
+
+    // byte 190
     u8 max_case_temp;
+    // byte 191
     u8 cc_base;
 } __packed;
 
+/* Page 0 byte 192 */
 struct sff8636_eeprom_ext {
+    // byte 192
     u8 link_codes;
 
     u8 rx_amp_prg:1;
@@ -144,6 +169,7 @@ struct sff8636_eeprom_ext {
     u8 lpmode_gpio:1;
     u8 reserved:1;
 
+    // byte 194
     u8 tx_squelch_impl:1;
     u8 tx_squelch_dis_impl:1;
     u8 rx_output_dis_impl:1;
@@ -162,11 +188,18 @@ struct sff8636_eeprom_ext {
     u8 page1:1;
     u8 page2:1;
 
+    // byte 196
     char vendor_sn[16];
+
+    // byte 212
     u8 datecode[8];
+
+    // byte 220
     u8 diagmon;
     u8 enh_options;
     u8 baud_rate_nominal;
+
+    // byte 223
     u8 cc_ext;
 } __packed;
 

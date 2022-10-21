@@ -222,6 +222,6 @@ extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);
 
 extern int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
-extern u32 qsfp_check(void *buf, size_t len);
+extern u8 qsfp_check(void *buf, size_t len);
 
 #endif

@@ -613,7 +613,7 @@ static int fpc_probe(struct platform_device *pdev)
         return -EPROBE_DEFER;
     }
 
-    dev_notice(fpc->dev, "%s: gpio_irq %0X fpc_irq_name %s\n", __func__,
+    dev_notice(fpc->dev, "%s: gpio_irq 0x%X fpc_irq_name %s\n", __func__,
                           fpc->gpio_irq, fpc_irq_name);
 
     ret = devm_request_threaded_irq(fpc->dev, fpc->gpio_irq,

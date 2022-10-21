@@ -96,7 +96,7 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
         break;
     }
 
-    dev_notice(qsfp->dev, "%s: link info %X\n", __func__, *link_info);
+    dev_notice(qsfp->dev, "%s: link info 0x%X\n", __func__, *link_info);
 
     return 0;
 }
@@ -333,11 +333,11 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
          qsfp->spec_ops = &sff8636_spec_ops;
-         dev_notice(qsfp->dev, "%s: SFF8636 spec id %02X\n",
+         dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
                                __func__, *spec_id);
          break;
     default:
-         dev_warn(qsfp->dev, "%s: Unsupported spec id %02X\n",
+         dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
                            __func__,*spec_id);
          return -E_UNSUPPORTED_SPEC;
     }
@@ -413,7 +413,7 @@ static void qsfp_set_state(const struct qsfp *qsfp, u8 state)
     }
 }
 
-u32 qsfp_check(void *buf, size_t len)
+u8 qsfp_check(void *buf, size_t len)
 {
     u8 *p, check;
 

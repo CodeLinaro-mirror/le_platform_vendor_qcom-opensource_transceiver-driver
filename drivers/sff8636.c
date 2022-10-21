@@ -38,28 +38,26 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
     }
 
     if (id.sff8636.base.phys_id != id_stat.phys_id) {
-        dev_err(qsfp->dev, "%s: QSFP phys_id mismatch: "
-                            "0x%02x != 0x%02x\n", __func__,
-                            id_stat.phys_id, id.sff8636.base.phys_id);
+        dev_err(qsfp->dev, "%s: QSFP phys_id mismatch: 0x%02x != 0x%02x\n",
+                __func__, id_stat.phys_id, id.sff8636.base.phys_id);
         return -EINVAL;
     }
 
     /* Validate the checksum over the base structure */
     check = qsfp_check(&id.sff8636.base, sizeof(id.sff8636.base) - 1);
     if (check != id.sff8636.base.cc_base) {
-        dev_err(qsfp->dev,
-                "%s: EEPROM base structure checksum failure: \
-                0x%02x != 0x%02x\n", __func__, check, id.sff8636.base.cc_base);
+        dev_err(qsfp->dev, "%s: EEPROM base structure checksum failure: "
+                "0x%02x != 0x%02x\n", __func__, check, id.sff8636.base.cc_base);
         return -EINVAL;
     }
 
     /* Validate the checksum over the extended structure */
     check = qsfp_check(&id.sff8636.ext, sizeof(id.sff8636.ext) - 1);
     if (check != id.sff8636.ext.cc_ext) {
-        dev_err(qsfp->dev,
-                "%s: EEPROM extended structure checksum failure: \
-                0x%02x != 0x%02x\n",__func__, check, id.sff8636.ext.cc_ext);
+        dev_err(qsfp->dev, "%s: EEPROM extended structure checksum failure: "
+                "0x%02x != 0x%02x\n",__func__, check, id.sff8636.ext.cc_ext);
         memset(&id.sff8636.ext, 0, sizeof(id.sff8636.ext));
+        return -EINVAL;
     }
 
     qsfp->id = id;
@@ -383,7 +381,7 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
             state |= QSFP_F_TX_FAULT;
         else
             dev_notice(qsfp->dev, "%s: There is TX Fault on few lanes which "
-                       "is not reported 0x%X\n", __func__, irq_flags.los);
+                       "is not reported 0x%X\n", __func__, irq_flags.tx_fault);
 
         /* In case TX Fault we have to enable fpc prefetch of irq status */
         qsfp->prefetch = true;
