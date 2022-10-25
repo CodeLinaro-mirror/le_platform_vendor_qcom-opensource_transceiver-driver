@@ -18,6 +18,8 @@
 #include "sfp.h"
 #include "sff8636.h"
 
+#define QSFP_COMPATIBLE "sff,qsfp"
+
 #define QSFP_PAGE_OFFSET (0x7F)
 #define QSFP_LED1 (BIT(0))
 #define QSFP_LED2 (BIT(1))
@@ -31,15 +33,10 @@ struct qsfp_eeprom_id {
     };
 };
 
-struct sff_data {
-    bool (*module_supported)(const struct qsfp_eeprom_id *id);
-};
-
 struct qsfp {
     struct device *dev;
     struct fpc *fpc;
     struct sfp_bus *sfp_bus;
-    const struct sff_data *type;
     struct i2c_adapter *i2c;
     u32 max_power_mW;
     u32 module_power_mW;
@@ -49,6 +46,8 @@ struct qsfp {
     u8 i2c_address_dev0;
     u8 i2c_address_dev1;
     bool module_flat_mem;
+    bool prefetch;
+    u8 features;
     u8 module_power_class;
     u8 module_revision;
     u8 sm_mod_state;
@@ -59,12 +58,9 @@ struct qsfp {
     unsigned short sm_state;
     size_t i2c_block_size;
 
-    u8 (*get_state)(const struct qsfp *);
-    void (*set_state)(const struct qsfp *, u8);
     int (*read)(const struct qsfp *, u8, u8, void *, size_t);
     int (*write)(const struct qsfp *, u8, u8, void *, size_t);
 
-    struct mutex st_mutex;            /* Protects state */
     struct delayed_work timeout;
     struct mutex sm_mutex;            /* Protects state machine */
 
@@ -78,18 +74,38 @@ struct qsfp {
 };
 
 struct qsfp_spec_ops {
+    /* called during module insert to read EEPROM */
     int (*mod_probe)(struct qsfp *qsfp, bool report);
+    /* Disable uninterested interrupts */
     void (*disable_redundant_irq)(const struct qsfp *qsfp);
-    u8 (*soft_get_state)(struct qsfp *qsfp);
+    /* Gets module current state LOS,TX Fault */
+    u8 (*get_state)(struct qsfp *qsfp);
+    /* Enable TX */
     void (*tx_enable)(const struct qsfp *qsfp);
+    /* Disable TX */
     void (*tx_disable)(const struct qsfp *qsfp);
-    int (*check_features_impl)(const struct qsfp *qsfp);
+    /* Check feature like LOS,TX Fault implemented or not and
+     * update features field accordingly
+     */
+    int (*check_features_impl)(struct qsfp *qsfp);
+    /* Gets power details like max power and power class */
     int (*module_parse_power)(struct qsfp *qsfp);
+    /* called to handle situation of module max power is more
+     * than max allowed power
+     */
     int (*handle_max_power_exceed)(const struct qsfp *qsfp);
+    /* configure module for high power */
     int (*mod_high_power)(const struct qsfp *qsfp);
+    /* configure module for low power */
     int (*mod_low_power)(const struct qsfp *qsfp);
+    /* Dumps EEPROM data */
     void (*eeprom_print)(const struct qsfp *qsfp);
+    /* Ethtool callback function to get module info */
     int (*module_info)(struct qsfp *qsfp, struct ethtool_modinfo *modinfo);
+    /* Starts FPC402 prefetch from irq status offset */
+    void (*irq_status_prefetch_start)(const struct qsfp *qsfp);
+    /* Gets connector type */
+    u8 (*get_connector_type)(const struct qsfp *qsfp);
 };
 
 enum {
@@ -183,14 +199,26 @@ enum {
 
 #define QSFP_STATE_STR_MAX_LEN (50)
 
+enum {
+    SFF8024_CONNECTOR_FC1_COPPER = 0x02,
+    SFF8024_CONNECTOR_FC2_COPPER = 0x03,
+    SFF8024_CONNECTOR_BNC_TNC    = 0x04,
+    SFF8024_CONNECTOR_FC_COAX    = 0x05,
+    SFF8024_CONNECTOR_CS_OPTICAL = 0x25,
+    SFF8024_CONNECTOR_SN_OPTICAL = 0x26,
+    SFF8024_CONNECTOR_MPO_2X12   = 0x27,
+    SFF8024_CONNECTOR_MPO_1X16   = 0x28,
+};
+
 extern const struct of_device_id fpc_qsfp_of_match[];
 extern struct qsfp_spec_ops sff8636_spec_ops;
 
-extern bool fpc_is_module_present(const struct fpc *fpc, u8 port_num);
+extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
-extern bool fpc_is_qsfp_interrupt(const struct qsfp *qsfp);
-extern int fpc_read_agr_interrupt_input_status(struct fpc *fpc);
 extern void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state);
+extern int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device,
+                                   u8 offset, u8 len, u8 period);
+extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);
 
 extern int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);

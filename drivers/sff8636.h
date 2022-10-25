@@ -13,6 +13,11 @@
 #define SFF8636_POWER_CLASS_HIGH (BIT(2) | BIT(0))
 #define SFF8636_POWER_CLASS_1TO4 (BIT(0))
 
+#define SFF8636_DEVICE0 (0)
+#define SFF8636_IRQ_OFFSET (3)
+#define SFF8636_IRQ_PREFETCH_LEN (2)
+#define SFF8636_PREFETCH_PERIOD (100)
+
 enum {
 #define SFF8636_ADDR(page, addr)    ((page) << 8 | (addr))
     SFF8636_IRQ_FLAGS                   = SFF8636_ADDR(0,   2),
@@ -180,7 +185,7 @@ struct sff8636_id_stat {
     u8 reserved:5;
 } __packed;
 
-struct sff8636_irq_status {
+struct sff8636_irq_flags {
     u8 data_not_ready:1;
     u8 intl:1;
     u8 flat_mem:1;
