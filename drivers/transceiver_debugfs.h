@@ -29,9 +29,7 @@ void fpc_debugfs_init(struct fpc *fpc);
 void fpc_debugfs_exit(struct fpc *fpc);
 void qsfp_debugfs_exit(struct qsfp *qsfp);
 void qsfp_debugfs_init(struct qsfp *qsfp);
-extern const char *mod_state_to_str(unsigned short mod_state);
-extern const char *dev_state_to_str(unsigned short dev_state);
-extern const char *sm_state_to_str(unsigned short sm_state);
+
 extern const char *sff8636_mod_revision_to_str(u8 mod_rev_value);
 extern const char *sff8636_mod_encoding_to_str(u8 mod_encoding);
 extern const char *cmis_revision_to_str(u8 mod_rev_value, char *revStr);

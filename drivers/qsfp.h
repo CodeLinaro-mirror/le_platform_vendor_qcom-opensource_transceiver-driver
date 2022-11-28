@@ -32,6 +32,11 @@
 #define QSFP_LED_ON  (true)
 #define QSFP_LED_OFF (false)
 
+#define QSFP_LOS_SHIFT (8)
+#define QSFP_TX_FAULT_SHIFT (16)
+
+#define MAX_LANES 8
+
 struct qsfp_eeprom_id {
     union {
         struct sff8636_eeprom_id sff8636;
@@ -43,35 +48,35 @@ struct qsfp_eeprom_id {
 struct qsfp {
     struct device *dev;
     struct fpc *fpc;
-    struct sfp_bus *sfp_bus;
     struct i2c_adapter *i2c;
     u32 max_power_mW;
     u32 module_power_mW;
-    u32 module_t_start_up;
-    u8 state;
+    u32 lanes_state;
+    /* Stores presence LOS TX Fault TX Disable status */
+    u8 status;
     u8 port_num;
     u8 i2c_address_dev0;
     u8 i2c_address_dev1;
     bool module_flat_mem;
+    bool need_poll;
+    struct delayed_work poll;;
     u8 features;
     u8 module_power_class;
     u8 module_revision;
     u8 sm_mod_state;
-    u8 sm_mod_tries_init;
-    u8 sm_mod_tries;
     u8 sm_dev_state;
-    u8 sm_fault_retries;
-    unsigned short sm_state;
+    u8 sm_link_state;
+    u8 sm_mod_tries;
     size_t i2c_block_size;
 
     struct delayed_work timeout;
     struct mutex sm_mutex;            /* Protects state machine */
 
     struct qsfp_eeprom_id id;
-    struct qsfp_spec_ops *spec_ops;
-    bool need_poll;
-    struct delayed_work poll;
+    const struct qsfp_spec_ops *spec_ops;
 
+    struct lane* lane[MAX_LANES];
+    u8 num_lanes;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
     struct dentry *module_debugfs_dir;
@@ -82,15 +87,17 @@ struct qsfp {
 
 struct qsfp_spec_ops {
     /* called during module insert to read EEPROM */
-    int (*mod_probe)(struct qsfp *qsfp, bool report);
+    int (*mod_probe)(struct qsfp *qsfp);
     /* Disable uninterested interrupts */
     void (*disable_redundant_irq)(const struct qsfp *qsfp);
     /* Gets module current state LOS,TX Fault */
-    u8 (*get_state)(struct qsfp *qsfp);
-    /* Enable TX */
-    void (*tx_enable)(const struct qsfp *qsfp);
-    /* Disable TX */
-    void (*tx_disable)(const struct qsfp *qsfp);
+    u32 (*get_state)(struct qsfp *qsfp);
+    /* Disable TX for whole transceiver module */
+    int (*mod_tx_disable)(const struct qsfp *qsfp);
+    /* Enable TX lanewise */
+    int (*lane_tx_enable)(const struct lane *lane);
+    /* Disable TX lanewise */
+    int (*lane_tx_disable)(const struct lane *lane);
     /* Check feature like LOS,TX Fault implemented or not and
      * update features field accordingly
      */
@@ -135,17 +142,69 @@ enum {
     QSFP_F_SIM_FAR_END  = BIT(1),
 #endif
 
+    QSFP_F_PRESENT0      = BIT(0),
+    QSFP_F_PRESENT1      = BIT(1),
+    QSFP_F_PRESENT2      = BIT(2),
+    QSFP_F_PRESENT3      = BIT(3),
+    QSFP_F_PRESENT4      = BIT(4),
+    QSFP_F_PRESENT5      = BIT(5),
+    QSFP_F_PRESENT6      = BIT(6),
+    QSFP_F_PRESENT7      = BIT(7),
+    QSFP_F_PRESENT_0_7   = QSFP_F_PRESENT0 | QSFP_F_PRESENT1 |
+                           QSFP_F_PRESENT2 | QSFP_F_PRESENT3 |
+                           QSFP_F_PRESENT4 |  QSFP_F_PRESENT5 |
+                           QSFP_F_PRESENT6 |  QSFP_F_PRESENT7,
+
+    QSFP_F_LOS0          = BIT(8),
+    QSFP_F_LOS1          = BIT(9),
+    QSFP_F_LOS2          = BIT(10),
+    QSFP_F_LOS3          = BIT(11),
+    QSFP_F_LOS4          = BIT(12),
+    QSFP_F_LOS5          = BIT(13),
+    QSFP_F_LOS6          = BIT(14),
+    QSFP_F_LOS7          = BIT(15),
+    QSFP_F_LOS_0_7       = QSFP_F_LOS0 | QSFP_F_LOS1 |  QSFP_F_LOS2 |
+                           QSFP_F_LOS3 |  QSFP_F_LOS4 |  QSFP_F_LOS5 |
+                           QSFP_F_LOS6 |  QSFP_F_LOS7,
+
+    QSFP_F_TX_FAULT0     = BIT(16),
+    QSFP_F_TX_FAULT1     = BIT(17),
+    QSFP_F_TX_FAULT2     = BIT(18),
+    QSFP_F_TX_FAULT3     = BIT(19),
+    QSFP_F_TX_FAULT4     = BIT(20),
+    QSFP_F_TX_FAULT5     = BIT(21),
+    QSFP_F_TX_FAULT6     = BIT(22),
+    QSFP_F_TX_FAULT7     = BIT(23),
+    QSFP_F_TX_FAULT_0_7  = QSFP_F_TX_FAULT0 | QSFP_F_TX_FAULT1 |
+                           QSFP_F_TX_FAULT2 | QSFP_F_TX_FAULT3 |
+                           QSFP_F_TX_FAULT4 | QSFP_F_TX_FAULT5 |
+                           QSFP_F_TX_FAULT6 | QSFP_F_TX_FAULT7,
+
+    QSFP_F_TX_DISABLE0    = BIT(24),
+    QSFP_F_TX_DISABLE1    = BIT(25),
+    QSFP_F_TX_DISABLE2    = BIT(26),
+    QSFP_F_TX_DISABLE3    = BIT(27),
+    QSFP_F_TX_DISABLE4    = BIT(28),
+    QSFP_F_TX_DISABLE5    = BIT(29),
+    QSFP_F_TX_DISABLE6    = BIT(30),
+    QSFP_F_TX_DISABLE7    = BIT(31),
+    QSFP_F_TX_DISABLE_0_7 = QSFP_F_TX_DISABLE0 | QSFP_F_TX_DISABLE1 |
+                            QSFP_F_TX_DISABLE2 | QSFP_F_TX_DISABLE3 |
+                            QSFP_F_TX_DISABLE4 | QSFP_F_TX_DISABLE5 |
+                            QSFP_F_TX_DISABLE6 | QSFP_F_TX_DISABLE7,
+
     QSFP_E_INSERT = 0,
     QSFP_E_REMOVE,
     QSFP_E_DEV_ATTACH,
     QSFP_E_DEV_DETACH,
+    QSFP_E_LANE_DOWN,
     QSFP_E_DEV_DOWN,
     QSFP_E_DEV_UP,
     QSFP_E_TX_FAULT,
-    QSFP_E_TX_CLEAR,
-    QSFP_E_LOS_HIGH,
-    QSFP_E_LOS_LOW,
-    QSFP_E_TIMEOUT,
+    QSFP_E_TX_FAULT_RECOVERY,
+    QSFP_E_LOS,
+    QSFP_E_LOS_RECOVERY,
+    QSFP_E_REVISIT,
 
     QSFP_MOD_EMPTY = 0,
     QSFP_MOD_ERROR,
@@ -153,8 +212,6 @@ enum {
     QSFP_MOD_REJECT_PWR,
     QSFP_MOD_PROBE,
     QSFP_MOD_WAITDEV,
-    QSFP_MOD_HPOWER,
-    QSFP_MOD_WAITPWR,
     QSFP_MOD_PRESENT,
 
     QSFP_DEV_DETACHED = 0,
@@ -162,15 +219,9 @@ enum {
     QSFP_DEV_UP,
 
     QSFP_S_DOWN = 0,
-    QSFP_S_FAIL,
-    QSFP_S_WAIT,
-    QSFP_S_INIT,
-    QSFP_S_INIT_TX_FAULT,
-    QSFP_S_WAIT_LOS,
-    QSFP_S_LINK_UP,
+    QSFP_S_LOS,
     QSFP_S_TX_FAULT,
-    QSFP_S_REINIT,
-    QSFP_S_TX_DISABLE,
+    QSFP_S_LINK_UP,
 };
 
 enum {
@@ -178,47 +229,11 @@ enum {
     E_MAX_POWER_EXCEED,
 };
 
-/* t_start_up (SFF-8431) or t_init (SFF-8472) is the time required for a
- * non-cooled module to initialise its laser safety circuitry. We wait
- * an initial T_WAIT period before we check the tx fault to give any PHY
- * on board (for a copper SFP) time to initialise.
- */
-#define T_WAIT            msecs_to_jiffies(50)
-#define T_START_UP        msecs_to_jiffies(300)
+#define PROBE_RETRY             50
+#define PROBE_RETRY_TIME_GAP    msecs_to_jiffies(100)
+#define MOD_READY_TIME          msecs_to_jiffies(300)
 
-/* t_reset is the time required to assert the TX_DISABLE signal to reset
- * an indicated TX_FAULT.
- */
-#define T_RESET_US        10
-#define T_FAULT_RECOVER        msecs_to_jiffies(1000)
-
-/* N_FAULT_INIT is the number of recovery attempts at module initialisation
- * time. If the TX_FAULT signal is not deasserted after this number of
- * attempts at clearing it, we decide that the module is faulty.
- * N_FAULT is the same but after the module has initialised.
- */
-#define N_FAULT_INIT        5
-#define N_FAULT             5
-
-/* T_PHY_RETRY is the time interval between attempts to probe the PHY.
- */
-#define T_PHY_RETRY        msecs_to_jiffies(50)
-
-/* SFP module presence detection is poor: the three MOD DEF signals are
- * the same length on the PCB, which means it's possible for MOD DEF 0 to
- * connect before the I2C bus on MOD DEF 1/2.
- *
- * The SFF-8472 specifies t_serial ("Time from power on until module is
- * ready for data transmission over the two wire serial bus.") as 300ms.
- */
-#define T_SERIAL              msecs_to_jiffies(300)
-#define T_HPOWER_LEVEL        msecs_to_jiffies(300)
-#define T_PROBE_RETRY_INIT    msecs_to_jiffies(100)
-#define R_PROBE_RETRY_INIT    10
-#define T_PROBE_RETRY_SLOW    msecs_to_jiffies(5000)
-#define R_PROBE_RETRY_SLOW    12
-
-#define QSFP_STATE_STR_MAX_LEN (50)
+#define QSFP_STATE_STR_MAX_LEN (40)
 
 enum {
     SFF8024_CONNECTOR_FC1_COPPER = 0x02,
@@ -259,25 +274,33 @@ enum {
 };
 
 extern const struct of_device_id fpc_qsfp_of_match[];
-extern struct qsfp_spec_ops sff8636_spec_ops;
-extern struct qsfp_spec_ops cmis_spec_ops;
-extern struct qsfp_spec_ops sff8472_spec_ops;
+extern const struct qsfp_spec_ops sff8636_spec_ops;
+extern const struct qsfp_spec_ops cmis_spec_ops;
+extern const struct qsfp_spec_ops sff8472_spec_ops;
+extern const struct sfp_socket_ops lane_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
 
+extern const char *mod_identifier_to_str(u8 spec_id);
+extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
+
 extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
+extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
+extern void qsfp_sm_event(struct qsfp *qsfp, u8 event);
 extern void qsfp_check_state(struct qsfp *qsfp);
 
-extern const char *mod_identifier_to_str(u8 spec_id);
-extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
 extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
 extern int cmis_create_debugfs_files(struct qsfp *qsfp);
 extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
-extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
-extern void qsfp_sm_event(struct qsfp *qsfp, u32 event);
+
+extern void lane_sm_event(struct lane *lane, u32 event);
+extern void lane_sm_mod_remove(struct lane *lane);
+extern void lane_sm_mod_next(struct lane *lane, u8 state);
+extern void lane_sm_link_next(struct lane *lane, u8 state);
+extern void lane_sm_link_upstream_linkdown(const struct lane *lane);
 
 extern void *trx_ipc_log_buf;
 
@@ -317,7 +340,7 @@ do {\
 
 #define TRX_LOG_INFO_NODEV(fmt, args...) \
 do {\
-    pr_notice(" %s: " fmt, __func__, ## args);\
+    pr_notice("fpc-qsfp %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " %s: " fmt, __func__, ## args); \
     } \
@@ -325,7 +348,7 @@ do {\
 
 #define TRX_LOG_ERR_NODEV(fmt, args...) \
 do {\
-    pr_err(" %s: " fmt, __func__, ## args);\
+    pr_err("fpc-qsfp %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s: " fmt, __func__, ## args); \
     } \

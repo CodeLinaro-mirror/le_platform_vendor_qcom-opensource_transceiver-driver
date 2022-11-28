@@ -13,9 +13,6 @@
 #define SFF8636_POWER_CLASS_HIGH (BIT(2) | BIT(0))
 #define SFF8636_POWER_CLASS_1TO4 (BIT(0))
 
-#define SFF8636_DEVICE0 (0)
-#define SFF8636_IRQ_OFFSET (3)
-
 enum {
     SFF8636_IRQ_FLAGS                   = QSFP_ADDR(0, 0,   3),
     SFF8636_TEMPERATURE                 = QSFP_ADDR(0, 0,  22),
@@ -219,8 +216,8 @@ struct sff8636_id_stat {
 } __packed;
 
 struct sff8636_irq_flags {
-    u8 los_rx:4;
-    u8 los_tx:4;
+    u8 rx_los:4;
+    u8 tx_los:4;
 
     u8 tx_fault:4;
     u8 tx_adap_eq_fault:4;

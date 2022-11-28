@@ -4,8 +4,9 @@
  *
  */
 #include "qsfp.h"
+#include "lane.h"
 
-static int cmis_mod_probe(struct qsfp *qsfp, bool report)
+static int cmis_mod_probe(struct qsfp *qsfp)
 {
     /* QSFP module inserted - read I2C data */
     struct cmis_id_stat id_stat = {0};
@@ -15,14 +16,13 @@ static int cmis_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_read(qsfp, 0, &id_stat, sizeof(id_stat));
     if (ret < 0) {
-        if (report)
-            TRX_LOG_ERR(qsfp, "Failed to read EEPROM: %d", ret);
-        return -EAGAIN;
+        TRX_LOG_ERR(qsfp, "Failed to read EEPROM: %d", ret);
+        return ret;
     }
 
     TRX_LOG_INFO(qsfp, "id_stat id 0x%X rev 0x%X flat_mem 0x%X state 0x%X",
-               id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem,
-               id_stat.mod_state);
+                 id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem,
+                 id_stat.mod_state);
 
     /* Early setup - we need to know if this module has a page register */
     qsfp->module_flat_mem = id_stat.flat_mem;
@@ -30,9 +30,8 @@ static int cmis_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_read(qsfp, CMIS_ID, &id.cmis.base, sizeof(id.cmis.base));
     if (ret < 0) {
-        if (report)
-            TRX_LOG_ERR(qsfp, "Failed to read base EEPROM: %d", ret);
-        return -EAGAIN;
+        TRX_LOG_ERR(qsfp, "Failed to read base EEPROM: %d", ret);
+        return ret;
     }
 
     if (id.cmis.base.phys_id != id_stat.phys_id) {
@@ -58,16 +57,15 @@ static int cmis_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_read(qsfp, CMIS_ID_EXT, &id.cmis.ext, sizeof(id.cmis.ext));
     if (ret < 0) {
-        if (report)
-            TRX_LOG_ERR(qsfp, "Failed to read extended EEPROM: %d", ret);
-        return -EAGAIN;
+        TRX_LOG_ERR(qsfp, "Failed to read extended EEPROM: %d", ret);
+        return ret;
     }
 
     /* Validate the checksum over the extended structure */
     check = qsfp_check(&id.cmis.ext, sizeof(id.cmis.ext) - 1);
     if (check != id.cmis.ext.checksum) {
         TRX_LOG_ERR(qsfp, "EEPROM extended structure checksum failure: "
-                  "0x%X != 0x%X", check, id.cmis.ext.checksum);
+                    "0x%X != 0x%X", check, id.cmis.ext.checksum);
         memset(&id.cmis.ext, 0, sizeof(id.cmis.ext));
         return -EINVAL;
     }
@@ -101,115 +99,132 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     ret = qsfp_write(qsfp, CMIS_MODULE_MASKS, mod_mask, sizeof(mod_mask));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant module level "
-                           "interrupts. ret %d", ret);
+                          "interrupts. ret %d", ret);
     }
 
     ret = qsfp_write(qsfp, CMIS_PAGE10_MASKS, page10_mask,
                      sizeof(page10_mask));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
-                           "page10. ret %d", ret);
+                          "page10. ret %d", ret);
     }
 
-    ret = qsfp_write(qsfp, CMIS_PAGE12_MASKS, page12_mask, sizeof(page12_mask));
+    ret = qsfp_write(qsfp, CMIS_PAGE12_MASKS, page12_mask,
+                     sizeof(page12_mask));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
-                           "page12. ret %d", ret);
+                          "page12. ret %d", ret);
     }
 
-    ret = qsfp_write(qsfp, CMIS_PAGE13_MASKS, page13_mask, sizeof(page13_mask));
+    ret = qsfp_write(qsfp, CMIS_PAGE13_MASKS, page13_mask,
+                     sizeof(page13_mask));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
-                           "page13. ret %d", ret);
+                          "page13. ret %d", ret);
     }
 
-    ret = qsfp_write(qsfp, CMIS_PAGE17_MASKS, page17_mask, sizeof(page17_mask));
+    ret = qsfp_write(qsfp, CMIS_PAGE17_MASKS, page17_mask,
+                     sizeof(page17_mask));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
-                           "page17. ret %d", ret);
+                          "page17. ret %d", ret);
     }
 }
 
-static u8 cmis_get_state(struct qsfp *qsfp)
+static int cmis_unmask_interrupt(struct qsfp *qsfp)
 {
     int ret;
-    u8 state = 0;
+    u8 buf = 0;
+
+    ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to mask QSFP RX LOS. ret %d", ret);
+    }
+
+    ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to mask QSFP TX Failure. ret %d", ret);
+    }
+
+    return 0;
+}
+
+static int cmis_mask_interrupt(struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf = 0xFF;
+
+    ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to mask QSFP RX LOS. ret %d", ret);
+    }
+
+    ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to mask QSFP TX Failure. ret %d", ret);
+    }
+
+    return 0;
+}
+
+static u32 cmis_get_state_poll(struct qsfp *qsfp)
+{
+    int ret;
+    u8 rx_los = 0;
+    u8 tx_failure = 0;
+    u32 state = 0;
+    bool poll = false;
+
+    ret = qsfp_read(qsfp, CMIS_TX_FAILURE, &tx_failure, sizeof(tx_failure));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read TX status. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
+        return qsfp->lanes_state;
+    }
+
+    ret = qsfp_read(qsfp, CMIS_RX_LOS, &rx_los, sizeof(rx_los));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read RX LOS. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
+        return qsfp->lanes_state;
+    }
+
+    if (rx_los) {
+        state |= (rx_los << QSFP_LOS_SHIFT);
+        poll = true;
+    }
+
+    if (tx_failure) {
+        state |= (tx_failure << QSFP_TX_FAULT_SHIFT);
+        poll = true;
+    }
+
+    /* If none of flag set then unmask the interrupt */
+    if (!poll) {
+        cmis_unmask_interrupt(qsfp);
+    }
+
+    qsfp->need_poll = poll;
+
+    return state;
+}
+
+static u32 cmis_get_state_irq(struct qsfp *qsfp)
+{
+    int ret;
+    u32 state = 0;
     struct cmis_irq_flags irq_flags = {0};
     bool poll = false;
-    u8 buf_0 = 0x0;
-    u8 buf_ff = 0xFF;
-
-    ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, 1);
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
-        /* Preserve the current state */
-        return qsfp->state;
-    }
-
-    /* Before cmis module state reach ready we are facing issue of LOS
-     * register not giving appropriate status and masking of interrupt
-     * not working
-     */
-    if (irq_flags.mod_state != CMIS_MODULE_STATE_READY) {
-        qsfp->need_poll = true;
-        return qsfp->state;
-    }
-
-    if (qsfp->need_poll) {
-        u8 tx_failure = 0;
-        u8 rx_los = 0;
-
-        ret = qsfp_read(qsfp, CMIS_TX_FAILURE, &tx_failure, sizeof(tx_failure));
-        if (ret < 0) {
-            TRX_LOG_ERR(qsfp, "Failed to read TX status. ret %d", ret);
-            return qsfp->state;
-        }
-
-        ret = qsfp_read(qsfp, CMIS_RX_LOS, &rx_los, sizeof(rx_los));
-        if (ret < 0) {
-            TRX_LOG_ERR(qsfp, "Failed to read RX LOS. ret %d", ret);
-            return qsfp->state;
-        }
-
-        if (rx_los) {
-            /* Only RX LOS considered */
-            if (rx_los == 0xFF) {
-                state |= QSFP_F_LOS;
-            }
-            poll = true;
-        }
-
-        if (tx_failure) {
-            if (tx_failure == 0xFF) {
-                state |= QSFP_F_TX_FAULT;
-            }
-            poll = true;
-        }
-
-        /* If none of flag set then unmask the interrupt */
-        if (!poll) {
-            ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf_0, sizeof(buf_0));
-            if (ret < 0) {
-                TRX_LOG_ERR(qsfp, "poll Failed to unmask QSFP RX LOS. "
-                                   "ret %d", ret);
-            }
-
-            ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf_0, sizeof(buf_0));
-            if (ret < 0) {
-                TRX_LOG_ERR(qsfp, "poll Failed to unmask QSFP TX Failure. "
-                           "ret %d", ret);
-            }
-        }
-
-        qsfp->need_poll = poll;
-        return state;
-    }
 
     ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, sizeof(irq_flags));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
         /* Preserve the current state */
-        return qsfp->state;
+        return qsfp->lanes_state;
     }
 
     TRX_LOG_INFO(qsfp, "IntL %u Module state 0x%X Bank 0: page11 %u "
@@ -222,46 +237,44 @@ static u8 cmis_get_state(struct qsfp *qsfp)
         ret = qsfp_read(qsfp, CMIS_LANE_FLAGS, &b0p11, sizeof(b0p11));
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to read QSFP lane flags. ret %d", ret);
+            /* Enable poll in case of failure to retry */
+            qsfp->need_poll = true;
             /* Preserve the current state */
-            return qsfp->state;
+            return qsfp->lanes_state;
         }
 
         if (b0p11.rx_los) {
-            if (b0p11.rx_los == 0xFF) {
-                state |= QSFP_F_LOS;
-            } else {
-                TRX_LOG_INFO(qsfp, "There is LOS on few lanes which"
-                " is not reported RX LOS 0x%X", b0p11.rx_los);
-            }
+            state |= (b0p11.rx_los << QSFP_LOS_SHIFT);
             poll = true;
         }
 
         if (b0p11.tx_failure) {
-            if (b0p11.tx_failure == 0xFF) {
-                state |= QSFP_F_TX_FAULT;
-            } else if (b0p11.tx_failure != 0) {
-                TRX_LOG_INFO(qsfp, "There is TX Fault on few lanes "
-                "which is not reported 0x%X", b0p11.tx_failure);
-            }
+            state |= (b0p11.tx_failure << QSFP_TX_FAULT_SHIFT);
             poll = true;
         }
 
         /* If flag is set then mask the interrupt */
         if (poll) {
-            ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf_ff, 1);
-            if (ret < 0) {
-                TRX_LOG_ERR(qsfp, "Failed to mask QSFP RX LOS. ret %d", ret);
-            }
-
-            ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf_ff, 1);
-            if (ret < 0) {
-                TRX_LOG_ERR(qsfp, "Failed to mask QSFP TX Failure. "
-                                "ret %d", ret);
-            }
+            cmis_mask_interrupt(qsfp);
         }
 
         TRX_LOG_INFO(qsfp, "LOS RX 0x%X TX 0x%X , TX Fault 0x%X",
-                         b0p11.rx_los, b0p11.tx_los, b0p11.tx_failure);
+                     b0p11.rx_los, b0p11.tx_los, b0p11.tx_failure);
+    }
+
+    if (irq_flags.bank1) {
+        TRX_LOG_INFO(qsfp, "Bank1 not supported by the driver. 0x%X",
+                           irq_flags.bank1);
+    }
+
+    if (irq_flags.bank2) {
+        TRX_LOG_INFO(qsfp, "Bank2 not supported by the driver. 0x%X",
+                           irq_flags.bank2);
+    }
+
+    if (irq_flags.bank3) {
+        TRX_LOG_INFO(qsfp, "Bank3 not supported by the driver. 0x%X",
+                           irq_flags.bank3);
     }
 
     qsfp->need_poll = poll;
@@ -269,30 +282,116 @@ static u8 cmis_get_state(struct qsfp *qsfp)
     return state;
 }
 
-static void cmis_tx_enable(const struct qsfp *qsfp)
+static u32 cmis_get_state(struct qsfp *qsfp)
 {
-    u8 status;
     int ret;
+    struct cmis_irq_flags irq_flags = {0};
 
-    status = 0;
+    ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, 1);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
+        /* Preserve the current state */
+        return qsfp->lanes_state;
+    }
 
-    ret = qsfp_write(qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
-    if (ret < 0)
-        TRX_LOG_ERR(qsfp, "TX enable failed. ret %d", ret);
+    /* Before cmis module state reach ready we are facing issue of LOS
+     * register not giving appropriate status and masking of interrupt
+     * not working
+     */
+    if (irq_flags.mod_state != CMIS_MODULE_STATE_READY) {
+        TRX_LOG_INFO(qsfp, "Module state 0x%X\n", irq_flags.mod_state);
+        qsfp->need_poll = true;
+        return qsfp->lanes_state;
+    }
 
+    if (qsfp->need_poll) {
+        return cmis_get_state_poll(qsfp);
+    } else {
+        return cmis_get_state_irq(qsfp);
+    }
 }
 
-static void cmis_tx_disable(const struct qsfp *qsfp)
+static int cmis_mod_tx_disable(const struct qsfp *qsfp)
 {
-    u8 status;
+    u8 status = 0;
     int ret;
+
+    ret = qsfp_read(qsfp, CMIS_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read TX disable register. ret %d", ret);
+    } else if (status == 0xFF) {
+        TRX_LOG_INFO(qsfp, "TX already disabled");
+        return 0;
+    }
 
     status = 0xFF;
 
-    ret = qsfp_write(qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
-    if (ret < 0)
+    ret = qsfp_write(qsfp, CMIS_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
         TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
+    }
 
+   return ret;
+}
+
+static int cmis_lane_tx_enable(const struct lane *lane)
+{
+    u8 status = 0;
+    int ret;
+
+    ret = qsfp_read(lane->qsfp, CMIS_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
+        return ret;
+    }
+
+    if (!((status >> lane->lane_num) & 1)) {
+        TRX_LOG_INFO(lane, "TX already enabled");
+        return 0;
+    }
+
+    status &= (~(1 << lane->lane_num));
+
+    ret = qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "failed. ret %d", ret);
+    }
+
+    return ret;
+}
+
+static int cmis_lane_tx_disable(const struct lane *lane)
+{
+    u8 status = 0;
+    int ret;
+
+    ret = qsfp_read(lane->qsfp, CMIS_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
+        return ret;
+    }
+
+    if ((status >> lane->lane_num) & 1) {
+        TRX_LOG_INFO(lane, "TX already disabled");
+        return 0;
+    }
+
+    status |= (1 << lane->lane_num);
+
+    ret = qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "Failed. ret %d", ret);
+    }
+
+    return ret;
 }
 
 static int cmis_check_feature_impl(struct qsfp *qsfp)
@@ -456,7 +555,7 @@ static int cmis_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
     return 0;
 }
 
-u8 cmis_get_connector_type(const struct qsfp *qsfp)
+static u8 cmis_get_connector_type(const struct qsfp *qsfp)
 {
     return qsfp->id.cmis.base.connector;
 }
@@ -474,7 +573,7 @@ static int cmis_get_lanes_presence(const struct qsfp *qsfp,
                      sizeof(channel));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Channel register read failed, ret %d", ret);
-        return -EINVAL;
+        return ret;
     }
 
     *laneinfo = ~channel;
@@ -495,22 +594,22 @@ static int cmis_get_lane_speed(const struct qsfp *qsfp,
     u8 channel = 0;
     int ret;
 
-     ret = cmis_get_lanes_presence(qsfp, &channel);
-     if(ret != 0)
-         return ret;
+    ret = cmis_get_lanes_presence(qsfp, &channel);
+    if (ret != 0) {
+        return ret;
+    }
 
-    for(lane_cnt=0;channel;++lane_cnt)
+    for (lane_cnt=0;channel;++lane_cnt) {
         channel &= channel-1;
+    }
 
     /* Need to revisit later to check the possibilities for an 8-lane
        transceiver among those only 4 implemented. */
     if (lane_cnt == 0x04) {
         *lane_speed = TRX_LANE_SPEED_100G;
-    }
-    else if (lane_cnt == 0x08) {
+    } else if (lane_cnt == 0x08) {
         *lane_speed = TRX_LANE_SPEED_50G;
-    }
-    else {
+    } else {
         *lane_speed = TRX_LANE_SPEED_UNKNOWN;
     }
 
@@ -561,12 +660,13 @@ const char* cmis_revision_to_str(u8 mod_rev_value, char *revStr)
     return revStr;
 }
 
-struct qsfp_spec_ops cmis_spec_ops = {
+const struct qsfp_spec_ops cmis_spec_ops = {
     .mod_probe = cmis_mod_probe,
     .disable_redundant_irq = cmis_disable_redundant_irq,
     .get_state = cmis_get_state,
-    .tx_enable = cmis_tx_enable,
-    .tx_disable = cmis_tx_disable,
+    .mod_tx_disable = cmis_mod_tx_disable,
+    .lane_tx_enable = cmis_lane_tx_enable,
+    .lane_tx_disable = cmis_lane_tx_disable,
     .check_features_impl = cmis_check_feature_impl,
     .module_parse_power = cmis_module_parse_power,
     .handle_max_power_exceed = cmis_handle_max_power_exceed,

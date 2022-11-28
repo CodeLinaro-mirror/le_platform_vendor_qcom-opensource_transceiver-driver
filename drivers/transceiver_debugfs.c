@@ -3,6 +3,7 @@
  * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include "transceiver_debugfs.h"
+#include "lane.h"
 
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -595,30 +596,50 @@ void fpc_debugfs_exit(struct fpc *fpc)
 
 static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
 {
+    u8 i;
     struct qsfp *qsfp = s->private;
+    struct lane *lanei;
 
-    seq_printf(s, "Port number: %u\n", qsfp->port_num);
-    seq_printf(s, "Module state: %s\n",
-                  mod_state_to_str(qsfp->sm_mod_state));
+    /* Locking necessary to make sure all states fetched once */
+    mutex_lock(&qsfp->sm_mutex);
 
-    seq_printf(s, "Device state: %s\n",
-                  dev_state_to_str(qsfp->sm_dev_state));
-    seq_printf(s, "Main state: %s\n",
-                  sm_state_to_str(qsfp->sm_state));
+    seq_printf(s, "State description: [Module state , Upstream Device state  ,"
+                  " Link state]\n");
+    seq_printf(s, "Transceiver port-%u State: [%s  %s  %s]\n", qsfp->port_num,
+    mod_state_to_str(qsfp->sm_mod_state), dev_state_to_str(qsfp->sm_dev_state),
+    link_state_to_str(qsfp->sm_link_state));
 
-    seq_printf(s, "Module probe attempts: %d %d\n",
-                  R_PROBE_RETRY_INIT - qsfp->sm_mod_tries_init,
-                  R_PROBE_RETRY_SLOW - qsfp->sm_mod_tries);
-    seq_printf(s, "Fault recovery remaining retries: %d\n",
-                  qsfp->sm_fault_retries);
-    seq_printf(s, "Module present: %d\n", !!(qsfp->state & QSFP_F_PRESENT));
-    seq_printf(s, "LOS: %d\n", !!(qsfp->state & QSFP_F_LOS));
-    seq_printf(s, "TX Fault: %d\n", !!(qsfp->state & QSFP_F_TX_FAULT));
-    seq_printf(s, "TX Disable: %d\n", !!(qsfp->state & QSFP_F_TX_DISABLE));
-    seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
-    seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_LOS ? "LOS":"",
-               qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
-               qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+    if (qsfp->status & QSFP_F_PRESENT) {
+        seq_printf(s, "Module present: Yes\n");
+        seq_printf(s, "Module probe attempts: %d\n",
+                   PROBE_RETRY - qsfp->sm_mod_tries);
+        seq_printf(s, "LOS: %d\n", !!(qsfp->status & QSFP_F_LOS));
+        seq_printf(s, "TX Fault: %d\n", !!(qsfp->status & QSFP_F_TX_FAULT));
+        seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
+        seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_LOS ? "LOS":"",
+                   qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
+                   qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+    } else {
+        seq_printf(s, "Module present: No\n");
+    }
+
+    for (i = 0 ; i < qsfp->num_lanes; i++) {
+        lanei = qsfp->lane[i];
+
+        seq_printf(s, "\nLane%u State: [%s  %s  %s]\n",  i,
+                   mod_state_to_str(lanei->sm_mod_state),
+                   dev_state_to_str(lanei->sm_dev_state),
+                   link_state_to_str(lanei->sm_link_state));
+
+        if (lanei->status & QSFP_F_PRESENT) {
+            seq_printf(s, "Lane present: Yes\n");
+            seq_printf(s, "LOS: %d\n", !!(lanei->status & QSFP_F_LOS));
+            seq_printf(s, "TX Fault: %d\n", !!(lanei->status & QSFP_F_TX_FAULT));
+            seq_printf(s, "TX Disable: %d\n", !!(lanei->status & QSFP_F_TX_DISABLE));
+        } else {
+            seq_printf(s, "Lane present: No\n");
+        }
+    }
 
     if (qsfp->sim & QSFP_F_SIM_REMOVE) {
         seq_printf(s, "\nSimulation Remove: Yes\n");
@@ -627,6 +648,8 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
     if (qsfp->sim & QSFP_F_SIM_FAR_END) {
         seq_printf(s, "\nSimulation Far end: Yes\n");
     }
+
+    mutex_unlock(&qsfp->sm_mutex);
 
     return 0;
 }
@@ -1628,7 +1651,7 @@ static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
 
     vcc_ad = be16_to_cpu(svcc_val & 0XFFFF);
     slope = be16_to_cpu(vcc_const->cal_v_slope);
-    offset = be16_to_cpu(vcc_const->cal_v_slope);
+    offset = be16_to_cpu(vcc_const->cal_v_offset);
 
     vcc_val = DIV_ROUND_CLOSEST(vcc_ad * slope, 256) + offset;
 
@@ -2103,6 +2126,11 @@ int module_debugfs_init(struct qsfp *qsfp)
 
 void module_debugfs_exit(struct qsfp *qsfp)
 {
+    if (!qsfp->fpc) {
+        TRX_LOG_ERR(qsfp, "fpc is NULL");
+        return;
+    }
+
     if(!qsfp->module_debugfs_dir || !qsfp->debugfs_dir ||
        !qsfp->fpc->debugfs_dir || !transceiver_debugfs_dir)
     {
@@ -2152,10 +2180,12 @@ static ssize_t qsfp_simulation_read(struct file *file, char __user *ubuf,
 static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
                                      size_t count, loff_t *ppos)
 {
+    u8 i;
     ssize_t ret;
     int ret1;
     char request[SIM_REQ_MAX] = {0};
     struct qsfp *qsfp = file->f_inode->i_private;
+    struct lane *lanei;
 
     ret = simple_write_to_buffer(request, SIM_REQ_MAX - 1, ppos, buf, count);
     if (ret < 0) {
@@ -2165,7 +2195,7 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
 
     if (!strncmp(request, SIM_INSERT, sizeof(SIM_INSERT))) {
         /* Check whether Transceiver module state present or not */
-        if (qsfp->state & QSFP_F_PRESENT) {
+        if (qsfp->status & QSFP_F_PRESENT) {
             TRX_LOG_ERR(qsfp, "Simulated insert rejected as module already"
                               " present");
             return ret;
@@ -2193,7 +2223,7 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
     }
 
     if (!strncmp(request, SIM_REMOVE, sizeof(SIM_REMOVE))) {
-        if (!(qsfp->state & QSFP_F_PRESENT)) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
             TRX_LOG_ERR(qsfp, "Simulated remove rejected as module not present");
             return ret;
         }
@@ -2207,13 +2237,13 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
     }
 
     if (!strncmp(request, SIM_FAR_END_INSERT, sizeof(SIM_FAR_END_INSERT))) {
-        if (!(qsfp->state & QSFP_F_PRESENT)) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
             TRX_LOG_ERR(qsfp, "Simulated far_end_insert rejected as"
                               " module not present");
             return ret;
         }
 
-        if (!(qsfp->state & QSFP_F_LOS)) {
+        if (!(qsfp->status & QSFP_F_LOS)) {
             TRX_LOG_ERR(qsfp, "Simulated far_end_insert rejected as far end "
                               "already connected");
             return ret;
@@ -2221,26 +2251,40 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
 
         qsfp->need_poll = false;
         cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
         qsfp->sim |= QSFP_F_SIM_FAR_END;
 
-        qsfp->state &= (~QSFP_F_LOS);
-        rtnl_lock();
-        qsfp_sm_event(qsfp, QSFP_E_LOS_LOW);
-        rtnl_unlock();
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status &= (~QSFP_F_LOS);
+                lane_sm_event(lanei, QSFP_E_LOS_RECOVERY);
+            }
+        }
+
+        qsfp->status &= (~QSFP_F_LOS);
+        qsfp_sm_event(qsfp, QSFP_E_LOS_RECOVERY);
 
         TRX_LOG_INFO(qsfp, "---------- SIMULATED INSERT FAR END ----------");
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
 
         return ret;
     }
 
     if (!strncmp(request, SIM_FAR_END_REMOVE, sizeof(SIM_FAR_END_REMOVE))) {
-        if (!(qsfp->state & QSFP_F_PRESENT)) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
             TRX_LOG_ERR(qsfp, "Simulated far_end_remove rejected as"
                               " module not present");
             return ret;
         }
 
-        if (qsfp->state & QSFP_F_LOS) {
+        if (qsfp->status & QSFP_F_LOS) {
             TRX_LOG_ERR(qsfp, "Simulated far_end_remove rejected as far end "
                               "not connected");
             return ret;
@@ -2248,26 +2292,40 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
 
         qsfp->need_poll = false;
         cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
         qsfp->sim |= QSFP_F_SIM_FAR_END;
 
-        qsfp->state |= QSFP_F_LOS;
-        rtnl_lock();
-        qsfp_sm_event(qsfp, QSFP_E_LOS_HIGH);
-        rtnl_unlock();
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status |= QSFP_F_LOS;
+                lane_sm_event(lanei, QSFP_E_LOS);
+            }
+        }
+
+        qsfp->status |= QSFP_F_LOS;
+        qsfp_sm_event(qsfp, QSFP_E_LOS);
 
         TRX_LOG_INFO(qsfp, "----------- SIMULATED REMOVE FAR END -----------");
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
 
         return ret;
     }
 
     if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT))) {
-        if (!(qsfp->state & QSFP_F_PRESENT)) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
             TRX_LOG_ERR(qsfp, "Simulated tx_fault rejected as"
                               " module not present");
             return ret;
         }
 
-        if (qsfp->state & QSFP_F_TX_FAULT) {
+        if (qsfp->status & QSFP_F_TX_FAULT) {
             TRX_LOG_ERR(qsfp, "Simulated tx_fault rejected as module already "
                               "in tx fault state");
             return ret;
@@ -2275,26 +2333,40 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
 
         qsfp->need_poll = false;
         cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
         qsfp->sim |= QSFP_F_SIM_FAR_END;
 
-        qsfp->state |= QSFP_F_TX_FAULT;
-        rtnl_lock();
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status |= QSFP_F_TX_FAULT;
+                lane_sm_event(lanei, QSFP_E_TX_FAULT);
+            }
+        }
+
+        qsfp->status |= QSFP_F_TX_FAULT;
         qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
-        rtnl_unlock();
 
         TRX_LOG_INFO(qsfp, "----------- SIMULATED TX FAULT -----------");
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
 
         return ret;
     }
 
     if (!strncmp(request, SIM_TX_FAULT_RECOVER, sizeof(SIM_TX_FAULT_RECOVER))) {
-        if (!(qsfp->state & QSFP_F_PRESENT)) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
             TRX_LOG_ERR(qsfp, "Simulated tx_fault_recover rejected as"
                               " module not present");
             return ret;
         }
 
-        if (!(qsfp->state & QSFP_F_TX_FAULT)) {
+        if (!(qsfp->status & QSFP_F_TX_FAULT)) {
             TRX_LOG_ERR(qsfp, "Simulated tx_fault_recover rejected as module "
                               "not in tx fault state");
             return ret;
@@ -2302,14 +2374,28 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
 
         qsfp->need_poll = false;
         cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
         qsfp->sim |= QSFP_F_SIM_FAR_END;
 
-        qsfp->state &= (~QSFP_F_TX_FAULT);
-        rtnl_lock();
-        qsfp_sm_event(qsfp, QSFP_E_TX_CLEAR);
-        rtnl_unlock();
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status &= (~QSFP_F_TX_FAULT);
+                lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
+            }
+        }
 
         TRX_LOG_INFO(qsfp, "--------- SIMULATED TX FAULT RECOVERY ---------");
+
+        qsfp->status &= (~QSFP_F_TX_FAULT);
+        qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
 
         return ret;
     }
@@ -2447,6 +2533,11 @@ failed_trx_debugfs_dir:
 
 void qsfp_debugfs_exit(struct qsfp *qsfp)
 {
+    if (!qsfp->fpc) {
+        TRX_LOG_ERR(qsfp, "fpc is NULL");
+        return;
+    }
+
     if(!qsfp->debugfs_dir || !qsfp->fpc->debugfs_dir ||
        !transceiver_debugfs_dir)
     {

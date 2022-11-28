@@ -1,0 +1,508 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
+ * http://git.armlinux.org.uk/cgit/linux-arm.git/tree/drivers/
+ * net/phy/sfp.c?h=cex7
+ *
+ */
+
+#include "lane.h"
+#include "qsfp.h"
+
+void lane_sm_link_next(struct lane *lane, u8 state)
+{
+    lane->sm_link_state = state;
+}
+
+void lane_sm_mod_next(struct lane *lane, u8 state)
+{
+    lane->sm_mod_state = state;
+}
+
+void lane_sm_link_upstream_linkdown(const struct lane *lane)
+{
+    sfp_link_down(lane->sfp_bus);
+    TRX_LOG_INFO(lane, "sfp_link_down upstream ops called");
+}
+
+static int lane_tx_enable(struct lane *lane)
+{
+    int ret;
+
+    if (!(lane->qsfp->features & QSFP_F_TX_DISABLE)) {
+        TRX_LOG_INFO(lane, "TX Disable not implemented");
+        return 0;
+    }
+
+    TRX_LOG_INFO(lane, "TX Enable: %s -> Enable",
+               lane->status & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
+
+    ret = lane->qsfp->spec_ops->lane_tx_enable(lane);
+    if (ret < 0) {
+        return ret;
+    }
+
+    lane->status &= ~QSFP_F_TX_DISABLE;
+
+    return 0;
+}
+
+static int lane_tx_disable(struct lane *lane)
+{
+    int ret;
+
+    if (!(lane->qsfp->features & QSFP_F_TX_DISABLE)) {
+        TRX_LOG_INFO(lane, "TX Disable not implemented");
+        return 0;
+    }
+
+    TRX_LOG_INFO(lane, "TX Disable %s -> Disable",
+               lane->status & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
+
+    ret = lane->qsfp->spec_ops->lane_tx_disable(lane);
+    if (ret < 0) {
+        return ret;
+    }
+
+    lane->status |= QSFP_F_TX_DISABLE;
+
+    return 0;
+}
+
+static void lane_sm_link_linkup(struct lane *lane)
+{
+    sfp_link_up(lane->sfp_bus);
+    TRX_LOG_INFO(lane, "sfp_link_up upstream ops called");
+    lane_sm_link_next(lane, QSFP_S_LINK_UP);
+}
+
+static void lane_sm_link_check_los(struct lane *lane)
+{
+    if (lane->status & QSFP_F_LOS) {
+        lane_sm_link_next(lane, QSFP_S_LOS);
+    } else {
+        lane_sm_link_linkup(lane);
+    }
+}
+
+/* This state machine tracks the upstream's state */
+static void lane_sm_device(struct lane *lane, u32 event)
+{
+    switch (lane->sm_dev_state) {
+    default:
+        if (event == QSFP_E_DEV_ATTACH) {
+            lane->sm_dev_state = QSFP_DEV_DOWN;
+        }
+
+        break;
+
+    case QSFP_DEV_DOWN:
+        if (event == QSFP_E_DEV_DETACH) {
+            lane->sm_dev_state = QSFP_DEV_DETACHED;
+        } else if (event == QSFP_E_DEV_UP) {
+            lane->sm_dev_state = QSFP_DEV_UP;
+        }
+
+        break;
+
+    case QSFP_DEV_UP:
+        if (event == QSFP_E_DEV_DETACH) {
+            lane->sm_dev_state = QSFP_DEV_DETACHED;
+        } else if (event == QSFP_E_DEV_DOWN) {
+            lane->sm_dev_state = QSFP_DEV_DOWN;
+        }
+
+        break;
+    }
+}
+
+void lane_sm_mod_remove(struct lane *lane)
+{
+    /* Upstream remove no need to be called in case module state in WaitDev */
+    if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
+        /* This upstream linkdown can be removed after implementing custom
+         * module remove for Ethernet driver as sfp_module_remove() not
+         * reaching ethernet driver due to phylink framework
+         */
+        lane_sm_link_upstream_linkdown(lane);
+        sfp_module_remove(lane->sfp_bus);
+        TRX_LOG_INFO(lane, "sfp_module_remove upstream ops called");
+    }
+
+    lane->status = 0;
+}
+
+static void lane_sm_mod_insert(struct lane *lane)
+{
+    int ret;
+
+    /* Report the module insertion to the upstream device */
+    ret = sfp_module_insert(lane->sfp_bus,
+                           (const struct sfp_eeprom_id*)&lane->qsfp->id);
+    if (ret < 0) {
+        u8 *spec_id;
+        spec_id = (u8*)&lane->qsfp->id;
+        if (*spec_id == SFF8024_ID_SFP) {
+            TRX_LOG_ERR(lane, "sfp_module_insert upstream ops failed. ret %d",
+                              ret);
+            lane_sm_mod_next(lane, QSFP_MOD_ERROR);
+            return;
+        } else {
+            TRX_LOG_INFO(lane, "Ignore sfp_module_insert upstream"
+                               " ops error. ret %d", ret);
+        }
+    } else {
+        TRX_LOG_INFO(lane, "sfp_module_insert upstream ops successful");
+    }
+
+    lane_sm_mod_next(lane, QSFP_MOD_PRESENT);
+}
+
+/* This state machine tracks the insert/remove state of the module, probes
+ * the on-board EEPROM, and sets up the power level.
+ */
+static void lane_sm_module(struct lane *lane, u32 event)
+{
+    /* Handle remove event globally, it resets this state machine */
+    if (event == QSFP_E_REMOVE) {
+        lane_sm_mod_remove(lane);
+        lane_sm_mod_next(lane, QSFP_MOD_EMPTY);
+        return;
+    }
+
+    switch (lane->sm_mod_state) {
+    case QSFP_MOD_EMPTY:
+        if (event == QSFP_E_INSERT) {
+            /* Ensure that the device is attached before proceeding */
+            if (lane->sm_dev_state < QSFP_DEV_DOWN) {
+                lane_sm_mod_next(lane, QSFP_MOD_WAITDEV);
+            } else {
+                lane_sm_mod_insert(lane);
+            }
+        }
+        break;
+
+    case QSFP_MOD_WAITDEV:
+        if (event == QSFP_E_DEV_ATTACH) {
+            lane_sm_mod_insert(lane);
+        }
+
+        break;
+
+    case QSFP_MOD_PRESENT:
+        if (event == QSFP_E_DEV_DETACH) {
+            lane_sm_mod_next(lane, QSFP_MOD_WAITDEV);
+        }
+
+        break;
+
+    case QSFP_MOD_ERROR:
+        break;
+    }
+}
+
+static void lane_sm_link_linkdown(struct lane *lane)
+{
+    int ret;
+
+    ret = lane_tx_disable(lane);
+    if (ret < 0) {
+        /* TX disable failure not considered fatal */
+        TRX_LOG_ERR(lane, "TX Disable failed. ret %d", ret);
+    }
+
+    lane_sm_link_next(lane, QSFP_S_DOWN);
+}
+
+static void lane_sm_link_check_linkup(struct lane *lane)
+{
+    int ret;
+
+    ret = lane_tx_enable(lane);
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "TX Enable failed. ret %d", ret);
+        lane_sm_mod_next(lane, QSFP_MOD_ERROR);
+        return;
+    }
+
+    if (lane->status & QSFP_F_TX_FAULT) {
+        lane_sm_link_next(lane, QSFP_S_TX_FAULT);
+    } else {
+        lane_sm_link_check_los(lane);
+    }
+}
+
+static void lane_sm_link(struct lane *lane, u32 event)
+{
+    /* The main state machine */
+    switch (lane->sm_link_state) {
+    case QSFP_S_DOWN:
+        if (event == QSFP_E_INSERT) {
+            /* if device is ifconfig up then only try to make it up */
+            if (lane->sm_dev_state == QSFP_DEV_UP) {
+                lane_sm_link_check_linkup(lane);
+            }
+        } else if (event == QSFP_E_DEV_UP) {
+            /* if module present then only try to make it up */
+            if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
+                lane_sm_link_check_linkup(lane);
+            }
+        }
+
+        break;
+
+    case QSFP_S_LOS:
+        if (event == QSFP_E_TX_FAULT) {
+            lane_sm_link_next(lane, QSFP_S_TX_FAULT);
+        } else if (event == QSFP_E_LOS_RECOVERY) {
+            TRX_LOG_INFO(lane, "LOS recovered");
+            lane_sm_link_linkup(lane);
+        } else if (event == QSFP_E_REMOVE) {
+            lane_sm_link_next(lane, QSFP_S_DOWN);
+        } else if (event == QSFP_E_DEV_DOWN) {
+            lane_sm_link_linkdown(lane);
+        }
+
+        break;
+
+    case QSFP_S_TX_FAULT:
+        if (event == QSFP_E_TX_FAULT_RECOVERY) {
+            TRX_LOG_INFO(lane, "TX Fault recovered");
+            lane_sm_link_check_los(lane);
+        } else if (event == QSFP_E_REMOVE) {
+            lane_sm_link_next(lane, QSFP_S_DOWN);
+        } else if (event == QSFP_E_DEV_DOWN) {
+            lane_sm_link_linkdown(lane);
+        }
+
+        break;
+
+    case QSFP_S_LINK_UP:
+        if (event == QSFP_E_TX_FAULT) {
+            lane_sm_link_upstream_linkdown(lane);
+            lane_sm_link_next(lane, QSFP_S_TX_FAULT);
+        } else if (event == QSFP_E_LOS) {
+            lane_sm_link_upstream_linkdown(lane);
+            lane_sm_link_next(lane, QSFP_S_LOS);
+        } else if (event == QSFP_E_REMOVE) {
+            lane_sm_link_upstream_linkdown(lane);
+            lane_sm_link_next(lane, QSFP_S_DOWN);
+        } else if (event == QSFP_E_DEV_DOWN) {
+            /* calling lane_sm_link_upstream_linkdown() is not needed here as
+             * dev down is internal event
+             */
+            lane_sm_link_linkdown(lane);
+        }
+
+        break;
+    }
+}
+
+void lane_sm_event(struct lane *lane, u32 event)
+{
+    TRX_LOG_INFO(lane, "Enter [%7s:%8s:%8s]   Event: %s",
+                       mod_state_to_str(lane->sm_mod_state),
+                       dev_state_to_str(lane->sm_dev_state),
+                       link_state_to_str(lane->sm_link_state),
+                       event_to_str(event));
+
+    lane_sm_device(lane, event);
+    lane_sm_module(lane, event);
+    lane_sm_link(lane, event);
+
+    TRX_LOG_INFO(lane, "Exit  [%7s:%8s:%8s]",
+                       mod_state_to_str(lane->sm_mod_state),
+                       dev_state_to_str(lane->sm_dev_state),
+                       link_state_to_str(lane->sm_link_state));
+
+}
+
+static void lane_attach(struct sfp *sfp)
+{
+    struct lane *lane = (struct lane*)sfp;
+    struct qsfp *qsfp = lane->qsfp;
+
+    if (!qsfp) {
+        TRX_LOG_ERR(lane, "qsfp is NULL");
+        return;
+    }
+
+    /* rtnl_lock should not taken as it is already acquired by
+     * phylink before calling this callback function
+     */
+    mutex_lock(&qsfp->sm_mutex);
+
+    lane_sm_event(lane, QSFP_E_DEV_ATTACH);
+
+    qsfp_attach(lane);
+
+    mutex_unlock(&qsfp->sm_mutex);
+}
+
+static void lane_detach(struct sfp *sfp)
+{
+    struct lane *lane = (struct lane*)sfp;
+    struct qsfp *qsfp = lane->qsfp;
+
+    if (!qsfp) {
+        TRX_LOG_ERR(lane, "qsfp is NULL");
+        return;
+    }
+
+    /* rtnl_lock should not taken as it is already acquired by
+     * phylink before calling this callback function
+     */
+    mutex_lock(&qsfp->sm_mutex);
+
+    lane_sm_event(lane, QSFP_E_DEV_DETACH);
+
+    qsfp_detach(lane);
+
+    mutex_unlock(&qsfp->sm_mutex);
+}
+
+/* Called during ifconfig up */
+static void lane_start(struct sfp *sfp)
+{
+    struct lane *lane = (struct lane*)sfp;
+    struct qsfp *qsfp = lane->qsfp;
+
+    if (!qsfp) {
+        TRX_LOG_ERR(lane, "qsfp is NULL");
+        return;
+    }
+
+    /* rtnl_lock should not taken as it is already acquired by
+     * phylink before calling this callback function
+     */
+    mutex_lock(&qsfp->sm_mutex);
+
+    lane_sm_event(lane, QSFP_E_DEV_UP);
+
+    qsfp_start(lane);
+
+    mutex_unlock(&qsfp->sm_mutex);
+}
+
+/* Called during ifconfig down */
+static void lane_stop(struct sfp *sfp)
+{
+    struct lane *lane = (struct lane*)sfp;
+    struct qsfp *qsfp = lane->qsfp;
+
+    if (!qsfp) {
+        TRX_LOG_ERR(lane, "qsfp is NULL");
+        return;
+    }
+
+    /* rtnl_lock should not taken as it is already acquired by
+     * phylink before calling this callback function
+     */
+    mutex_lock(&qsfp->sm_mutex);
+
+    lane_sm_event(lane, QSFP_E_DEV_DOWN);
+
+    qsfp_stop(lane);
+
+    mutex_unlock(&qsfp->sm_mutex);
+}
+
+const struct sfp_socket_ops lane_ops = {
+    .attach = lane_attach,
+    .detach = lane_detach,
+    .start = lane_start,
+    .stop = lane_stop,
+    .module_info = qsfp_module_info,
+    .module_eeprom = qsfp_module_eeprom,
+    .module_eeprom_by_page = qsfp_module_eeprom_by_page,
+};
+
+static struct lane *lane_alloc(struct device *dev)
+{
+    struct lane *lane;
+
+    lane = kzalloc(sizeof(*lane), GFP_KERNEL);
+    if (!lane) {
+        return ERR_PTR(-ENOMEM);
+    }
+
+    lane->dev = dev;
+
+    return lane;
+}
+
+static void lane_cleanup(void *data)
+{
+    struct lane *lane = data;
+
+    TRX_LOG_INFO(lane, "");
+
+    kfree(lane);
+}
+
+int lane_probe(struct platform_device *pdev)
+{
+    struct device_node *node = pdev->dev.of_node;
+    const struct of_device_id *id;
+    struct lane *lane;
+    int ret;
+
+    lane = lane_alloc(&pdev->dev);
+    if (IS_ERR(lane)) {
+        TRX_LOG_ERR(&pdev, "lane_alloc failed");
+        return PTR_ERR(lane);
+    }
+
+    platform_set_drvdata(pdev, lane);
+
+    ret = devm_add_action(lane->dev, lane_cleanup, lane);
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "devm_add_action failed. ret %d", ret);
+        lane_cleanup(lane);
+        return ret;
+    }
+
+    id = of_match_node(fpc_qsfp_of_match, node);
+    if (WARN_ON(!id)) {
+        TRX_LOG_ERR(lane, "Node match id not found");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+int lane_remove(struct platform_device *pdev)
+{
+    struct lane *lane = platform_get_drvdata(pdev);
+    struct qsfp *qsfp = lane->qsfp;
+
+    TRX_LOG_INFO(lane, "");
+
+    if (!qsfp) {
+        TRX_LOG_INFO(lane, "qsfp is NULL");
+
+        rtnl_lock();
+        lane->status &= (~QSFP_F_PRESENT);
+        lane_sm_event(lane, QSFP_E_REMOVE);
+        rtnl_unlock();
+
+        sfp_unregister_socket(lane->sfp_bus);
+
+        return 0;
+    }
+
+    rtnl_lock();
+    mutex_lock(&qsfp->sm_mutex);
+
+    lane->status &= (~QSFP_F_PRESENT);
+    lane_sm_event(lane, QSFP_E_REMOVE);
+    qsfp->lane[lane->lane_num] = NULL;
+
+    mutex_unlock(&qsfp->sm_mutex);
+    rtnl_unlock();
+
+    sfp_unregister_socket(lane->sfp_bus);
+
+    return 0;
+}

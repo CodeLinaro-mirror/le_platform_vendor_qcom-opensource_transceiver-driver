@@ -8,12 +8,8 @@
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
-#include <linux/jiffies.h>
 #include <linux/module.h>
-#include <linux/mutex.h>
 #include <linux/platform_device.h>
-#include <linux/delay.h>
-
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 #include <linux/debugfs.h>
@@ -87,6 +83,13 @@ enum {
    QSFP_NOT_PRESENT,
 };
 
+enum {
+    QSFP_NONE,
+    FPC402,
+    QSFP_PORT,
+    QSFP_LANE,
+};
+
 struct fpc {
     struct qsfp *qsfp[FPC_MAX_PORTS];
     struct i2c_adapter *i2c;
@@ -104,7 +107,9 @@ struct fpc {
 extern int qsfp_probe(struct platform_device *pdev);
 extern int qsfp_remove(struct platform_device *pdev);
 extern void qsfp_shutdown(struct platform_device *pdev);
-extern void qsfp_check_state(struct qsfp *qsfp);
+extern int lane_probe(struct platform_device *pdev);
+extern int lane_remove(struct platform_device *pdev);
+extern void lane_shutdown(struct platform_device *pdev);
 extern void qsfp_module_insert_irq(struct qsfp *qsfp);
 extern void qsfp_module_remove_irq(struct qsfp *qsfp);
 extern void qsfp_irq(struct qsfp *qsfp);

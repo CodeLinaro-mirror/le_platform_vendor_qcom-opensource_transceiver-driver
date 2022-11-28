@@ -5,6 +5,7 @@
 
 #include "trx_sysfs.h"
 #include "fpc_led.h"
+#include "lane.h"
 
 #define MAX_SYSFS_TRX_FILE_LENGTH (1024)
 
@@ -14,16 +15,68 @@
 static ssize_t trx_state_info_show(struct device *dev,
                     struct device_attribute *attr, char *buf)
 {
-    struct qsfp *qsfp= dev_get_drvdata(dev);
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    struct lane *lanei;
+    ssize_t ret;
+    u8 i;
 
-    return scnprintf(buf, PAGE_SIZE, "Port number: %u\nModule state: %s\n"
-                                     "Device state: %s\nMain state: %s\n"
-                                     "Module present: %d\n",
-                                     qsfp->port_num,
-                                     mod_state_to_str(qsfp->sm_mod_state),
-                                     dev_state_to_str(qsfp->sm_dev_state),
-                                     sm_state_to_str(qsfp->sm_state),
-                                     !!(qsfp->state & QSFP_F_PRESENT));
+    /* Locking necessary to make sure all states fetched once */
+    mutex_lock(&qsfp->sm_mutex);
+
+    ret = scnprintf(buf, PAGE_SIZE, "State description: [Module state , "
+    "Upstream Device state  , Link state]\nTransceiver port-%u State: [%s  %s"
+    "  %s]\n", qsfp->port_num,  mod_state_to_str(qsfp->sm_mod_state),
+    dev_state_to_str(qsfp->sm_dev_state),
+    link_state_to_str(qsfp->sm_link_state));
+
+    if (qsfp->status & QSFP_F_PRESENT) {
+        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: Yes\n"
+               "Module probe attempts: %d\nLOS: %d\nTX Fault: %d\nPoll status:"
+               " %s\nFeatures: %s %s %s\n", PROBE_RETRY - qsfp->sm_mod_tries,
+               !!(qsfp->status & QSFP_F_LOS),
+               !!(qsfp->status & QSFP_F_TX_FAULT),
+               qsfp->need_poll ? "Yes" : "No",
+               qsfp->features & QSFP_F_LOS ? "LOS":"",
+               qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
+               qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+
+    } else {
+        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: No\n");
+    }
+
+    for (i = 0 ; i < qsfp->num_lanes; i++) {
+        lanei = qsfp->lane[i];
+
+        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nLane%u State: [%s  %s"
+               "  %s]\n", i, mod_state_to_str(lanei->sm_mod_state),
+               dev_state_to_str(lanei->sm_dev_state),
+               link_state_to_str(lanei->sm_link_state));
+
+        if (lanei->status & QSFP_F_PRESENT) {
+            ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: Yes\n"
+                   "LOS: %d\nTX Fault: %d\nTX Disable: %d\n",
+                   !!(lanei->status & QSFP_F_LOS),
+                   !!(lanei->status & QSFP_F_TX_FAULT),
+                   !!(lanei->status & QSFP_F_TX_DISABLE));
+
+        } else {
+            ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: No\n");
+        }
+    }
+
+    if (qsfp->sim & QSFP_F_SIM_REMOVE) {
+        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Remove: "
+                                                     "Yes\n");
+    }
+
+    if (qsfp->sim & QSFP_F_SIM_FAR_END) {
+        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Far end: "
+                                                     "Yes\n");
+    }
+
+    mutex_unlock(&qsfp->sm_mutex);
+
+    return ret;
 }
 
 /* Function to show LED ON/OFF status from the FPC402 mode select register

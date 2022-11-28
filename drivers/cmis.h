@@ -269,6 +269,7 @@ struct cmis_bank0_page11 {
     u8 tx_output_status;
 
     u8 dp_state_changed;
+    /* byte 86 */
     u8 tx_failure;
     u8 tx_los;
     u8 tx_cdr_lol;
@@ -284,6 +285,7 @@ struct cmis_bank0_page11 {
     u8 tx_bias_high_warn;
     u8 tx_bias_low_warn;
 
+    /* byte 98 */
     u8 rx_los;
     u8 rx_cdr_lol;
     u8 rx_power_high_alarm;
