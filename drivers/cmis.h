@@ -333,6 +333,7 @@ enum {
     CMIS_ID                          = CMIS_ADDR(0, 128),
     CMIS_POWER_CLASS                 = CMIS_ADDR(0, 200),
     CMIS_MODULE_CONTROLS             = CMIS_ADDR(0,  26),
+    CMIS_LANE_INFO                   = CMIS_ADDR(0, 210),
 
     CMIS_ID_EXT                      = CMIS_ADDR(1, 130),
 

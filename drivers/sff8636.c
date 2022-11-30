@@ -513,9 +513,199 @@ void sff8636_irq_status_prefetch_start(const struct qsfp *qsfp)
     SFF8636_IRQ_PREFETCH_LEN, SFF8636_PREFETCH_PERIOD);
 }
 
+/*
+ * Function to get link speed from the linkcodes.
+ */
+static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
+{
+    switch (mod_link_codes) {
+    /* Speed unknown */
+    case 0x00:
+    /*  400GBPS not supported by sff8636 */
+    case 0x3F:
+    case 0x47 ... 0x49:
+    case 0x4B ... 0x4C:
+
+    /* Assume that SFF-8636 does not support 50GBPS and that this
+       feature should be revisited if such a transceiver is discovered. */
+    case 0x0C ... 0x0D:
+    case 0x4A:
+    case 0x45:
+    case 0x39:
+
+    /* Assume that SFF-8636 does not support 25GBPS and that this feature
+       should be revisited if such a transceiver is discovered. */
+    case 0x38:
+
+    /*  Assume that SFF-8636 does not support 5GBPS and that this feature
+       should be revisited if such a transceiver is discovered. */
+    case 0x1D:
+
+    /*  Assume that SFF-8636 does not support 2.5GBPS and that this feature
+       should be revisited if such a transceiver is discovered. */
+    case 0x1E:
+    default:
+        return TRX_LANE_SPEED_UNKNOWN;
+
+    /* Total transceiver speed supported was 200 GBPS. As per SFF-8636,
+       the supported number of lanes was 4, so each lane supports 50 GBPS.*/
+    case 0x40 ... 0x44:
+    case 0x46:
+        return TRX_LANE_SPEED_50G;
+
+    /* Total transceiver speed supported was 100 GBPS. As per SFF-8636,
+       the supported number of lanes was 4, so each lane supports 25 GBPS. */
+    case 0x01 ... 0x08:
+    case 0x0B:
+    case 0x16 ... 0x1B:
+    case 0x20 ... 0x21:
+    case 0x25 ... 0x2F:
+    case 0x34 ... 0x36:
+    case 0x3A:
+        return TRX_LANE_SPEED_25G;
+
+    /* Total transceiver speed supported was 40 GBPS. As per SFF-8636,
+       the supported number of lanes was 4, so each lane supports 10 GBPS. */
+    case 0x10 ... 0x12:
+    case 0x1F:
+        return TRX_LANE_SPEED_10G;
+    /* 0x13 to 0x15 G959.1 profiles need to confirm the speed */
+    /* Total transceiver speed supported was 10 GBPS. As per SFF-8636,
+       the supported number of lanes was 4, so each lane supports 2.5 GBPS. */
+    case 0x1C:
+    case 0x37:
+        return TRX_LANE_SPEED_2_5G;
+
+    /* 0x22 to 0x24 are of type 4WDM need to check the speed capability*/
+    /* 0x30 to 0x33 are of type active Copper or Optical need to check
+        the speed capability */
+    /* 0x3B-0x3E was Reserved need to be update in future.*/
+    /* 0x4D-0x7E was Reserved need to be update in future.*/
+    /* 0x82-0xFF Reserved was Reserved need to be update in future.*/
+    /* case 0x7F 0x80 0x81 speeds are not clear need to be update in future.*/
+    }
+
+}
+
 u8 sff8636_get_connector_type(const struct qsfp *qsfp)
 {
     return qsfp->id.sff8636.base.connector;
+}
+
+/*
+ * Function to get the lane supported speed using linkcodes page 00h, byte 192,
+ * or ethernet compliance codes page 00h, byte 131.
+ */
+static int sff8636_get_lane_speed(const struct qsfp *qsfp,
+                                  trx_lane_speed* lane_speed)
+{
+    const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
+
+    /* Check ethernet compliance codes page 00h byte 131 */
+    if (id->base.ecom_extended == 0x1) {
+        *lane_speed = sff8024_link_codes_to_speed(id->ext.link_codes);
+    }
+    else if ((id->base.e10g_base_lrm == 0x1) ||
+             (id->base.e10g_base_lr == 0x1)  ||
+             (id->base.e10g_base_sr == 0x1)) {
+         *lane_speed = TRX_LANE_SPEED_2_5G;
+    }
+    else if ((id->base.e40g_base_cr4 == 0x1) ||
+          (id->base.e40g_base_sr4 == 0x1) ||
+          (id->base.e40g_base_lr4 == 0x1) ||
+          (id->base.e40g_active == 0x1)) {
+        *lane_speed = TRX_LANE_SPEED_10G;
+    }
+    else {
+     *lane_speed = TRX_LANE_SPEED_UNKNOWN;
+    }
+
+    dev_notice(qsfp->dev, "%s: Lane speed: 0x%X \n", __func__, *lane_speed);
+
+    return 0;
+}
+
+/*
+ * Function to return the QSFP identifier value.
+ */
+static u8 sff8636_get_transceiver_type(const struct qsfp *qsfp)
+{
+    return qsfp->id.sff8636.base.phys_id;
+}
+
+/*
+ * Function to get channel information from EEPROM page 00h byte 113.
+ */
+static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
+                                      trx_lane_cfg* laneinfo)
+{
+    u8 channel;
+    int ret;
+
+    ret = qsfp_read(qsfp, SFF8636_CHANNEL_INFO, &channel,
+                     sizeof(channel));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Channel register read failed. ret %d\n",
+                           __func__, ret);
+        return -EINVAL;
+    }
+
+    *laneinfo = ~channel;
+    /* SFF-8636 supports a maximum of four lanes, the first
+       four bytes are required to check for lane presence. */
+    *laneinfo &= 0x0F;
+
+    dev_notice(qsfp->dev, "%s: Lane info: 0x%X\n", __func__, *laneinfo);
+
+    return 0;
+}
+
+
+static int sff8636_get_breakout_config(const struct qsfp *qsfp,
+                                       trx_breakout_cfg* bout_config)
+{
+    u8 buf;
+    int ret;
+
+    ret = qsfp_read(qsfp, SFF8636_FREE_SIDE_PROP, &buf,
+                     sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Far-end support register read failed,"
+                           " ret %d\n",__func__, ret);
+        return -EINVAL;
+    }
+
+    /* BIT(3): A value of 1 indicates that the far end is managed and
+       complies with SFF-8636.*/
+    buf >>= 3;
+    if (~(buf & 1)) {
+        /* Using 0XFF to indicate the far-end configuration did not
+           support transceivers with detachable connectors.*/
+        *bout_config = TRX_FAR_END_NOT_MANAGED;
+        dev_notice(qsfp->dev, "%s: Breakout config: 0x%X \n", __func__,
+                              *bout_config);
+        return 0;
+    }
+
+    buf = 0;
+    ret = qsfp_read(qsfp, SFF8636_CHANNEL_INFO, &buf,
+                     sizeof(buf));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Breakout config register read failed,"
+                            " ret %d\n", __func__, ret);
+        return -EINVAL;
+    }
+
+    /* BIT[6:4]: indicates Far-end implementation */
+    buf = buf >> 4;
+    buf &= 0x07;
+
+    *bout_config = buf;
+
+    dev_notice(qsfp->dev, "%s: Breakout config: 0x%X \n", __func__,
+                          *bout_config);
+
+    return 0;
 }
 
 struct qsfp_spec_ops sff8636_spec_ops = {
@@ -533,4 +723,8 @@ struct qsfp_spec_ops sff8636_spec_ops = {
     .module_info = sff8636_module_info,
     .irq_status_prefetch_start = sff8636_irq_status_prefetch_start,
     .get_connector_type = sff8636_get_connector_type,
+    .get_lane_speed = sff8636_get_lane_speed,
+    .get_transceiver_type = sff8636_get_transceiver_type,
+    .get_lanes_presence = sff8636_get_lanes_presence,
+    .get_breakout_config = sff8636_get_breakout_config,
 };

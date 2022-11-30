@@ -1,0 +1,145 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-only
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
+ */
+
+#ifndef TRX_API_H
+#define TRX_API_H
+
+/* Macro to identify the breakout configuration is not
+   supported case for separable transceiver of type
+   QSFP-28, QSFP-56, or QSFP+. */
+#define TRX_FAR_END_NOT_MANAGED (0xFF)
+
+/* Enum to identify the lane speed */
+typedef enum {
+    TRX_LANE_SPEED_UNKNOWN = 0,
+    /* Lane speed of 2.5GBPS */
+    TRX_LANE_SPEED_2_5G,
+    /* Lane speed of 10GBPS */
+    TRX_LANE_SPEED_10G,
+    /* Lane speed of 25GBPS */
+    TRX_LANE_SPEED_25G,
+    /* Lane speed of 50GBPS */
+    TRX_LANE_SPEED_50G,
+    /* Lane speed of 100GBPS */
+    TRX_LANE_SPEED_100G,
+}trx_lane_speed;
+
+/* Enum to identify the TRX type */
+typedef enum {
+    TRX_UNKNOWN = 0,
+    /* QSFP type not supported */
+    TRX_UNSUPPORTED,
+    /* SFP transceiver */
+    TRX_SFP,
+    /* QSFP+/QSFP28/QSFP56 */
+    TRX_QSFP_PLS_QSFP28_QSFP56,
+    /* QSFP-DD */
+    TRX_QSFPDD,
+}trx_type;
+
+/* The lane configuration */
+typedef u8 trx_lane_cfg;
+
+/* The breakout configuration */
+typedef u8 trx_breakout_cfg;
+
+struct qsfp_info {
+    /* TRX type(SFP/QSFP/QSFP-DD)*/
+    trx_type trx_module_type;
+    /* Lane supported speed */
+    trx_lane_speed trx_speed;
+    /* Near-end configuration */
+    trx_lane_cfg trx_laneinfo;
+    /* Far-end configuration */
+    trx_breakout_cfg trx_bout_cfg;
+};
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_lane_type
+* Description:    API for determining the type of QSFP TRX lane (DAC, OPTIC,
+*                 OR OTHER).
+* Inputs:         qsfp_phandle [in] : QSFP phandle to get the QSFP structure.
+*                 link_info [out]   : TRX lane type as per macros defined in
+*                                     ethtool.h.
+* Return value:   0      : Success
+*                -EINVAL : Error
+*
+****************************************************************/
+int qsfp_trx_get_lane_type(u32 qsfp_phandle, u8* link_info);
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_lane_speed
+* Description:    API to get QSFP TRX lane supported speed.
+* Inputs:         qsfp_phandle [in] : QSFP phandle to get the QSFP structure.
+*                 trx_speed [out]   : Supported TRX lanespeed of type
+*                                     trx_lane_speed*.
+* Return value:   0      : Success
+*                -EINVAL : Error
+*
+****************************************************************/
+int qsfp_trx_get_lane_speed(u32 qsfp_phandle, trx_lane_speed* trx_speed);
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_type
+* Description:    API to get QSFP TRX type (SFP/QSFP28/QSFP56/QSFP-DD).
+* Inputs:         qsfp_phandle [in] : QSFP phandle to get the QSFP structure.
+*                 trx_type_info [out] : trx_type enum pointer to get TRX type.
+*
+* Return value:   0      : Success
+*                -EINVAL : Error
+*
+****************************************************************/
+int qsfp_trx_get_type(u32 qsfp_phandle, trx_type* trx_type_info);
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_laneconfig
+* Description:    API to get QSFP TRX hardware supported lane configuration.
+* Inputs:         qsfp_phandle [in] : QSFP phandle to get the QSFP structure.
+*                 laneinfo [out] : Lane information is encoded in an 8-bit
+*                                  value by setting the bit position value
+*                                  to 1.
+*
+* Return value:   0      : Success
+*                -EINVAL : Error
+*
+****************************************************************/
+int qsfp_trx_get_laneconfig(u32 qsfp_phandle, trx_lane_cfg* laneinfo);
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_breakoutconfig
+* Description:    API to get QSFP TRX far-end breakout configuration.
+* Inputs:         qsfp_phandle [in] : QSFP phandle to get the QSFP structure.
+*                 bout_config [out] : Breakout configuration of type
+*                                     trx_breakout_cfg, value depends on
+*                                     trx_type_info.
+*
+* Return value:   0     : Success
+*                -EINVAL : Error
+*
+****************************************************************/
+int qsfp_trx_get_breakoutconfig(u32 qsfp_phandle,
+                                trx_breakout_cfg* bout_config);
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_info
+* Description:    API to get QSFP TRX properties (lane speed,trx type,
+*                 lane configuration, and breakout configuration).
+* Inputs:         qsfp_phandle [in] : QSFP phandle to get the QSFP structure.
+*                 trx_info [out] : Pointer of type struct qsfp_info.
+*
+* Return value:   0      : Success
+*                -EINVAL : Error
+*
+****************************************************************/
+int qsfp_trx_get_info(u32 qsfp_phandle, struct qsfp_info* trx_info);
+
+#endif

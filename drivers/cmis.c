@@ -420,6 +420,89 @@ u8 cmis_get_connector_type(const struct qsfp *qsfp)
     return qsfp->id.cmis.base.connector;
 }
 
+/*
+ * Function to get media lane information from EEPROM page 00h byte 210.
+ */
+static int cmis_get_lanes_presence(const struct qsfp *qsfp,
+                                   trx_lane_cfg* laneinfo)
+{
+    u8 channel;
+    int ret;
+
+    ret = qsfp_read(qsfp, CMIS_LANE_INFO, &channel,
+                     sizeof(channel));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Channel register read failed, ret %d\n",
+                           __func__, ret);
+        return -EINVAL;
+    }
+
+    *laneinfo = ~channel;
+
+    dev_notice(qsfp->dev, "%s: Lane info: 0x%X \n", __func__, *laneinfo);
+
+    return 0;
+}
+
+/*
+ * Function to get lane supported speed based on the number of lanes'
+ * present on trx.
+ */
+static int cmis_get_lane_speed(const struct qsfp *qsfp,
+                               trx_lane_speed* lane_speed)
+{
+    u8 lane_cnt;
+    u8 channel;
+    int ret;
+
+     ret = cmis_get_lanes_presence(qsfp, &channel);
+     if(ret != 0)
+         return ret;
+
+    for(lane_cnt=0;channel;++lane_cnt)
+        channel &= channel-1;
+
+    /* Need to revisit later to check the possibilities for an 8-lane
+       transceiver among those only 4 implemented. */
+    if (lane_cnt == 0x04) {
+        *lane_speed = TRX_LANE_SPEED_100G;
+    }
+    else if (lane_cnt == 0x08) {
+        *lane_speed = TRX_LANE_SPEED_50G;
+    }
+    else {
+        *lane_speed = TRX_LANE_SPEED_UNKNOWN;
+    }
+
+    dev_notice(qsfp->dev, "%s: Lane speed: 0x%X \n", __func__, *lane_speed);
+
+    return 0;
+}
+
+/*
+ * Function to return the QSFP identifier value.
+ */
+static u8 cmis_get_transceiver_type(const struct qsfp *qsfp)
+{
+    return qsfp->id.cmis.base.phys_id;
+}
+
+/*
+ * Function to return the cable assembly information from QSFP EEPROM
+ * page 00h, byte 211 BIT [4-0].
+ */
+static int cmis_get_breakout_config(const struct qsfp *qsfp,
+                                    trx_breakout_cfg* bout_config)
+{
+    /*  Assign breakout information to an 8-bit variable. */
+    *bout_config = (trx_breakout_cfg)qsfp->id.cmis.base.breakout_config;
+
+    dev_notice(qsfp->dev, "%s: Breakout config: 0x%X \n", __func__,
+                          *bout_config);
+
+    return 0;
+}
+
 struct qsfp_spec_ops cmis_spec_ops = {
     .mod_probe = cmis_mod_probe,
     .disable_redundant_irq = cmis_disable_redundant_irq,
@@ -435,4 +518,8 @@ struct qsfp_spec_ops cmis_spec_ops = {
     .module_info = cmis_module_info,
     .irq_status_prefetch_start = cmis_irq_status_prefetch_start,
     .get_connector_type = cmis_get_connector_type,
+    .get_lane_speed = cmis_get_lane_speed,
+    .get_transceiver_type = cmis_get_transceiver_type,
+    .get_lanes_presence = cmis_get_lanes_presence,
+    .get_breakout_config = cmis_get_breakout_config,
 };
