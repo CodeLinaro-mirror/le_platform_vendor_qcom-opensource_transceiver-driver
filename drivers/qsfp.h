@@ -17,6 +17,7 @@
 
 #include "sfp.h"
 #include "sff8636.h"
+#include "cmis.h"
 
 #define QSFP_COMPATIBLE "sff,qsfp"
 
@@ -29,7 +30,7 @@
 struct qsfp_eeprom_id {
     union {
         struct sff8636_eeprom_id sff8636;
-        //struct cmis_eeprom_id cmis;
+        struct cmis_eeprom_id cmis;
     };
 };
 
@@ -199,6 +200,8 @@ enum {
 
 #define QSFP_STATE_STR_MAX_LEN (50)
 
+#define SFF8024_ID_QSFPDD_CMIS (0x18)
+
 enum {
     SFF8024_CONNECTOR_FC1_COPPER = 0x02,
     SFF8024_CONNECTOR_FC2_COPPER = 0x03,
@@ -212,6 +215,7 @@ enum {
 
 extern const struct of_device_id fpc_qsfp_of_match[];
 extern struct qsfp_spec_ops sff8636_spec_ops;
+extern struct qsfp_spec_ops cmis_spec_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);

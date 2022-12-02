@@ -337,6 +337,11 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
          dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
                                __func__, *spec_id);
          break;
+    case SFF8024_ID_QSFPDD_CMIS:
+         qsfp->spec_ops = &cmis_spec_ops;
+         dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
+                               __func__, *spec_id);
+         break;
     default:
          dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
                            __func__,*spec_id);
