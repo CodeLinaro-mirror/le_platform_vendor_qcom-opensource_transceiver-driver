@@ -6,7 +6,9 @@
 #include "qsfp.h"
 #include "transceiver_debugfs.h"
 
-static const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
+struct fpc *fpc_global[FPC_MAX_INSTANCES];
+
+const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     /* FPC_LED_MODE_SELECT */
     {0x1A , 0x3A , 0x5A , 0x7A},
     /* FPC_INPUT_PIN_INTERRUPT_ENABLE */
@@ -32,7 +34,7 @@ MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
  * Reads FPC402 register memory map using i2c transaction
  * returns 0 on successful read of 'len' bytes otherwise error
  */
-static int fpc_read(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
+int fpc_read(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[2];
     u8 bus_addr = fpc->i2c_address;
@@ -58,7 +60,7 @@ static int fpc_read(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
  * Writes FPC402 register memory map using i2c transaction
  * returns 0 on successful write of 'len' bytes otherwise error
  */
-static int fpc_write(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
+int fpc_write(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[1];
     u8 bus_addr = fpc->i2c_address;
@@ -82,52 +84,6 @@ static int fpc_write(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
         return ret;
 
     return ret == ARRAY_SIZE(msgs) ? 0 : -EIO;
-}
-
-/*
- * Sets LED state of port
- * @led :   QSFP_LED1 or QSFP_LED2 or both (QSFP_LED1|QSFP_LED2)
- *          as it is bitmask.
- * @state : QSFP_LED_ON or QSFP_LED_OFF.
- */
-void fpc_qsfp_set_led(const struct qsfp *qsfp, u8 led, bool state)
-{
-    u8 buf = 0;
-    int ret;
-
-    dev_notice(qsfp->dev, "%s: %s %s %s\n", __func__, (led & QSFP_LED1) ? "LED1 ":"",
-    (led & QSFP_LED2) ? "LED2 ":"", (QSFP_LED_ON == state) ? "ON":"OFF");
-
-    ret = fpc_read(qsfp->fpc,
-          FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read LED mode for LED %u state %u. "
-                           "ret %d\n", __func__, led, state, ret);
-        return;
-    }
-
-    if (led & QSFP_LED1) {
-        if (QSFP_LED_ON == state)
-            buf |= FPC_QSFP_LED1_ON;
-        else
-            buf &= FPC_QSFP_LED1_OFF;
-    }
-
-    if (led & QSFP_LED2) {
-        if (QSFP_LED_ON == state)
-            buf |= FPC_QSFP_LED2_ON;
-        else
-            buf &= FPC_QSFP_LED2_OFF;
-    }
-
-    ret = fpc_write(qsfp->fpc,
-          FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to write LED mode for LED %u state %u. "
-                           "ret %d\n", __func__, led, state, ret);
-    }
 }
 
 /*
@@ -442,6 +398,9 @@ static void fpc_cleanup(void *data)
 {
     struct fpc *fpc = data;
 
+    if (fpc->instance_num < FPC_MAX_INSTANCES)
+        fpc_global[fpc->instance_num] = NULL;
+
     kfree(fpc);
 }
 
@@ -532,6 +491,7 @@ static int fpc_probe(struct platform_device *pdev)
     struct fpc *fpc;
     char *fpc_irq_name;
     u32 i2c_address = 0;
+    u32 fpc_instance_no = 0;
     int ret;
     struct device_node *node = pdev->dev.of_node;
     struct device_node *i2c_np;
@@ -586,6 +546,23 @@ static int fpc_probe(struct platform_device *pdev)
         return ret;
     }
 
+    ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
+    if (ret < 0) {
+        dev_err(fpc->dev, "%s: Fail to get instance-num attribute. ret %d\n",
+                                   __func__, ret);
+        return ret;
+    }
+
+    if ((fpc_instance_no & 0xFF) >= FPC_MAX_INSTANCES) {
+        dev_err(fpc->dev, "%s: Invalid instance-num attribute\n",
+                                   __func__);
+        return -EINVAL;
+    }
+    fpc->instance_num = fpc_instance_no & 0xFF;
+
+    dev_notice(fpc->dev, "%s: fpc instance number %u\n", __func__,
+                         fpc->instance_num);
+
     ret = fpc_reset(fpc);
     if (ret < 0) {
         dev_err(fpc->dev, "%s: Unable to reset FPC402. ret %d\n",
@@ -633,6 +610,15 @@ static int fpc_probe(struct platform_device *pdev)
     fpc_reset_qsfp_ports(fpc);
 
     fpc_debugfs_init(fpc);
+
+    if (fpc_global[fpc->instance_num] == NULL) {
+        fpc_global[fpc->instance_num] = fpc;
+    }
+    else {
+        dev_err(fpc->dev, "%s: Invalid instance-num attribute\n",
+                          __func__);
+        return -EINVAL;
+    }
 
     return 0;
 }
