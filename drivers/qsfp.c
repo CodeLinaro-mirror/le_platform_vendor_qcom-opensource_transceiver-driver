@@ -1392,6 +1392,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
 static void qsfp_cleanup(void *data)
 {
     struct qsfp *qsfp = data;
+    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 
@@ -1596,6 +1597,7 @@ int qsfp_remove(struct platform_device *pdev)
 void qsfp_shutdown(struct platform_device *pdev)
 {
     struct qsfp *qsfp = platform_get_drvdata(pdev);
+    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 }
