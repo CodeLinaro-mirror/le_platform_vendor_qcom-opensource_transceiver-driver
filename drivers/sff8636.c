@@ -4,7 +4,8 @@
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7
  */
-#include "qsfp.h"
+#include "transceiver_debugfs.h"
+
 
 static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
 {
@@ -735,4 +736,5 @@ struct qsfp_spec_ops sff8636_spec_ops = {
     .get_lanes_presence = sff8636_get_lanes_presence,
     .get_breakout_config = sff8636_get_breakout_config,
     .irq_delay = sff8636_irq_delay,
+    .create_debugfs = sff8636_create_debugfs_files,
 };

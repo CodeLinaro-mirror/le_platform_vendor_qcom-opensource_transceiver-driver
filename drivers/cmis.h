@@ -299,13 +299,20 @@ struct cmis_bank0_page11 {
 } __packed;
 
 enum {
+    CMIS_MOD_CFG                     = QSFP_ADDR(0, 0x0,   2),
     CMIS_IRQ_FLAGS                   = QSFP_ADDR(0, 0x0,   3),
+    CMIS_MOD_TEMPMON                 = QSFP_ADDR(0, 0x0,  14),
+    CMIS_MOD_VCCMON                  = QSFP_ADDR(0, 0x0,  16),
+    CMIS_MOD_GLOBAL_CTRL             = QSFP_ADDR(0, 0x0,  26),
+    CMIS_ACTIVE_FIRMWARE             = QSFP_ADDR(0, 0x0,  39),
+    CMIS_MOD_FAULT_CAUSE             = QSFP_ADDR(0, 0x0,  41),
     CMIS_MODULE_CONTROLS             = QSFP_ADDR(0, 0x0,  26),
     CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
     CMIS_ID                          = QSFP_ADDR(0, 0x0, 128),
     CMIS_POWER_CLASS                 = QSFP_ADDR(0, 0x0, 200),
     CMIS_LANE_INFO                   = QSFP_ADDR(0, 0x0, 210),
 
+    CMIS_INACTIVE_FIRMWARE           = QSFP_ADDR(0, 0x1, 128),
     CMIS_ID_EXT                      = QSFP_ADDR(0, 0x1, 130),
 
     CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
@@ -317,6 +324,9 @@ enum {
     CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 128),
     CMIS_TX_FLAGS                    = QSFP_ADDR(0, 0x11, 135),
     CMIS_RX_LOS                      = QSFP_ADDR(0, 0x11, 147),
+    CMIS_TX_POWER                    = QSFP_ADDR(0, 0x11, 154),
+    CMIS_TX_BIAS                     = QSFP_ADDR(0, 0x11, 170),
+    CMIS_RX_POWER                    = QSFP_ADDR(0, 0x11, 186),
 
     CMIS_PAGE12_MASKS                = QSFP_ADDR(0, 0x12, 239),
     CMIS_BANK0_PAGE12                = QSFP_ADDR(0, 0x12, 128),

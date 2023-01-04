@@ -872,6 +872,17 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
         }
     }
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    /* call spec specific create debugfs function to create files
+       specific to transceiver */
+    if (qsfp->spec_ops && qsfp->spec_ops->create_debugfs) {
+        qsfp->spec_ops->create_debugfs(qsfp);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops for create debugfs not found\n",
+                                                                __func__);
+    }
+#endif
+
     qsfp->spec_ops->eeprom_print(qsfp);
 
     return 0;
@@ -886,6 +897,10 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     }
 
     transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1 | QSFP_LED2);
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    module_debugfs_exit(qsfp);
+#endif
 
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     qsfp->module_revision = 0;

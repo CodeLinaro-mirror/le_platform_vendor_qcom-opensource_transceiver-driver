@@ -571,6 +571,20 @@ unsigned long cmis_irq_delay(const struct qsfp *qsfp)
     return 0;
 }
 
+const char* cmis_revision_to_str(u8 mod_rev_value, char *revStr)
+{
+    u8 major, minor;
+
+    /* Upper nibble (bits 7-4) is the integer part (major number)
+     * Lower nibble (bits 3-0) is the decimal part (minor number)
+     */
+    major   = (mod_rev_value >> 4 ) & 0x0F;
+    minor  = mod_rev_value & 0x0F;
+
+    scnprintf(revStr,75,"CMIS revision number: %u.%u", major,minor);
+    return revStr;
+}
+
 struct qsfp_spec_ops cmis_spec_ops = {
     .mod_probe = cmis_mod_probe,
     .disable_redundant_irq = cmis_disable_redundant_irq,
@@ -590,4 +604,5 @@ struct qsfp_spec_ops cmis_spec_ops = {
     .get_lanes_presence = cmis_get_lanes_presence,
     .get_breakout_config = cmis_get_breakout_config,
     .irq_delay = cmis_irq_delay,
+    .create_debugfs = cmis_create_debugfs_files,
 };

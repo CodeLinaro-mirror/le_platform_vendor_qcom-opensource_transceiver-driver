@@ -73,6 +73,7 @@ struct qsfp {
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
+    struct dentry *module_debugfs_dir;
 #endif
 
 };
@@ -118,6 +119,7 @@ struct qsfp_spec_ops {
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
     unsigned long (*irq_delay)(const struct qsfp *qsfp);
+    int (*create_debugfs)(struct qsfp *qsfp);
 };
 
 enum {
@@ -261,5 +263,11 @@ extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
 extern void qsfp_check_state(struct qsfp *qsfp);
+
+extern const char *mod_identifier_to_str(u8 spec_id);
+extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
+extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
+extern int cmis_create_debugfs_files(struct qsfp *qsfp);
+extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
 
 #endif

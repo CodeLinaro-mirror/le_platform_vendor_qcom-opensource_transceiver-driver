@@ -3,6 +3,8 @@
  *
  */
 #include "qsfp.h"
+#include "transceiver_debugfs.h"
+
 
 static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
 {
@@ -373,6 +375,19 @@ unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
     return msecs_to_jiffies(100);
 }
 
+int sff8472_create_debugfs_files(struct qsfp *qsfp) {
+    int ret;
+
+    ret = module_debugfs_init(qsfp);
+    if (ret != 0)
+    {
+        dev_err(qsfp->dev, "%s: qsfp module_spec_info debugfs dir fail \n",
+                           __func__);
+    }
+    /* Need to implement debugfs support for SFF-8472 */
+    return 0;
+}
+
 struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_probe = sff8472_mod_probe,
     .disable_redundant_irq = sff8472_disable_redundant_irq,
@@ -392,4 +407,5 @@ struct qsfp_spec_ops sff8472_spec_ops = {
     .get_lanes_presence = sff8472_get_lanes_presence,
     .get_breakout_config = sff8472_get_breakout_config,
     .irq_delay = sff8472_irq_delay,
+    .create_debugfs = sff8472_create_debugfs_files,
 };

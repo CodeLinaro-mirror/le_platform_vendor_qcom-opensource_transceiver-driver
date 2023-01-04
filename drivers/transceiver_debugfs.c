@@ -9,7 +9,7 @@
 
 struct dentry *transceiver_debugfs_dir;
 
-static const char *mod_identifier_to_str(u8 spec_id)
+const char *mod_identifier_to_str(u8 spec_id)
 {
     switch (spec_id) {
     case 0x00:
@@ -139,7 +139,7 @@ static const char *mod_connector_to_str(u8 mod_connector,char* vendor_name,
     }
 }
 
-static const char *mod_link_codes_to_str(unsigned short mod_link_codes)
+const char *mod_link_codes_to_str(unsigned short mod_link_codes)
 {
     switch (mod_link_codes) {
     case 0x00:
@@ -297,6 +297,55 @@ static const char *mod_link_codes_to_str(unsigned short mod_link_codes)
     }
 }
 
+char* calc_common_temperature(int16_t tempc, char* str)
+{
+    int16_t temp_in = 0;
+    int32_t temp = 0;
+
+    /* Convert tempc info to cpu byte order */
+    temp_in = be16_to_cpu(tempc & 0XFFFF);
+
+    /* (temp_in * 1000) to get the three digit precision
+       while converting it to celsius. */
+    temp = temp_in * 1000;
+
+    /* Convert the temp to degrees Celsius by dividing it by 256. */
+    temp = temp/256;
+
+    /* To avoid printing of the minus(-) symbol in decimal places.
+       Multiply temp with -1 for negative values. */
+    scnprintf(str,75,"Temperature: %d.%03d °C",temp/1000,
+                       (temp < 0 ? (temp * -1) : temp)%1000);
+    return str;
+}
+
+char* calc_common_svoltage(u16 svolt, char* str)
+{
+    u16 supply_voltage_t = 0;
+
+    /* convert svolt info to cpu byte order */
+    supply_voltage_t = be16_to_cpu(svolt & 0XFFFF);
+
+    /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
+    scnprintf(str,75,"Supply Voltage: %d.%03d V",
+         supply_voltage_t/10000, supply_voltage_t%10000);
+
+    return str;
+}
+
+inline void spec_info_print(struct seq_file *s, u8 spec_id)
+{
+    if (spec_id == 0x00) {
+        seq_printf(s,"Specification Identifier {0x%02X}\n"
+                      "Unknown module\n",spec_id);
+    }
+    else {
+        seq_printf(s,"Specification Identifier {0x%02X}\n"
+                      "%s Transceiver module is not supported\n",
+                      spec_id,mod_identifier_to_str(spec_id));
+    }
+}
+
 void transceiver_debugfs_init(void)
 {
     transceiver_debugfs_dir = debugfs_create_dir("transceiver_module", NULL);
@@ -438,23 +487,6 @@ static int qsfp_debug_qsfp_i2c_address_info_show(struct seq_file *s,
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_i2c_address_info);
 
-static int qsfp_debug_qsfp_power_info_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    seq_printf(s, "Maximum Power (mW) : %u\n",qsfp->max_power_mW);
-    seq_printf(s, "Module Power (mW) : %u\n",qsfp->module_power_mW);
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_power_info);
-
 static int qsfp_debug_qsfp_port_num_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
@@ -463,23 +495,6 @@ static int qsfp_debug_qsfp_port_num_info_show(struct seq_file *s, void *data)
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_port_num_info);
-
-static int qsfp_debug_qsfp_module_power_class_info_show(struct seq_file *s,
-                               void *data)
-{
-    struct qsfp *qsfp = s->private;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    seq_printf(s, "0x%X\n",qsfp->module_power_class);
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_module_power_class_info);
 
 static int qsfp_debug_qsfp_module_identifier_info_show(struct seq_file *s,
                                void *data)
@@ -504,6 +519,7 @@ DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_module_identifier_info);
 static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
+    char revSpec[75];
     u8 *spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the module is attached before processing  */
@@ -518,107 +534,23 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
         seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
                       sff8636_mod_revision_to_str(qsfp->module_revision));
         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
+                      cmis_revision_to_str(qsfp->module_revision, revSpec));
+        break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_revision_info);
 
-static int qsfp_debug_phys_ext_id_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
-    u8 powerclassl,powerclassh;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
-        powerclassl = id->base.phys_ext_id >> 6;
-        powerclassh = id->base.phys_ext_id & 0x03;
-        seq_printf(s, "Extended Identifier: 0x%X\n",id->base.phys_ext_id);
-        seq_printf(s, "BIT[7-6]: ");
-        switch (powerclassl) {
-        case 0x00:
-            seq_printf(s, "Power Class 1 (1.5 W max)\n");
-            break;
-        case 0x01:
-            seq_printf(s, "Power Class 2 (2.0 W max)\n");
-            break;
-        case 0x02:
-            seq_printf(s, "Power Class 3 (2.5 W max)\n");
-            break;
-        case 0x03:
-            seq_printf(s, "Power Class 4 (3.5 W max) and Power Classes 5,"
-                          " 6 or 7\n");
-            break;
-        }
-        id->base.phys_ext_id&BIT(5)?seq_printf(s, "  BIT[5]: Power Class 8 "
-                                    "implemented\n"):
-                  seq_printf(s, "  BIT[5]: Power Class 8 not implemented\n");
-        id->base.phys_ext_id&BIT(4)?seq_printf(s, "  BIT[4]: CLEI code present"
-                                " in Page 02h\n"):
-                  seq_printf(s, "  BIT[4]: No CLEI code present in"
-                                " Page 02h\n");
-        id->base.phys_ext_id&BIT(3)?seq_printf(s, "  BIT[3]: CDR present"
-                                " in Tx\n"):
-                  seq_printf(s, "  BIT[3]: No CDR in Tx\n");
-        id->base.phys_ext_id&BIT(2)?seq_printf(s, "  BIT[2]: CDR present in"
-                                " Rx\n"):
-                  seq_printf(s, "  BIT[2]: No CDR in Rx\n");
-        seq_printf(s, "BIT[1-0]: ");
-        switch (powerclassh) {
-        case 0x00:
-            seq_printf(s, "Power Classes 1 to 4\n");
-            break;
-        case 0x01:
-            seq_printf(s, "Power Class 5 (4.0 W max)\n");
-            break;
-        case 0x02:
-            seq_printf(s, "Power Class 6 (4.5 W max)\n");
-            break;
-        case 0x03:
-            seq_printf(s, "Power Class 7 (5.0 W max)\n");
-            break;
-        }
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_phys_ext_id);
-
 static int qsfp_debug_connector_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char vendor_data[75] ={};
 
@@ -636,61 +568,26 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
             mod_connector_to_str(id->base.connector,id->base.vendor_name,
                                      vendor_data));
         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        seq_printf(s, "{0x%X} %s\n",cmis_id->base.connector,
+            mod_connector_to_str(cmis_id->base.connector,
+                                 cmis_id->base.vendor_name,
+                                 vendor_data));
+        break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_connector);
 
-static int qsfp_debug_encoding_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
-        seq_printf(s, "{0x%X} %s\n",id->base.encoding,
-                     sff8636_mod_encoding_to_str(id->base.encoding));
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_encoding);
-
 static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the module is attached before processing  */
@@ -716,305 +613,39 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
                       (int)sizeof(id->ext.vendor_sn),
                       id->ext.vendor_sn);
         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        seq_printf(s, "vendor name: %.*s\n",
+                      (int)sizeof(cmis_id->base.vendor_name),
+                      cmis_id->base.vendor_name);
+        seq_printf(s, "vendor pn: %.*s\n",
+                      (int)sizeof(cmis_id->base.vendor_pn),
+                      cmis_id->base.vendor_pn);
+        seq_printf(s, "vendor rev: %.*s\n",
+                      (int)sizeof(cmis_id->base.vendor_rev),
+                      cmis_id->base.vendor_rev);
+        seq_printf(s, "vendor sn: %.*s\n",
+                      (int)sizeof(cmis_id->base.vendor_sn),
+                      cmis_id->base.vendor_sn);
+        break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_vendor_info);
 
-static int qsfp_debug_link_codes_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
-        seq_printf(s, "{0x%X} %s\n",id->ext.link_codes,
-                     mod_link_codes_to_str(id->ext.link_codes));
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_link_codes);
-
-static int qsfp_debug_max_case_temp_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
-        seq_printf(s, "0x%X\n",id->base.max_case_temp);
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_max_case_temp);
-
-static int qsfp_debug_device_tech_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
-    u8 dtechl,dtechr;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-          seq_printf(s, "QSFP module is not attached\n");
-          return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
-        dtechl = id->base.device_tech >> 4;
-        dtechr = id->base.device_tech & 0x0F;
-        seq_printf(s, "Device Technology: 0x%X\n",id->base.device_tech);
-        seq_printf(s, "Transmitter technology BIT[7-4]: ");
-        switch (dtechl) {
-        case 0x00:
-            seq_printf(s, "850 nm VCSEL\n");
-            break;
-        case 0x01:
-            seq_printf(s, "1310 nm VCSEL\n");
-            break;
-        case 0x02:
-            seq_printf(s, "1550 nm VCSEL\n");
-            break;
-        case 0x03:
-            seq_printf(s, "1310 nm FP\n");
-            break;
-        case 0x04:
-            seq_printf(s, "1310 nm DFB\n");
-            break;
-        case 0x05:
-            seq_printf(s, "1550 nm DFB\n");
-            break;
-        case 0x06:
-            seq_printf(s, "1310 nm EML\n");
-            break;
-        case 0x07:
-            seq_printf(s, "1550 nm EML\n");
-            break;
-        case 0x08:
-            seq_printf(s, "Other / Undefined\n");
-            break;
-        case 0x09:
-            seq_printf(s, "1490 nm DFB\n");
-            break;
-        case 0x0A:
-            seq_printf(s, "Copper cable unequalized\n");
-            break;
-        case 0x0B:
-            seq_printf(s, "Copper cable passive equalized\n");
-            break;
-        case 0x0C:
-            seq_printf(s, "Copper cable, near and far end limiting active"
-                           "equalizers\n");
-            break;
-        case 0x0D:
-            seq_printf(s, "Copper cable, far end limiting active"
-                          " equalizers\n");
-            break;
-        case 0x0E:
-            seq_printf(s, "Copper cable, near end limiting active"
-                          " equalizers\n");
-            break;
-        case 0x0F:
-            seq_printf(s, "Copper cable, linear active equalizers\n");
-            break;
-        }
-        dtechr&BIT(3)?seq_printf(s, "BIT[3]: Active wavelength control\n"):
-                       seq_printf(s, "BIT[3]: No wavelength control\n");
-        dtechr&BIT(2)?seq_printf(s, "BIT[2]: Cooled transmitter\n"):
-                       seq_printf(s, "BIT[2]: Uncooled transmitter device\n");
-        dtechr&BIT(1)?seq_printf(s, "BIT[1]: APD detector\n"):
-                       seq_printf(s, "BIT[1]: Pin detector\n");
-        dtechr&BIT(0)?seq_printf(s, "BIT[0]: Transmitter tunable\n"):
-                         seq_printf(s, "BIT[0]: Transmitter not tunable\n");
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tech);
-
-static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-          seq_printf(s, "QSFP module is not attached\n");
-          return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
-        seq_printf(s, "Diagnostic Monitoring Type: 0x%X\n",id->ext.diagmon);
-        id->ext.diagmon&BIT(5)?seq_printf(s, "BIT[5]: Temperature monitoring"
-                                             " implemented\n"):
-            seq_printf(s, "BIT[5]: Temperature monitoring Not implemented"
-                              " or pre-Rev 2.8\n");
-        id->ext.diagmon&BIT(4)?seq_printf(s, "BIT[4]: Supply voltage"
-                                             " monitoring implemented\n"):
-            seq_printf(s, "BIT[4]: Supply voltage monitoring Not implemented"
-                          " or pre-Rev 2.8\n");
-        id->ext.diagmon&BIT(3)?seq_printf(s, "BIT[3]: Received power "
-                               "measurements type is Average Power\n"):
-            seq_printf(s, "BIT[3]: Received power measurements type is OMA\n");
-        id->ext.diagmon&BIT(2)?seq_printf(s, "BIT[2]: Transmitter power "
-                                             "measurement Supported\n"):
-            seq_printf(s, "BIT[2]: Transmitter power measurement "
-                                               "Not supported\n");
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                        "%s Transceiver module is not supported\n",
-                        *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_diagmon);
-
 /*
-* Information about the Qsfp status indicators (Page 00h, Byte 2) is being
-* exported to Sysfs.
-*/
-static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
-{
-    struct qsfp *qsfp = s->private;
-    u8 *spec_id = (u8*)&qsfp->id;
-    u8 status;
-    int ret;
-
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
-        return 0;
-    }
-
-    switch (*spec_id) {
-    case SFF8024_ID_QSFP28_8636:
-    case SFF8024_ID_QSFP_8436_8636:
-        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &status,
-                         sizeof(status));
-        if (ret < 0) {
-            seq_printf(s, "QSFP read error: %d\n", ret);
-            return 0;
-        }
-
-        seq_printf(s, "Status Indicators: 0x%X\n",status);
-        status&BIT(2)?seq_printf(s, "BIT[2]: Flat upper memory\n"):
-                      seq_printf(s, "BIT[2]: Paged upper memory\n");
-        status&BIT(1)?seq_printf(s, "BIT[1]: IntL not asserted\n"):
-                      seq_printf(s, "BIT[1]: IntL asserted\n");
-        status&BIT(0)?seq_printf(s, "BIT[0]: Free side does not yet have"
-                                    " valid monitor data due to device reset\n"
-                                    "or power up reset or prior to a valid "
-                                    "suite of monitor readings\n"):
-                      seq_printf(s, "BIT[0]: Free side have valid "
-                                    "monitor data like temperature & supply voltage\n");
-        break;
-    default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "%s Transceiver module not supported\n",
-                          *spec_id,mod_identifier_to_str(*spec_id));
-        }
-    }
-
-    return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(qsfp_debug_status_indicators);
-
-/*
-* Information about the Qsfp device temperature (Page 00h Bytes 22-23)
-* is being exported to Sysfs.
+* Information about the Qsfp device temperature is being exported to Sysfs.
 */
 static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char temperature_data[75] = {};
     int16_t tempc;
-    int32_t temp;
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -1026,6 +657,7 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h Bytes 22-23 */
         ret = qsfp_read(qsfp, SFF8636_TEMPERATURE, &tempc,
                                sizeof(tempc));
         if (ret < 0) {
@@ -1033,32 +665,38 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
             return 0;
         }
 
-        /* Convert tempc info to cpu byte order */
-        tempc = be16_to_cpu(tempc & 0XFFFF);
+        seq_printf(s, "%s\n", calc_common_temperature(tempc,
+                                         temperature_data));
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
 
-        /* (tempc * 1000) to get the three digit precision
-           while converting it to celsius. */
-        temp = tempc * 1000;
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX temperature measurement not supported\n");
+            return 0;
+        }
 
-        /* Convert the temp to degrees Celsius by dividing it by 256. */
-        temp = temp/256;
+        /*Support advertised in page 01h:159.0 */
+        if (!cmis_id->ext.temp_mon_sup) {
+            seq_printf(s, "TRX temperature measurement not supported\n");
+            return 0;
+        }
 
-        /* To avoid printing of the minus(-) symbol in decimal places.
-           Multiply temp with -1 for negative values. */
-        scnprintf(temperature_data,75,"Temperature: %d.%03d °C",temp/1000,
-                                    (temp < 0 ? (temp * -1) : temp)%1000);
-        seq_printf(s, "%s\n", temperature_data);
+        /* Page 00h Bytes 14-15 */
+        ret = qsfp_read(qsfp, CMIS_MOD_TEMPMON, &tempc,
+                               sizeof(tempc));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        seq_printf(s, "%s\n", calc_common_temperature(tempc,
+                                         temperature_data));
         break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "%s Transceiver module is not supported\n",
-                          *spec_id,mod_identifier_to_str(*spec_id));
-       }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
@@ -1066,13 +704,13 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_temperature);
 
 /*
-* Information about the Qsfp device supply voltage (Page 00h Bytes 26-27)
-* is being exported to Sysfs.
+* Information about the Qsfp device supply voltage is being exported to Sysfs.
 */
 static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
                                                     void *data)
 {
     struct qsfp *qsfp = s->private;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char voltage_data[75] = {};
     u16 supply_voltage_t = 0;
@@ -1087,6 +725,7 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h Bytes 26-27 */
         ret = qsfp_read(qsfp, SFF8636_SUPPLY_VOLTAGE, &supply_voltage_t,
                               sizeof(supply_voltage_t));
         if (ret < 0) {
@@ -1094,24 +733,39 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
             return 0;
         }
 
-        /* convert supply_voltage_t info to cpu byte order */
-        supply_voltage_t = be16_to_cpu(supply_voltage_t & 0XFFFF);
+        seq_printf(s, "%s\n", calc_common_svoltage(supply_voltage_t,
+                                                     voltage_data));
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
 
-        /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
-        scnprintf(voltage_data,75,"Supply Voltage: %d.%03d V",
-                supply_voltage_t/10000, supply_voltage_t%10000);
-        seq_printf(s, "%s\n", voltage_data);
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX supply voltage measurement not supported\n");
+            return 0;
+        }
+
+        /*Support advertised in page 01h:159.1 */
+        if (!cmis_id->ext.volt_mon_sup) {
+            seq_printf(s, "TRX supply voltage measurement not supported\n");
+            return 0;
+        }
+
+        /* Page 00h Bytes 16-17 */
+        ret = qsfp_read(qsfp, CMIS_MOD_VCCMON, &supply_voltage_t,
+                              sizeof(supply_voltage_t));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        seq_printf(s, "%s\n", calc_common_svoltage(supply_voltage_t,
+                                                     voltage_data));
+
         break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "%s Transceiver module is not supported\n",
-                          *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
     return 0;
 }
@@ -1119,15 +773,18 @@ DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_Supply_Voltage);
 
 /*
 * Information about the Qsfp Channel Monitor value of Rx Power
-* (Page 00h Bytes 34-41) is being exported to Sysfs.
+* is being exported to Sysfs.
 */
 static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
-    char rx_power_data[250] ={};
+    char rx_power_data[500] ={};
     u16 rx_power_t[4] = {};
     u8  rx_power[8] = {0};
+    u16 cmis_rx_power_t[8] = {0};
+    u8  cmis_rx_power[16] = {0};
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -1139,6 +796,7 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h Bytes 34-41 */
         ret = qsfp_read(qsfp, SFF8636_RX_POWER, rx_power,
                               sizeof(rx_power));
         if (ret < 0) {
@@ -1152,7 +810,7 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
         rx_power_t[3] = (( rx_power[6] << 8) | rx_power[7]);
 
         /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
-        scnprintf(rx_power_data,250,"Rx Power Lane1: %d.%03d mW\n"
+        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW\n"
                                     "Rx Power Lane2: %d.%03d mW\n"
                                     "Rx Power Lane3: %d.%03d mW\n"
                                     "Rx Power Lane4: %d.%03d mW",
@@ -1162,16 +820,60 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
                           rx_power_t[3]/10000,rx_power_t[3]%10000);
         seq_printf(s, "%s\n", rx_power_data);
         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX optical rx power measurement not supported\n");
+            return 0;
+        }
+
+        /*Support advertised in page 01h:160.2 */
+        if(!cmis_id->ext.rx_optical_pow_mon_sup ) {
+            seq_printf(s, "TRX optical rx power measurement not supported\n");
+            return 0;
+        }
+
+        /* Page 11h Bytes 186-201 */
+        ret = qsfp_read(qsfp, CMIS_RX_POWER, cmis_rx_power,
+                              sizeof(cmis_rx_power));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        cmis_rx_power_t[0] = (( cmis_rx_power[0] << 8) | cmis_rx_power[1]);
+        cmis_rx_power_t[1] = (( cmis_rx_power[2] << 8) | cmis_rx_power[3]);
+        cmis_rx_power_t[2] = (( cmis_rx_power[4] << 8) | cmis_rx_power[5]);
+        cmis_rx_power_t[3] = (( cmis_rx_power[6] << 8) | cmis_rx_power[7]);
+        cmis_rx_power_t[4] = (( cmis_rx_power[8] << 8) | cmis_rx_power[9]);
+        cmis_rx_power_t[5] = (( cmis_rx_power[10] << 8) | cmis_rx_power[11]);
+        cmis_rx_power_t[6] = (( cmis_rx_power[12] << 8) | cmis_rx_power[13]);
+        cmis_rx_power_t[7] = (( cmis_rx_power[14] << 8) | cmis_rx_power[15]);
+
+        /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
+        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW\n"
+                                    "Rx Power Lane2: %d.%03d mW\n"
+                                    "Rx Power Lane3: %d.%03d mW\n"
+                                    "Rx Power Lane4: %d.%03d mW\n"
+                                    "Rx Power Lane5: %d.%03d mW\n"
+                                    "Rx Power Lane6: %d.%03d mW\n"
+                                    "Rx Power Lane7: %d.%03d mW\n"
+                                    "Rx Power Lane8: %d.%03d mW",
+                          cmis_rx_power_t[0]/10000,cmis_rx_power_t[0]%10000,
+                          cmis_rx_power_t[1]/10000,cmis_rx_power_t[1]%10000,
+                          cmis_rx_power_t[2]/10000,cmis_rx_power_t[2]%10000,
+                          cmis_rx_power_t[3]/10000,cmis_rx_power_t[3]%10000,
+                          cmis_rx_power_t[4]/10000,cmis_rx_power_t[4]%10000,
+                          cmis_rx_power_t[5]/10000,cmis_rx_power_t[5]%10000,
+                          cmis_rx_power_t[6]/10000,cmis_rx_power_t[6]%10000,
+                          cmis_rx_power_t[7]/10000,cmis_rx_power_t[7]%10000);
+        seq_printf(s, "%s\n", rx_power_data);
+        break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "%s Transceiver module is not supported\n",
-                          *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
@@ -1180,16 +882,20 @@ DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_rx_power);
 
 /*
 * Information about the Qsfp Channel Monitor value of Tx Bias Current
-* (Page 00h Bytes 42-49) is being exported to Sysfs.
+* is being exported to Sysfs.
 */
 static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
-    char tx_bias_current_data[250] = {};
+    char tx_bias_current_data[500] = {};
     u32 tx_bias_current_t[4] = {};
     u16 tx_bias_current = 0;
     u8 tx_bias[8] = {0};
+    u8 cmis_tx_bias[16] = {0};
+    u32 cmis_tx_bias_current_t[8] = {0};
+    u8 cmis_tx_bias_multiplier = 1;
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -1201,6 +907,7 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h Bytes 42-49 */
         ret = qsfp_read(qsfp, SFF8636_TX_BIAS, tx_bias,
                               sizeof(tx_bias));
         if (ret < 0) {
@@ -1223,7 +930,7 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
         /* tx_bias_current in  Micro Amp */
         tx_bias_current_t[3] = tx_bias_current * 2;
 
-        scnprintf(tx_bias_current_data,250,"Tx Bias Current Lane1: %d.%03d"
+        scnprintf(tx_bias_current_data,500,"Tx Bias Current Lane1: %d.%03d"
                                            " mA\n"
                                         "Tx Bias Current Lane2: %d.%03d mA\n"
                                         "Tx Bias Current Lane3: %d.%03d mA\n"
@@ -1234,16 +941,111 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
                           tx_bias_current_t[3]/1000,tx_bias_current_t[3]%1000);
         seq_printf(s, "%s\n", tx_bias_current_data);
         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX tx bias current measurement not supported\n");
+            return 0;
+        }
+
+        /*Support advertised in page 01h:160.0 */
+        if(!cmis_id->ext.tx_bias_mon_sup ) {
+            seq_printf(s, "TRX tx bias current measurement not supported\n");
+            return 0;
+        }
+
+        switch(cmis_id->ext.tx_bias_cur_scal) {
+        case 0x00:
+            /* multiply x1 */
+            cmis_tx_bias_multiplier = 1;
+            break;
+        case 0x01:
+            /* multiply x2 */
+            cmis_tx_bias_multiplier = 2;
+            break;
+        case 0x02:
+            /* multiply x4 */
+            cmis_tx_bias_multiplier = 4;
+            break;
+        /* reserved case not expected from OIF-CMIS-05.2 Rev */
+        case 0x03:
+            seq_printf(s, "TRX tx bias current multiplier was reserved "
+                          "not expected for OIF-CMIS-05.2\n");
+            return 0;
+        }
+
+        /* Page 11h Bytes 170-185 */
+        ret = qsfp_read(qsfp, CMIS_TX_BIAS, cmis_tx_bias,
+                              sizeof(cmis_tx_bias));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+        tx_bias_current = (( cmis_tx_bias[0] << 8) | cmis_tx_bias[1]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[0] = tx_bias_current * 2
+                                     * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[2] << 8) | cmis_tx_bias[3]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[1] = tx_bias_current * 2
+                                      * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[4] << 8) | cmis_tx_bias[5]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[2] = tx_bias_current * 2
+                                      * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[6] << 8) | cmis_tx_bias[7]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[3] = tx_bias_current * 2
+                                       * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[8] << 8) | cmis_tx_bias[9]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[4] = tx_bias_current * 2
+                                       * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[10] << 8) | cmis_tx_bias[11]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[5] = tx_bias_current * 2
+                                       * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[12] << 8) | cmis_tx_bias[13]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[6] = tx_bias_current * 2
+                                       * cmis_tx_bias_multiplier;
+
+        tx_bias_current = (( cmis_tx_bias[14] << 8) | cmis_tx_bias[15]);
+        /* tx_bias_current in  Micro Amp */
+        cmis_tx_bias_current_t[7] = tx_bias_current * 2
+                                       * cmis_tx_bias_multiplier;
+
+
+        scnprintf(tx_bias_current_data,500,"Tx Bias Current Lane1: %d.%03d"
+                                           " mA\n"
+                                        "Tx Bias Current Lane2: %d.%03d mA\n"
+                                        "Tx Bias Current Lane3: %d.%03d mA\n"
+                                        "Tx Bias Current Lane4: %d.%03d mA\n"
+                                        "Tx Bias Current Lane5: %d.%03d mA\n"
+                                        "Tx Bias Current Lane6: %d.%03d mA\n"
+                                        "Tx Bias Current Lane7: %d.%03d mA\n"
+                                        "Tx Bias Current Lane8: %d.%03d mA",
+                cmis_tx_bias_current_t[0]/1000,cmis_tx_bias_current_t[0]%1000,
+                cmis_tx_bias_current_t[1]/1000,cmis_tx_bias_current_t[1]%1000,
+                cmis_tx_bias_current_t[2]/1000,cmis_tx_bias_current_t[2]%1000,
+                cmis_tx_bias_current_t[3]/1000,cmis_tx_bias_current_t[3]%1000,
+                cmis_tx_bias_current_t[4]/1000,cmis_tx_bias_current_t[4]%1000,
+                cmis_tx_bias_current_t[5]/1000,cmis_tx_bias_current_t[5]%1000,
+                cmis_tx_bias_current_t[6]/1000,cmis_tx_bias_current_t[6]%1000,
+                cmis_tx_bias_current_t[7]/1000,cmis_tx_bias_current_t[7]%1000);
+        seq_printf(s, "%s\n", tx_bias_current_data);
+        break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "%s Transceiver module is not supported\n",
-                          *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
@@ -1252,17 +1054,20 @@ DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_bias);
 
 /*
 * Information about the Qsfp Channel Monitor value of Tx Power
-* (Page 00h Bytes 50-57) is being exported to Sysfs.
+* is being exported to Sysfs.
 */
 static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
+    struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
-    char tx_power_data[250] ={};
+    char tx_power_data[500] ={};
     u16 tx_power_t[4] = {};
     u8  tx_power[8] = {0};
     u8 diagmon;
+    u8  cmis_tx_power[16] = {0};
+    u16 cmis_tx_power_t[8] = {0};
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -1280,6 +1085,7 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
             seq_printf(s, "Transmitter power measurement not supported\n");
             return 0;
         }
+        /* Page 00h Bytes 50-57 */
         ret = qsfp_read(qsfp, SFF8636_TX_POWER, tx_power,
                               sizeof(tx_power));
         if (ret < 0) {
@@ -1293,7 +1099,7 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
         tx_power_t[3] = (( tx_power[6] << 8) | tx_power[7]);
 
         /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
-        scnprintf(tx_power_data,250,"Tx Power Lane1: %d.%03d mW\n"
+        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW\n"
                                     "Tx Power Lane2: %d.%03d mW\n"
                                     "Tx Power Lane3: %d.%03d mW\n"
                                     "Tx Power Lane4: %d.%03d mW",
@@ -1303,21 +1109,188 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
                           tx_power_t[3]/10000,tx_power_t[3]%10000);
         seq_printf(s, "%s\n", tx_power_data);
         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "Transmitter power measurement not supported\n");
+            return 0;
+        }
+
+        /*Support advertised in page 01h:160.1 */
+        if(!cmis_id->ext.tx_optical_pow_mon_sup) {
+            seq_printf(s, "Transmitter power measurement not supported\n");
+            return 0;
+        }
+
+        /* Page 11h Bytes 154-169 */
+        ret = qsfp_read(qsfp, CMIS_TX_POWER, cmis_tx_power,
+                              sizeof(cmis_tx_power));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        cmis_tx_power_t[0] = (( cmis_tx_power[0] << 8) | cmis_tx_power[1]);
+        cmis_tx_power_t[1] = (( cmis_tx_power[2] << 8) | cmis_tx_power[3]);
+        cmis_tx_power_t[2] = (( cmis_tx_power[4] << 8) | cmis_tx_power[5]);
+        cmis_tx_power_t[3] = (( cmis_tx_power[6] << 8) | cmis_tx_power[7]);
+        cmis_tx_power_t[4] = (( cmis_tx_power[9] << 8) | cmis_tx_power[9]);
+        cmis_tx_power_t[5] = (( cmis_tx_power[10] << 8) | cmis_tx_power[11]);
+        cmis_tx_power_t[6] = (( cmis_tx_power[12] << 8) | cmis_tx_power[13]);
+        cmis_tx_power_t[7] = (( cmis_tx_power[14] << 8) | cmis_tx_power[15]);
+
+        /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
+        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW\n"
+                                    "Tx Power Lane2: %d.%03d mW\n"
+                                    "Tx Power Lane3: %d.%03d mW\n"
+                                    "Tx Power Lane4: %d.%03d mW\n"
+                                    "Tx Power Lane5: %d.%03d mW\n"
+                                    "Tx Power Lane6: %d.%03d mW\n"
+                                    "Tx Power Lane7: %d.%03d mW\n"
+                                    "Tx Power Lane8: %d.%03d mW",
+                          cmis_tx_power_t[0]/10000,cmis_tx_power_t[0]%10000,
+                          cmis_tx_power_t[1]/10000,cmis_tx_power_t[1]%10000,
+                          cmis_tx_power_t[2]/10000,cmis_tx_power_t[2]%10000,
+                          cmis_tx_power_t[3]/10000,cmis_tx_power_t[3]%10000,
+                          cmis_tx_power_t[4]/10000,cmis_tx_power_t[4]%10000,
+                          cmis_tx_power_t[5]/10000,cmis_tx_power_t[5]%10000,
+                          cmis_tx_power_t[6]/10000,cmis_tx_power_t[6]%10000,
+                          cmis_tx_power_t[7]/10000,cmis_tx_power_t[7]%10000);
+        seq_printf(s, "%s\n", tx_power_data);
+
+        break;
     default:
-        if (*spec_id == 0x00) {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "Unknown module\n",*spec_id);
-        }
-        else {
-            seq_printf(s, "Specification Identifier {0x%02X}\n"
-                          "%s Transceiver module is not supported\n",
-                          *spec_id,mod_identifier_to_str(*spec_id));
-        }
+        spec_info_print(s, *spec_id);
     }
 
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_power);
+
+int create_common_debugfs_files(struct qsfp *qsfp)
+{
+    struct dentry *file;
+
+    file = debugfs_create_file("module_revision", 0600,
+                                   qsfp->module_debugfs_dir,
+                                   qsfp, &qsfp_debug_revision_info_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp module_revision debugfs_create_file fail,"
+                           "error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+     }
+
+    file = debugfs_create_file("connector", 0600, qsfp->module_debugfs_dir,
+                               qsfp, &qsfp_debug_connector_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp phys_ext_id debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+    }
+
+    file = debugfs_create_file("vendor_info", 0600, qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_vendor_info_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp vendor_info debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        return -1;
+    }
+
+    file = debugfs_create_file("temperature", 0600, qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_device_temperature_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp temperature debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+    }
+
+    file = debugfs_create_file("supply_voltage", 0600,
+                        qsfp->module_debugfs_dir, qsfp,
+                        &qsfp_debug_device_Supply_Voltage_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp supply_voltage debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+    }
+
+    file = debugfs_create_file("rx_power", 0600, qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_device_rx_power_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp rx_power debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+    }
+
+    file = debugfs_create_file("tx_bias_current", 0600,
+                        qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_device_tx_bias_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp tx_bias debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+    }
+
+    file = debugfs_create_file("tx_power", 0600, qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_device_tx_power_fops);
+    if (!file || IS_ERR(file)) {
+        dev_err(qsfp->dev, "%s: qsfp tx_power debugfs_create_file fail,"
+                           " error %ld\n", __func__,PTR_ERR(file));
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        return -1;
+    }
+
+    return 0;
+}
+
+int module_debugfs_init(struct qsfp *qsfp)
+{
+    if (IS_ERR(qsfp->debugfs_dir) || IS_ERR(qsfp->fpc->debugfs_dir) ||
+        IS_ERR(transceiver_debugfs_dir)) {
+        dev_err(qsfp->dev, "%s: debugfs_create_dir fail, "
+                            "error (%ld %ld %ld)\n",
+                            __func__,PTR_ERR(transceiver_debugfs_dir),
+                            PTR_ERR(qsfp->fpc->debugfs_dir),
+                            PTR_ERR(qsfp->debugfs_dir));
+        return -1;
+    }
+    qsfp->module_debugfs_dir = debugfs_create_dir("module_spec_info",
+                                                  qsfp->debugfs_dir);
+    if (IS_ERR(qsfp->module_debugfs_dir)) {
+        dev_err(qsfp->dev, "%s: qsfp module_spec_info debugfs_create_dir"
+                           "fail, error %ld\n",
+                           __func__,PTR_ERR(qsfp->module_debugfs_dir));
+        return -1;
+    }
+
+    return 0;
+}
+
+void module_debugfs_exit(struct qsfp *qsfp)
+{
+    if (IS_ERR(qsfp->module_debugfs_dir) || IS_ERR(qsfp->debugfs_dir) ||
+        IS_ERR(qsfp->fpc->debugfs_dir) ||
+        IS_ERR(transceiver_debugfs_dir)) {
+        dev_err(qsfp->dev,"%s: debugfs_create_dir fail, error "
+                          "(%ld %ld %ld %ld)\n",
+                        __func__,PTR_ERR(transceiver_debugfs_dir),
+                        PTR_ERR(qsfp->fpc->debugfs_dir),
+                        PTR_ERR(qsfp->debugfs_dir),
+                        PTR_ERR(qsfp->module_debugfs_dir));
+        return;
+    }
+    else
+        debugfs_remove_recursive(qsfp->module_debugfs_dir);
+}
 
 void qsfp_debugfs_init(struct qsfp *qsfp)
 {
@@ -1370,29 +1343,11 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
         return;
     }
 
-    file = debugfs_create_file("power_info", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_qsfp_power_info_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp power_info debugfs_create_file fail,"
-                           "error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
     file = debugfs_create_file("port_num_info", 0600, qsfp->debugfs_dir, qsfp,
                         &qsfp_debug_qsfp_port_num_info_fops);
     if (!file || IS_ERR(file)) {
         dev_err(qsfp->dev, "%s: qsfp port_num_info debugfs_create_file fail,"
                            "error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("module_power_class", 0600, qsfp->debugfs_dir,
-                        qsfp, &qsfp_debug_qsfp_module_power_class_info_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp module_power_class debugfs_create_file"
-                           "fail, error %ld\n", __func__,PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
         return;
     }
@@ -1403,142 +1358,9 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
         dev_err(qsfp->dev, "%s: qsfp module_identifier debugfs_create_file"
                           " fail, error %ld\n", __func__,PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
     }
+    return;
 
-    file = debugfs_create_file("module_revision", 0600, qsfp->debugfs_dir,
-                                  qsfp, &qsfp_debug_revision_info_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp module_revision debugfs_create_file fail,"
-                           "error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-     }
-
-    file = debugfs_create_file("phys_ext_id", 0600, qsfp->debugfs_dir, qsfp,
-                    &qsfp_debug_phys_ext_id_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp phys_ext_id debugfs_create_file fail,"
-                           "error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("connector", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_connector_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp phys_ext_id debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("encoding", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_encoding_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp encoding debugfs_create_file fail,"
-                           "error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("link_codes", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_link_codes_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp link_codes debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("vendor_info", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_vendor_info_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp vendor_info debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("max_case_temp", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_max_case_temp_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp max_case_temp debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("device_tech", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_device_tech_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp device_tech debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-     }
-
-    file = debugfs_create_file("diagmon", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_device_diagmon_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp diagmon debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("status_indicators", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_status_indicators_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp status_indicators debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("temperature", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_device_temperature_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp temperature debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("supply_voltage", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_device_Supply_Voltage_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp supply_voltage debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("rx_power", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_device_rx_power_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp rx_power debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("tx_bias_current", 0600, qsfp->debugfs_dir,
-                        qsfp, &qsfp_debug_device_tx_bias_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp tx_bias debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
-    }
-
-    file = debugfs_create_file("tx_power", 0600, qsfp->debugfs_dir, qsfp,
-                        &qsfp_debug_device_tx_power_fops);
-    if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp tx_power debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-    }
 }
 
 void qsfp_debugfs_exit(struct qsfp *qsfp)
