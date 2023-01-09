@@ -118,6 +118,15 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
 EXPORT_SYMBOL_GPL(qsfp_eth_get_link_type);
 
 /*
+ * Wrapper API function to call qsfp_eth_get_link_type
+ */
+int qsfp_trx_get_lane_type(u32 qsfp_phandle, u8* lane_info)
+{
+    return qsfp_eth_get_link_type(qsfp_phandle, lane_info);
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_lane_type);
+
+/*
  * API to determine lane supported speed
  */
 int qsfp_trx_get_lane_speed(u32 qsfp_phandle, trx_lane_speed* lane_speed)
