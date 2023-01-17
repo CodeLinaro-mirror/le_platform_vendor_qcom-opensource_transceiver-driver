@@ -15,9 +15,12 @@
 #include <linux/rtnetlink.h>
 #include <linux/of_platform.h>
 
+#define QSFP_ADDR(device, page, addr) ((device) << 16 | (page) << 8 | (addr))
+
 #include "sfp.h"
 #include "sff8636.h"
 #include "cmis.h"
+#include "sff8472.h"
 #include "transceiver_api.h"
 
 #define QSFP_COMPATIBLE "sff,qsfp"
@@ -32,6 +35,7 @@ struct qsfp_eeprom_id {
     union {
         struct sff8636_eeprom_id sff8636;
         struct cmis_eeprom_id cmis;
+        struct sfp_eeprom_id sff8472;
     };
 };
 
@@ -59,9 +63,6 @@ struct qsfp {
     u8 sm_fault_retries;
     unsigned short sm_state;
     size_t i2c_block_size;
-
-    int (*read)(const struct qsfp *, u8, u8, void *, size_t);
-    int (*write)(const struct qsfp *, u8, u8, void *, size_t);
 
     struct delayed_work timeout;
     struct mutex sm_mutex;            /* Protects state machine */
@@ -254,6 +255,7 @@ enum {
 extern const struct of_device_id fpc_qsfp_of_match[];
 extern struct qsfp_spec_ops sff8636_spec_ops;
 extern struct qsfp_spec_ops cmis_spec_ops;
+extern struct qsfp_spec_ops sff8472_spec_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
@@ -261,8 +263,8 @@ extern int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device,
                                    u8 offset, u8 len, u8 period);
 extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);
 
-extern int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
-extern int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
+extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
+extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
 extern void qsfp_data_prefetch_stop(struct qsfp *qsfp);
 extern void qsfp_check_state(struct qsfp *qsfp);

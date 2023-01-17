@@ -299,37 +299,35 @@ struct cmis_bank0_page11 {
 } __packed;
 
 enum {
-#define CMIS_ADDR(page, addr)    ((page) << 8 | (addr))
-    CMIS_IRQ_FLAGS                   = CMIS_ADDR(0x0,   3),
-    CMIS_MODULE_CONTROLS             = CMIS_ADDR(0x0,  26),
-    CMIS_MODULE_MASKS                = CMIS_ADDR(0x0,  31),
-    CMIS_ID                          = CMIS_ADDR(0x0, 128),
-    CMIS_POWER_CLASS                 = CMIS_ADDR(0x0, 200),
-    CMIS_LANE_INFO                   = CMIS_ADDR(0x0, 210),
+    CMIS_IRQ_FLAGS                   = QSFP_ADDR(0, 0x0,   3),
+    CMIS_MODULE_CONTROLS             = QSFP_ADDR(0, 0x0,  26),
+    CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
+    CMIS_ID                          = QSFP_ADDR(0, 0x0, 128),
+    CMIS_POWER_CLASS                 = QSFP_ADDR(0, 0x0, 200),
+    CMIS_LANE_INFO                   = QSFP_ADDR(0, 0x0, 210),
 
-    CMIS_ID_EXT                      = CMIS_ADDR(0x1, 130),
+    CMIS_ID_EXT                      = QSFP_ADDR(0, 0x1, 130),
 
-    CMIS_TX_DISABLE                  = CMIS_ADDR(0x10, 130),
-    CMIS_PAGE10_MASKS                = CMIS_ADDR(0x10, 213),
-    CMIS_TX_FAILURE_MASK             = CMIS_ADDR(0x10, 214),
-    CMIS_TX_LOS_MASK                 = CMIS_ADDR(0x10, 215),
-    CMIS_RX_LOS_MASK                 = CMIS_ADDR(0x10, 226),
+    CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
+    CMIS_PAGE10_MASKS                = QSFP_ADDR(0, 0x10, 213),
+    CMIS_TX_FAILURE_MASK             = QSFP_ADDR(0, 0x10, 214),
+    CMIS_TX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 215),
+    CMIS_RX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 226),
 
-    CMIS_LANE_FLAGS                  = CMIS_ADDR(0x11, 128),
-    CMIS_TX_FLAGS                    = CMIS_ADDR(0x11, 135),
-    CMIS_RX_LOS                      = CMIS_ADDR(0x11, 147),
+    CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 128),
+    CMIS_TX_FLAGS                    = QSFP_ADDR(0, 0x11, 135),
+    CMIS_RX_LOS                      = QSFP_ADDR(0, 0x11, 147),
 
-    CMIS_PAGE12_MASKS                = CMIS_ADDR(0x12, 239),
-    CMIS_BANK0_PAGE12                = CMIS_ADDR(0x12, 128),
+    CMIS_PAGE12_MASKS                = QSFP_ADDR(0, 0x12, 239),
+    CMIS_BANK0_PAGE12                = QSFP_ADDR(0, 0x12, 128),
 
-    CMIS_PAGE13_MASKS                = CMIS_ADDR(0x13, 206),
+    CMIS_PAGE13_MASKS                = QSFP_ADDR(0, 0x13, 206),
 
-    CMIS_BANK0_PAGE14                = CMIS_ADDR(0x14, 128),
+    CMIS_BANK0_PAGE14                = QSFP_ADDR(0, 0x14, 128),
 
-    CMIS_PAGE17_MASKS                = CMIS_ADDR(0x17, 192),
+    CMIS_PAGE17_MASKS                = QSFP_ADDR(0, 0x17, 192),
 
-    CMIS_BANK0_PAGE2C                = CMIS_ADDR(0x2C, 128),
-
+    CMIS_BANK0_PAGE2C                = QSFP_ADDR(0, 0x2C, 128),
 };
 
 #define CMIS_LOW_POWER_REQ_SW   (BIT(4))

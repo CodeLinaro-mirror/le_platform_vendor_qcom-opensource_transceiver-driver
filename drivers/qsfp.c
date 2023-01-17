@@ -357,13 +357,16 @@ const char *sm_state_to_str(unsigned short sm_state)
  * Reads from QSFP memory map using i2c transaction by taking into account
  * page number as well.
  */
-static int qsfp_i2c_read(const struct qsfp *qsfp, u8 page, u8 dev_addr,
-                         void *buf, size_t len)
+static int qsfp_i2c_read(const struct qsfp *qsfp, u8 device, u8 page,
+                         u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[2];
     size_t block_size = qsfp->i2c_block_size;
     size_t this_len;
+    u8 i2c_addr;
     int ret;
+
+    i2c_addr = device ? qsfp->i2c_address_dev1 : qsfp->i2c_address_dev0;
 
     if ((dev_addr + len - 1) > QSFP_PAGE_OFFSET && !qsfp->module_flat_mem) {
         u8 page_buf[2];
@@ -371,38 +374,42 @@ static int qsfp_i2c_read(const struct qsfp *qsfp, u8 page, u8 dev_addr,
         page_buf[0] = QSFP_PAGE_OFFSET;
         page_buf[1] = page;
 
-        msgs[0].addr = qsfp->i2c_address_dev0;
+        msgs[0].addr = i2c_addr;
         msgs[0].flags = 0;   // write
         msgs[0].len = sizeof(page_buf);
         msgs[0].buf = page_buf;
 
         ret = i2c_transfer(qsfp->i2c, msgs, 1);
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
     }
 
-    msgs[0].addr = qsfp->i2c_address_dev0;
+    msgs[0].addr = i2c_addr;
     msgs[0].flags = 0;     // write
     msgs[0].len = 1;
     msgs[0].buf = &dev_addr;
-    msgs[1].addr = qsfp->i2c_address_dev0;
+
+    msgs[1].addr = i2c_addr;
     msgs[1].flags = I2C_M_RD;
     msgs[1].len = len;
     msgs[1].buf = buf;
 
     while (len) {
         this_len = len;
-        if (this_len > block_size)
+        if (this_len > block_size) {
             this_len = block_size;
-
+        }
         msgs[1].len = this_len;
 
         ret = i2c_transfer(qsfp->i2c, msgs, ARRAY_SIZE(msgs));
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
 
-        if (ret != ARRAY_SIZE(msgs))
+        if (ret != ARRAY_SIZE(msgs)) {
             return -EIO;
+        }
 
         msgs[1].buf += this_len;
         dev_addr += this_len;
@@ -416,11 +423,14 @@ static int qsfp_i2c_read(const struct qsfp *qsfp, u8 page, u8 dev_addr,
  * Writes into QSFP memory map using i2c transaction by taking into account
  * page number as well.
  */
-static int qsfp_i2c_write(const struct qsfp *qsfp, u8 page, u8 dev_addr,
-                          void *buf, size_t len)
+static int qsfp_i2c_write(const struct qsfp *qsfp, u8 device, u8 page,
+                          u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[1];
+    u8 i2c_addr;
     int ret;
+
+    i2c_addr = device ? qsfp->i2c_address_dev1 : qsfp->i2c_address_dev0;
 
     if ((dev_addr + len - 1) > QSFP_PAGE_OFFSET && !qsfp->module_flat_mem) {
         u8 page_buf[2];
@@ -428,22 +438,24 @@ static int qsfp_i2c_write(const struct qsfp *qsfp, u8 page, u8 dev_addr,
         page_buf[0] = QSFP_PAGE_OFFSET;
         page_buf[1] = page;
 
-        msgs[0].addr = qsfp->i2c_address_dev0;
+        msgs[0].addr = i2c_addr;
         msgs[0].flags = 0;   // write
         msgs[0].len = sizeof(page_buf);
         msgs[0].buf = page_buf;
 
         ret = i2c_transfer(qsfp->i2c, msgs, 1);
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
     }
 
-    msgs[0].addr = qsfp->i2c_address_dev0;
+    msgs[0].addr = i2c_addr;
     msgs[0].flags = 0;
     msgs[0].len = 1 + len;
     msgs[0].buf = kmalloc(1 + len, GFP_KERNEL);
-    if (!msgs[0].buf)
+    if (!msgs[0].buf) {
         return -ENOMEM;
+    }
 
     msgs[0].buf[0] = dev_addr;
     memcpy(&msgs[0].buf[1], buf, len);
@@ -452,8 +464,9 @@ static int qsfp_i2c_write(const struct qsfp *qsfp, u8 page, u8 dev_addr,
 
     kfree(msgs[0].buf);
 
-    if (ret < 0)
+    if (ret < 0) {
         return ret;
+    }
 
     return ret == ARRAY_SIZE(msgs) ? 0 : -EIO;
 }
@@ -474,20 +487,18 @@ static int qsfp_i2c_configure(struct qsfp *qsfp)
     }
 
     qsfp->i2c = i2c;
-    qsfp->read = qsfp_i2c_read;
-    qsfp->write = qsfp_i2c_write;
 
     return 0;
 }
 
-int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len)
+int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
-    return qsfp->read(qsfp, addr >> 8, addr, buf, len);
+    return qsfp_i2c_read(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
 }
 
-int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len)
+int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
-    return qsfp->write(qsfp, addr >> 8, addr, buf, len);
+    return qsfp_i2c_write(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
 }
 
 static int qsfp_set_spec_ops(struct qsfp *qsfp)
@@ -510,19 +521,28 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
-         qsfp->spec_ops = &sff8636_spec_ops;
-         dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
+        qsfp->spec_ops = &sff8636_spec_ops;
+        dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
+                              __func__, *spec_id);
+        break;
+
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        qsfp->spec_ops = &sff8472_spec_ops;
+        dev_notice(qsfp->dev, "%s: SFP spec id 0x%02X\n",
                                __func__, *spec_id);
-         break;
+        break;
+
     case SFF8024_ID_QSFPDD_CMIS:
-         qsfp->spec_ops = &cmis_spec_ops;
-         dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
-                               __func__, *spec_id);
-         break;
+        qsfp->spec_ops = &cmis_spec_ops;
+        dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
+                              __func__, *spec_id);
+        break;
+
     default:
-         dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
-                           __func__,*spec_id);
-         return -E_UNSUPPORTED_SPEC;
+        dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
+                            __func__,*spec_id);
+        return -E_UNSUPPORTED_SPEC;
     }
 
     return 0;
