@@ -30,24 +30,38 @@
  */
 
 /*
- * API to determine whether link type is optics or copper
+ * Function to get the qsfp structure from the phandle
  */
-int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+static struct qsfp* get_qsfp(u32 qsfp_phandle)
 {
     struct device_node *qsfp_node;
     struct platform_device *qsfp_pdev;
     struct qsfp *qsfp;
-    u8 connector;
 
     qsfp_node = of_find_node_by_phandle(qsfp_phandle);
     if (!qsfp_node)
-        return -EINVAL;
+        return NULL;
 
     qsfp_pdev = of_find_device_by_node(qsfp_node);
     if (!qsfp_pdev)
-        return -EINVAL;
+        return NULL;
 
     qsfp = platform_get_drvdata(qsfp_pdev);
+    if (!qsfp)
+        return NULL;
+
+    return qsfp;
+}
+
+/*
+ * API to determine whether link type is optics or copper
+ */
+int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+{
+    struct qsfp *qsfp;
+    u8 connector;
+
+    qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp)
         return -EINVAL;
 
@@ -102,6 +116,169 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
     return 0;
 }
 EXPORT_SYMBOL_GPL(qsfp_eth_get_link_type);
+
+/*
+ * Wrapper API function to call qsfp_eth_get_link_type
+ */
+int qsfp_trx_get_lane_type(u32 qsfp_phandle, u8* lane_info)
+{
+    return qsfp_eth_get_link_type(qsfp_phandle, lane_info);
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_lane_type);
+
+/*
+ * API to determine lane supported speed
+ */
+int qsfp_trx_get_lane_speed(u32 qsfp_phandle, trx_lane_speed* lane_speed)
+{
+    struct qsfp *qsfp;
+    int ret = -EINVAL;
+
+    qsfp = get_qsfp(qsfp_phandle);
+    if (!qsfp)
+        return -EINVAL;
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_lane_speed) {
+        ret = qsfp->spec_ops->get_lane_speed(qsfp, lane_speed);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        return -EINVAL;
+    }
+
+    return ret;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_lane_speed);
+
+/*
+ * API to determine transceiver type
+ */
+int qsfp_trx_get_type(u32 qsfp_phandle, trx_type* type)
+{
+    struct qsfp *qsfp;
+    u8 tansceivertype;
+
+    qsfp = get_qsfp(qsfp_phandle);
+    if (!qsfp)
+        return -EINVAL;
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_transceiver_type) {
+        tansceivertype = qsfp->spec_ops->get_transceiver_type(qsfp);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        return -EINVAL;
+    }
+
+    switch (tansceivertype) {
+    case SFF8024_ID_UNK:
+        *type = TRX_UNKNOWN;
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        *type = TRX_QSFP_PLS_QSFP28_QSFP56;
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        *type = TRX_QSFPDD;
+        break;
+    case SFF8024_ID_SFP:
+        *type = TRX_SFP;
+        break;
+    default:
+        *type = TRX_UNSUPPORTED;
+        break;
+    }
+
+    dev_notice(qsfp->dev, "%s: Transceiver type 0x%X\n", __func__, *type);
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_type);
+
+/*
+ * API to determine transceiver near end properties
+ */
+int qsfp_trx_get_laneconfig(u32 qsfp_phandle, trx_lane_cfg* laneinfo)
+{
+    struct qsfp *qsfp;
+    int ret = -EINVAL;
+
+    qsfp = get_qsfp(qsfp_phandle);
+    if (!qsfp)
+        return -EINVAL;
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_lanes_presence) {
+        ret = qsfp->spec_ops->get_lanes_presence(qsfp, laneinfo);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        return -EINVAL;
+    }
+
+    return ret;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_laneconfig);
+
+/*
+ * API to determine transceiver far end properties
+ */
+int qsfp_trx_get_breakoutconfig(u32 qsfp_phandle,
+                                trx_breakout_cfg* bout_config)
+{
+    struct qsfp *qsfp;
+    int ret = -EINVAL;
+
+    qsfp = get_qsfp(qsfp_phandle);
+    if (!qsfp)
+        return -EINVAL;
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_breakout_config) {
+        ret = qsfp->spec_ops->get_breakout_config(qsfp, bout_config);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        return -EINVAL;
+    }
+
+    return ret;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_breakoutconfig);
+
+/*
+ * API to determine transceiver information (lane speed, type, and
+ * lane configuration, breakout configuration )
+ */
+int qsfp_trx_get_info(u32 qsfp_phandle, struct qsfp_info* trx_info)
+{
+    int ret = -EINVAL;
+
+    /* Local variables to get data */
+    trx_lane_speed trx_speed_t;
+    trx_type trx_type_t;
+    trx_lane_cfg trx_laneinfo_t;
+    trx_breakout_cfg trx_bout_config_t;
+
+    ret = qsfp_trx_get_lane_speed(qsfp_phandle, &trx_speed_t);
+    if (ret == 0)
+        trx_info->trx_speed = trx_speed_t;
+    else
+        return ret;
+
+    ret = qsfp_trx_get_type(qsfp_phandle, &trx_type_t);
+    if (ret == 0)
+        trx_info->trx_module_type = trx_type_t;
+    else
+        return ret;
+
+    ret = qsfp_trx_get_laneconfig(qsfp_phandle, &trx_laneinfo_t);
+    if (ret == 0)
+        trx_info->trx_laneinfo = trx_laneinfo_t;
+    else
+        return ret;
+
+    ret = qsfp_trx_get_breakoutconfig(qsfp_phandle, &trx_bout_config_t);
+    if (ret == 0)
+        trx_info->trx_bout_cfg = trx_bout_config_t;
+
+    return ret;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_info);
 
 static const char  * const mod_state_strings[] = {
     [QSFP_MOD_EMPTY] = "Empty",
@@ -335,6 +512,11 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     case SFF8024_ID_QSFP_8436_8636:
          qsfp->spec_ops = &sff8636_spec_ops;
          dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
+                               __func__, *spec_id);
+         break;
+    case SFF8024_ID_QSFPDD_CMIS:
+         qsfp->spec_ops = &cmis_spec_ops;
+         dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
                                __func__, *spec_id);
          break;
     default:
@@ -1219,6 +1401,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
 static void qsfp_cleanup(void *data)
 {
     struct qsfp *qsfp = data;
+    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 
@@ -1423,6 +1606,7 @@ int qsfp_remove(struct platform_device *pdev)
 void qsfp_shutdown(struct platform_device *pdev)
 {
     struct qsfp *qsfp = platform_get_drvdata(pdev);
+    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 }

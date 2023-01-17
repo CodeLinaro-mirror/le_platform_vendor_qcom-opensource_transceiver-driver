@@ -31,6 +31,8 @@ enum {
     SFF8636_INTERRUPT_MASK              = SFF8636_ADDR(0, 100),
     SFF8636_CHANNEL_INTERRUPT_MASK      = SFF8636_ADDR(3, 242),
     SFF8636_CLS8_MAX_POWER              = SFF8636_ADDR(0, 107),
+    SFF8636_FREE_SIDE_PROP              = SFF8636_ADDR(0, 110),
+    SFF8636_CHANNEL_INFO                = SFF8636_ADDR(0, 113),
     SFF8636_ID                          = SFF8636_ADDR(0, 128),
 };
 

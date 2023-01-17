@@ -17,6 +17,8 @@
 
 #include "sfp.h"
 #include "sff8636.h"
+#include "cmis.h"
+#include "transceiver_api.h"
 
 #define QSFP_COMPATIBLE "sff,qsfp"
 
@@ -29,7 +31,7 @@
 struct qsfp_eeprom_id {
     union {
         struct sff8636_eeprom_id sff8636;
-        //struct cmis_eeprom_id cmis;
+        struct cmis_eeprom_id cmis;
     };
 };
 
@@ -106,6 +108,15 @@ struct qsfp_spec_ops {
     void (*irq_status_prefetch_start)(const struct qsfp *qsfp);
     /* Gets connector type */
     u8 (*get_connector_type)(const struct qsfp *qsfp);
+    /* Gets lane speed */
+    int (*get_lane_speed)(const struct qsfp *qsfp, trx_lane_speed* speed);
+    /* Gets transceive type */
+    u8 (*get_transceiver_type)(const struct qsfp *qsfp);
+    /* Gets Near-End Implementation */
+    int (*get_lanes_presence)(const struct qsfp *qsfp, trx_lane_cfg* laneinfo);
+    /* Gets Far-End Implementation */
+    int (*get_breakout_config)(const struct qsfp *qsfp,
+                          trx_breakout_cfg* bo_config);
 };
 
 enum {
@@ -210,8 +221,36 @@ enum {
     SFF8024_CONNECTOR_MPO_1X16   = 0x28,
 };
 
+enum {
+    SFF8024_ID_GBIC              = 0x01,
+    SFF8024_ID_300_XBI           = 0x04,
+    SFF8024_ID_XENPAK            = 0x05,
+    SFF8024_ID_XFP               = 0x06,
+    SFF8024_ID_XFF               = 0x07,
+    SFF8024_ID_XFP_E             = 0x08,
+    SFF8024_ID_XPAK              = 0x09,
+    SFF8024_ID_X2                = 0x0A,
+    SFF8024_ID_CXP               = 0x0E,
+    SFF8024_ID_SH_ML_HD_4X       = 0x0F,
+    SFF8024_ID_H_ML_HD_8X        = 0x10,
+    SFF8024_ID_CXP2              = 0x12,
+    SFF8024_ID_CPFP_S1_S2        = 0x13,
+    SFF8024_ID_SH_ML_HD_4X_FO    = 0x14,
+    SFF8024_ID_SH_ML_HD_8X_FO    = 0x15,
+    SFF8024_ID_CPFP_S3           = 0x16,
+    SFF8024_ID_MICRO_QSFP        = 0x17,
+    SFF8024_ID_QSFPDD_CMIS       = 0x18,
+    SFF8024_ID_QSFP_8X           = 0x19,
+    SFF8024_ID_SFP_DD_2X         = 0x1A,
+    SFF8024_ID_DSFP              = 0x1B,
+    SFF8024_ID_MLNK_X4           = 0x1C,
+    SFF8024_ID_MLNK_X8           = 0x1D,
+    SFF8024_ID_QSFP_P_CMIS       = 0x1E,
+};
+
 extern const struct of_device_id fpc_qsfp_of_match[];
 extern struct qsfp_spec_ops sff8636_spec_ops;
+extern struct qsfp_spec_ops cmis_spec_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
