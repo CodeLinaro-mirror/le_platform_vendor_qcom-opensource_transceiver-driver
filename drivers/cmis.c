@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 #include "qsfp.h"
@@ -84,12 +84,16 @@ static int cmis_mod_probe(struct qsfp *qsfp, bool report)
 static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
 {
     int ret;
-    u8 buf[] = {0xFF,
+    u8 mod_mask[] = {0xC7, 0xFF, 0xFF, 0xFF};
+    u8 page10_mask[] = {0xFF,
                 0x00, /* TX Fault/TX Failure */
                 0x00, /* TX LOS */
                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
                 0x00, /* RX LOS */
                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    u8 page12_mask[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    u8 page13_mask[] = {0x80, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    u8 page17_mask[] = {0xFF};
 
     /* Flat memory (Page 00h supported only) */
     if (qsfp->module_flat_mem == 0x01) {
@@ -98,18 +102,120 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
         return;
     }
 
-    ret = qsfp_write(qsfp, CMIS_LANE_MASKS, buf, sizeof(buf));
-    if (ret < 0)
-        dev_err(qsfp->dev, "%s: Failed to mask redundant interrupts. "
-                           "ret %d\n", __func__, ret);
+    ret = qsfp_write(qsfp, CMIS_MODULE_MASKS, mod_mask, sizeof(mod_mask));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to mask redundant module level "
+                           "interrupts\n", __func__, ret);
+    }
+
+    ret = qsfp_write(qsfp, CMIS_PAGE10_MASKS, page10_mask,
+                     sizeof(page10_mask));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to mask redundant interrupts from "
+                           "page10. ret %d\n", __func__, ret);
+    }
+
+    ret = qsfp_write(qsfp, CMIS_PAGE12_MASKS, page12_mask, sizeof(page12_mask));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to mask redundant interrupts from "
+                           "page12. ret %d\n", __func__, ret);
+    }
+
+    ret = qsfp_write(qsfp, CMIS_PAGE13_MASKS, page13_mask, sizeof(page13_mask));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to mask redundant interrupts from "
+                           "page13. ret %d\n", __func__, ret);
+    }
+
+    ret = qsfp_write(qsfp, CMIS_PAGE17_MASKS, page17_mask, sizeof(page17_mask));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to mask redundant interrupts from "
+                           "page17. ret %d\n", __func__, ret);
+    }
 }
 
 static u8 cmis_get_state(struct qsfp *qsfp)
 {
     int ret;
     u8 state = 0;
-    u8 buf[128];
     struct cmis_irq_flags irq_flags = {0};
+    bool poll = false;
+    u8 buf_0 = 0x0;
+    u8 buf_ff = 0xFF;
+
+    ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, 1);
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to read QSFP IRQ status. "
+                           "ret %d\n", __func__, ret);
+        /* Preserve the current state */
+        return qsfp->state;
+    }
+
+    /* Before cmis module state reach ready we are facing issue of LOS
+     * register not giving appropriate status and masking of interrupt
+     * not working
+     */
+    if (irq_flags.mod_state != CMIS_MODULE_STATE_READY) {
+        qsfp->need_poll = true;
+        return qsfp->state;
+    }
+
+    if (qsfp->need_poll) {
+        struct cmis_tx_status tx_status = {0};
+        u8 rx_los;
+
+        ret = qsfp_read(qsfp, CMIS_TX_FLAGS, &tx_status, sizeof(tx_status));
+        if (ret < 0) {
+            dev_err(qsfp->dev, "%s: Failed to read TX status. "
+                           "ret %d\n", __func__, ret);
+            return qsfp->state;
+        }
+
+        ret = qsfp_read(qsfp, CMIS_RX_LOS, &rx_los, sizeof(rx_los));
+        if (ret < 0) {
+            dev_err(qsfp->dev, "%s: Failed to read RX LOS. "
+                           "ret %d\n", __func__, ret);
+            return qsfp->state;
+        }
+
+        if (tx_status.tx_los || rx_los) {
+            if ((tx_status.tx_los == 0xFF) && (rx_los == 0xFF)) {
+                state |= QSFP_F_LOS;
+            }
+            poll = true;
+        }
+
+        if (tx_status.tx_failure) {
+            if (tx_status.tx_failure == 0xFF) {
+                state |= QSFP_F_TX_FAULT;
+            }
+            poll = true;
+        }
+
+        /* If none of flag set then unmask the interrupt */
+        if (!poll) {
+            ret = qsfp_write(qsfp, CMIS_TX_LOS_MASK, &buf_0, sizeof(buf_0));
+            if (ret < 0) {
+                dev_err(qsfp->dev, "%s:poll Failed to unmask QSFP TX LOS. "
+                                    "ret %d\n", __func__, ret);
+            }
+
+            ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf_0, sizeof(buf_0));
+            if (ret < 0) {
+                dev_err(qsfp->dev, "%s:poll Failed to unmask QSFP RX LOS. "
+                                   "ret %d\n", __func__, ret);
+            }
+
+            ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf_0, sizeof(buf_0));
+            if (ret < 0) {
+                dev_err(qsfp->dev, "%s:poll Failed to unmask QSFP TX Failure. "
+                           "ret %d\n", __func__, ret);
+            }
+        }
+
+        qsfp->need_poll = poll;
+        return state;
+    }
 
     ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, sizeof(irq_flags));
     if (ret < 0) {
@@ -119,21 +225,9 @@ static u8 cmis_get_state(struct qsfp *qsfp)
         return qsfp->state;
     }
 
-    dev_notice(qsfp->dev, "%s: IntL %u Module state 0x%X Module state change "
-    "%u Module Firmware error %u Data Firmware error %u CDB cmd complete "
-    "%u %u\n", __func__, irq_flags.irq_deasserted, irq_flags.mod_state,
-    irq_flags.mod_state_change, irq_flags.mod_fw_err, irq_flags.data_fw_err,
-    irq_flags.cdb_cmd_complete1, irq_flags.cdb_cmd_complete2);
-
-    dev_notice(qsfp->dev, "%s: Temperature Alarm high %u low %u , Warn high %u"
-    " low %u , VCC Alarm high %u low %u , Warn high %u low %u\n", __func__,
-    irq_flags.temp_high_alarm, irq_flags.temp_low_alarm,
-    irq_flags.temp_high_warn, irq_flags.temp_low_warn,
-    irq_flags.vcc_high_alarm, irq_flags.vcc_low_alarm, irq_flags.vcc_high_warn,
-    irq_flags.vcc_low_warn);
-
-    dev_notice(qsfp->dev, "%s: Bank 0: page11 %u page12 %u page 14 %u "
-    "page2C %u\n", __func__, irq_flags.bank0_page11, irq_flags.bank0_page12,
+    dev_notice(qsfp->dev, "%s: IntL %u Module state 0x%X Bank 0: page11 %u "
+    "page12 %u page 14 %u page 2c %u\n", __func__, irq_flags.irq_deasserted,
+    irq_flags.mod_state, irq_flags.bank0_page11, irq_flags.bank0_page12,
     irq_flags.bank0_page14, irq_flags.bank0_page2c);
 
     if (irq_flags.bank0_page11) {
@@ -147,79 +241,52 @@ static u8 cmis_get_state(struct qsfp *qsfp)
         }
 
         if (b0p11.tx_los || b0p11.rx_los) {
-            /* tx_los byte represent LOS for 8 TX lanes
-             * rx_los byte represent LOS for 8 RX lanes
-             */
-            state |= QSFP_F_LOS;
+            if ((b0p11.tx_los == 0xFF) && (b0p11.rx_los == 0xFF)) {
+                state |= QSFP_F_LOS;
+            } else if ((b0p11.tx_los != 0) || (b0p11.rx_los != 0)) {
+                dev_notice(qsfp->dev, "%s: There is LOS on few lanes which"
+                " is not reported TX 0x%X RX 0x%X\n", __func__, b0p11.tx_los,
+                b0p11.rx_los);
+            }
+            poll = true;
         }
 
         if (b0p11.tx_failure) {
-            /* tx_failure byte represent TX Fault for 8 TX lanes */
-            state |= QSFP_F_TX_FAULT;
+            if (b0p11.tx_failure == 0xFF) {
+                state |= QSFP_F_TX_FAULT;
+            } else if (b0p11.tx_failure != 0) {
+                dev_notice(qsfp->dev, "%s: There is TX Fault on few lanes "
+                "which is not reported 0x%X\n", __func__, b0p11.tx_failure);
+            }
+            poll = true;
         }
 
-        dev_notice(qsfp->dev, "%s: DataPath state: Lane1 0x%X Lane2 0x%X Lane3 "
-        "0x%X Lane4 0x%X Lane5 0x%X Lane6 0x%X Lane7 0x%X Lane8 0x%X\n",
-        __func__, b0p11.dp_state_lane1, b0p11.dp_state_lane2,
-        b0p11.dp_state_lane3, b0p11.dp_state_lane4, b0p11.dp_state_lane5,
-        b0p11.dp_state_lane6, b0p11.dp_state_lane7, b0p11.dp_state_lane8);
+        /* If flag is set then mask the interrupt */
+        if (poll) {
+            ret = qsfp_write(qsfp, CMIS_TX_LOS_MASK, &buf_ff, 1);
+            if (ret < 0) {
+                dev_err(qsfp->dev, "%s: Failed to mask QSFP TX LOS. "
+                                    "ret %d\n", __func__, ret);
+            }
 
-        dev_notice(qsfp->dev, "%s: Output status RX 0x%X TX 0x%X DP state "
-        "change 0x%X TX : Fault/Failure 0x%X LOS 0x%X LOL 0x%X Adaptive EQ "
-        "Fail 0x%X\n", __func__, b0p11.rx_output_status, b0p11.tx_output_status
-        , b0p11.dp_state_changed, b0p11.tx_failure, b0p11.tx_los,
-        b0p11.tx_cdr_lol, b0p11.tx_adap_eq_fail);
+            ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf_ff, 1);
+            if (ret < 0) {
+                dev_err(qsfp->dev, "%s: Failed to mask QSFP RX LOS. "
+                                   "ret %d\n", __func__, ret);
+            }
 
-        dev_notice(qsfp->dev, "%s: TX: Power Alarm high 0x%X low 0x%X , Warn "
-        "high 0x%X low 0x%X , Bias Alarm high 0x%X low 0x%X , Warn high 0x%X "
-        "low 0x%X\n", __func__, b0p11.tx_power_high_alarm,
-         b0p11.tx_power_low_alarm, b0p11.tx_power_high_warn,
-         b0p11.tx_power_low_warn,  b0p11.tx_bias_high_alarm,
-         b0p11.tx_bias_low_alarm, b0p11.tx_bias_high_warn,
-         b0p11.tx_bias_low_warn);
-
-         dev_notice(qsfp->dev, "%s: RX: LOS 0x%X LOL 0x%X Power: Alarm high "
-         "0x%X low 0x%X Warn high 0x%X low 0x%X Outpur status changed 0x%X\n",
-         __func__, b0p11.rx_los, b0p11.rx_cdr_lol, b0p11.rx_power_high_alarm,
-         b0p11.rx_power_low_alarm, b0p11.rx_power_high_warn,
-         b0p11.rx_power_low_warn, b0p11.rx_output_status_changed);
-    }
-
-    if (irq_flags.bank0_page12) {
-        ret = qsfp_read(qsfp, CMIS_BANK0_PAGE12, &buf, sizeof(buf));
-        if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Failed to read bank0 page12. "
+            ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf_ff, 1);
+            if (ret < 0) {
+                dev_err(qsfp->dev, "%s: Failed to mask QSFP TX Failure. "
                            "ret %d\n", __func__, ret);
+            }
         }
-    }
-    if (irq_flags.bank0_page14) {
-        ret = qsfp_read(qsfp, CMIS_BANK0_PAGE14, &buf, sizeof(buf));
-        if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Failed to read bank0 page14. "
-                           "ret %d\n", __func__, ret);
-        }
-    }
-    if (irq_flags.bank0_page2c) {
-        ret = qsfp_read(qsfp, CMIS_BANK0_PAGE2C, &buf, sizeof(buf));
-        if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Failed to read bank0 page2c. "
-                           "ret %d\n", __func__, ret);
-        }
-    }
-    if (irq_flags.bank1) {
-        dev_notice(qsfp->dev, "%s: Bank1 not supported by the driver. 0x%X\n",
-                              __func__, irq_flags.bank1);
+
+        dev_notice(qsfp->dev, "%s: LOS RX 0x%X TX 0x%X , TX Fault 0x%X\n",
+        __func__, b0p11.rx_los, b0p11.tx_los, b0p11.tx_failure);
     }
 
-    if (irq_flags.bank2) {
-        dev_notice(qsfp->dev, "%s: Bank2 not supported by the driver. 0x%X\n",
-                              __func__, irq_flags.bank2);
-    }
-
-    if (irq_flags.bank3) {
-        dev_notice(qsfp->dev, "%s: Bank3 not supported by the driver. 0x%X\n",
-                              __func__, irq_flags.bank3);
-    }
+    qsfp->need_poll = poll;
 
     return state;
 }
@@ -503,6 +570,10 @@ static int cmis_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
+static void cmis_rising_edge_irq(struct qsfp *qsfp)
+{
+}
+
 struct qsfp_spec_ops cmis_spec_ops = {
     .mod_probe = cmis_mod_probe,
     .disable_redundant_irq = cmis_disable_redundant_irq,
@@ -522,4 +593,5 @@ struct qsfp_spec_ops cmis_spec_ops = {
     .get_transceiver_type = cmis_get_transceiver_type,
     .get_lanes_presence = cmis_get_lanes_presence,
     .get_breakout_config = cmis_get_breakout_config,
+    .rising_edge_irq = cmis_rising_edge_irq,
 };

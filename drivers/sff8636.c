@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7
@@ -708,6 +708,13 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
+static void sff8636_rising_edge_irq(struct qsfp *qsfp)
+{
+    qsfp_data_prefetch_stop(qsfp);
+
+    qsfp_check_state(qsfp);
+}
+
 struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
@@ -727,4 +734,5 @@ struct qsfp_spec_ops sff8636_spec_ops = {
     .get_transceiver_type = sff8636_get_transceiver_type,
     .get_lanes_presence = sff8636_get_lanes_presence,
     .get_breakout_config = sff8636_get_breakout_config,
+    .rising_edge_irq = sff8636_rising_edge_irq,
 };

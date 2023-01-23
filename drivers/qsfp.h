@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/sfp.h?h=cex7
@@ -68,6 +68,8 @@ struct qsfp {
 
     struct qsfp_eeprom_id id;
     struct qsfp_spec_ops *spec_ops;
+    bool need_poll;
+    struct delayed_work poll;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
@@ -117,6 +119,7 @@ struct qsfp_spec_ops {
     /* Gets Far-End Implementation */
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
+    void (*rising_edge_irq)(struct qsfp *qsfp);
 };
 
 enum {
@@ -261,5 +264,7 @@ extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);
 extern int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
+extern void qsfp_data_prefetch_stop(struct qsfp *qsfp);
+extern void qsfp_check_state(struct qsfp *qsfp);
 
 #endif

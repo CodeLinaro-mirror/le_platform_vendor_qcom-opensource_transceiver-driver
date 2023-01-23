@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include "transceiver_debugfs.h"
 
@@ -400,6 +400,7 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
 
+    seq_printf(s, "Port number: %u\n", qsfp->port_num);
     seq_printf(s, "Module state: %s\n",
                   mod_state_to_str(qsfp->sm_mod_state));
 
@@ -417,6 +418,10 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
     seq_printf(s, "LOS: %d\n", !!(qsfp->state & QSFP_F_LOS));
     seq_printf(s, "TX Fault: %d\n", !!(qsfp->state & QSFP_F_TX_FAULT));
     seq_printf(s, "TX Disable: %d\n", !!(qsfp->state & QSFP_F_TX_DISABLE));
+    seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
+    seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_LOS ? "LOS":"",
+               qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
+               qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
 
     return 0;
 }

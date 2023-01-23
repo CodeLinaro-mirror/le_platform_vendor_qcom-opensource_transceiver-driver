@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7 &
@@ -572,8 +572,10 @@ static u8 qsfp_get_state(struct qsfp *qsfp)
 
     state = qsfp->spec_ops->get_state(qsfp);
 
-    dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
-               qsfp_state_to_str(state, state_str, sizeof(state_str)));
+    if (!qsfp->need_poll) {
+        dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
+                   qsfp_state_to_str(state, state_str, sizeof(state_str)));
+    }
 
     return state;
 }
@@ -1296,6 +1298,10 @@ void qsfp_check_state(struct qsfp *qsfp)
     changed = state ^ qsfp->state;
     changed &= QSFP_F_LOS | QSFP_F_TX_FAULT;
 
+    if (!changed) {
+        return;
+    }
+
     dev_notice(qsfp->dev, "%s: Current state %s 0x%X, Next state %s 0x%X, "
     "Changed state to be processed %s 0x%X\n",__func__,
     qsfp_state_to_str(qsfp->state, cur_state_str, sizeof(cur_state_str)),
@@ -1321,15 +1327,42 @@ void qsfp_check_state(struct qsfp *qsfp)
     rtnl_unlock();
 }
 
+static void qsfp_poll(struct work_struct *work)
+{
+    struct qsfp *qsfp = container_of(work, struct qsfp, poll.work);
+
+    qsfp_check_state(qsfp);
+
+    if (qsfp->need_poll) {
+        /* Poll once per second */
+        mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
+    }
+}
+
 void qsfp_falling_edge_irq(struct qsfp *qsfp)
 {
     qsfp_check_state(qsfp);
+
+    if (qsfp->need_poll) {
+        dev_notice(qsfp->dev, "%s: Polling started\n", __func__);
+        /* Poll once per second */
+        mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
+    }
 
     if (qsfp->prefetch)
         qsfp->spec_ops->irq_status_prefetch_start(qsfp);
 }
 
-static void qsfp_data_prefetch_stop(struct qsfp *qsfp)
+void qsfp_stop_poll(struct qsfp *qsfp)
+{
+    if (qsfp->need_poll) {
+        qsfp->need_poll = false;
+        cancel_delayed_work_sync(&qsfp->poll);
+        dev_notice(qsfp->dev, "%s: Polling stoped\n", __func__);
+    }
+}
+
+void qsfp_data_prefetch_stop(struct qsfp *qsfp)
 {
     if (qsfp->prefetch) {
         fpc_data_prefetch_stop(qsfp);
@@ -1339,9 +1372,12 @@ static void qsfp_data_prefetch_stop(struct qsfp *qsfp)
 
 void qsfp_rising_edge_irq(struct qsfp *qsfp)
 {
-    qsfp_data_prefetch_stop(qsfp);
-
-    qsfp_check_state(qsfp);
+    /* Below code is needed when ISR gets called before qsfp_sm_mod_probe */
+    if (qsfp_set_spec_ops(qsfp) < 0) {
+        dev_err(qsfp->dev, "%s: Unable to set the spec ops\n", __func__);
+    } else {
+        qsfp->spec_ops->rising_edge_irq(qsfp);
+    }
 }
 
 void qsfp_module_insert_irq(struct qsfp *qsfp)
@@ -1358,6 +1394,8 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
 void qsfp_module_remove_irq(struct qsfp *qsfp)
 {
     dev_notice(qsfp->dev, "%s:\n", __func__);
+
+    qsfp_stop_poll(qsfp);
 
     qsfp_data_prefetch_stop(qsfp);
 
@@ -1382,6 +1420,8 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->dev = dev;
 
     mutex_init(&qsfp->sm_mutex);
+
+    INIT_DELAYED_WORK(&qsfp->poll, qsfp_poll);
     INIT_DELAYED_WORK(&qsfp->timeout, qsfp_timeout);
 
     /* valid port numbers are 0,1,2,3.
@@ -1394,6 +1434,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
      * a time.
      */
     qsfp->i2c_block_size = 16;
+    qsfp->need_poll = false;
 
     return qsfp;
 }
