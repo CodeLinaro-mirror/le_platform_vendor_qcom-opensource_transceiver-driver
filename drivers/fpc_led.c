@@ -98,7 +98,7 @@ int transceiver_led_off(u8 fpc_instance, u8 port_num, u8 led_num)
     struct fpc *fpc = NULL;
     struct qsfp *qsfp = NULL;
     int ret = SUCCESS;
-    u8 buf;
+    u8 buf = 0;
 
     /* Validation of input data from the caller */
     if (fpc_instance >= FPC_MAX_INSTANCES) {
