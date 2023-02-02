@@ -504,7 +504,6 @@ DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_module_identifier_info);
 static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the module is attached before processing  */
@@ -516,7 +515,6 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
         seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
                       sff8636_mod_revision_to_str(qsfp->module_revision));
         break;
@@ -958,7 +956,6 @@ DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_diagmon);
 static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
-    struct sff8636_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
     u8 status;
     int ret;
@@ -972,7 +969,6 @@ static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
-        id = &qsfp->id.sff8636;
         ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &status,
                          sizeof(status));
         if (ret < 0) {
@@ -1215,17 +1211,14 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
         /* tx_bias_current in  Micro Amp */
         tx_bias_current_t[0] = tx_bias_current * 2;
 
-        tx_bias_current  = 0;
         tx_bias_current = (( tx_bias[2] << 8) | tx_bias[3]);
         /* tx_bias_current in  Micro Amp */
         tx_bias_current_t[1] = tx_bias_current * 2;
 
-        tx_bias_current  = 0;
         tx_bias_current = (( tx_bias[4] << 8) | tx_bias[5]);
         /* tx_bias_current in  Micro Amp */
         tx_bias_current_t[2] = tx_bias_current * 2;
 
-        tx_bias_current  = 0;
         tx_bias_current = (( tx_bias[6] << 8) | tx_bias[7]);
         /* tx_bias_current in  Micro Amp */
         tx_bias_current_t[3] = tx_bias_current * 2;

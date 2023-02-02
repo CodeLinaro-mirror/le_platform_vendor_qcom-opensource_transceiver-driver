@@ -105,7 +105,7 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     ret = qsfp_write(qsfp, CMIS_MODULE_MASKS, mod_mask, sizeof(mod_mask));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to mask redundant module level "
-                           "interrupts\n", __func__, ret);
+                           "interrupts. ret %d\n", __func__, ret);
     }
 
     ret = qsfp_write(qsfp, CMIS_PAGE10_MASKS, page10_mask,
