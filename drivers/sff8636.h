@@ -15,11 +15,9 @@
 
 #define SFF8636_DEVICE0 (0)
 #define SFF8636_IRQ_OFFSET (3)
-#define SFF8636_IRQ_PREFETCH_LEN (2)
-#define SFF8636_PREFETCH_PERIOD (100)
 
 enum {
-    SFF8636_IRQ_FLAGS                   = QSFP_ADDR(0, 0,   2),
+    SFF8636_IRQ_FLAGS                   = QSFP_ADDR(0, 0,   3),
     SFF8636_TEMPERATURE                 = QSFP_ADDR(0, 0,  22),
     SFF8636_SUPPLY_VOLTAGE              = QSFP_ADDR(0, 0,  26),
     SFF8636_RX_POWER                    = QSFP_ADDR(0, 0,  34),
@@ -220,11 +218,6 @@ struct sff8636_id_stat {
 } __packed;
 
 struct sff8636_irq_flags {
-    u8 data_not_ready:1;
-    u8 intl:1;
-    u8 flat_mem:1;
-    u8 reserved_0:5;
-
     u8 los;
 
     u8 tx_fault:4;

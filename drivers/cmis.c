@@ -478,10 +478,6 @@ static int cmis_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
     return 0;
 }
 
-void cmis_irq_status_prefetch_start(const struct qsfp *qsfp)
-{
-}
-
 u8 cmis_get_connector_type(const struct qsfp *qsfp)
 {
     return qsfp->id.cmis.base.connector;
@@ -570,8 +566,9 @@ static int cmis_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
-static void cmis_rising_edge_irq(struct qsfp *qsfp)
+unsigned long cmis_irq_delay(const struct qsfp *qsfp)
 {
+    return 0;
 }
 
 struct qsfp_spec_ops cmis_spec_ops = {
@@ -587,11 +584,10 @@ struct qsfp_spec_ops cmis_spec_ops = {
     .mod_low_power = cmis_mod_low_power,
     .eeprom_print = cmis_eeprom_print,
     .module_info = cmis_module_info,
-    .irq_status_prefetch_start = cmis_irq_status_prefetch_start,
     .get_connector_type = cmis_get_connector_type,
     .get_lane_speed = cmis_get_lane_speed,
     .get_transceiver_type = cmis_get_transceiver_type,
     .get_lanes_presence = cmis_get_lanes_presence,
     .get_breakout_config = cmis_get_breakout_config,
-    .rising_edge_irq = cmis_rising_edge_irq,
+    .irq_delay = cmis_irq_delay,
 };

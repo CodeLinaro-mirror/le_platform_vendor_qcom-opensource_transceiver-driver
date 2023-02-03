@@ -345,10 +345,17 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
 {
     int ret;
     u8 state = 0;
+    bool poll = false;
     struct sff8636_irq_flags irq_flags = {0};
 
-    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags,
-                    sizeof(irq_flags));
+    if (qsfp->need_poll) {
+        /* In case of poll just read LOS TX Fault s*/
+        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags, 2);
+    } else {
+        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags,
+                        sizeof(irq_flags));
+    }
+
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read QSFP IRQ status. "
                            "ret %d\n", __func__, ret);
@@ -356,49 +363,51 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
         return qsfp->state;
     }
 
-    dev_notice(qsfp->dev, "%s: IntL 0x%X\n", __func__, irq_flags.intl);
-
     if (irq_flags.los) {
         /* Dont report LOS even if one lane works fine
          * 1st Nibble represent LOS for 4 RX lanes
          * 2nd Nibble represent LOS for 4 TX lanes
          */
-        if (irq_flags.los == 0xFF)
+        if (irq_flags.los == 0xFF) {
             state |= QSFP_F_LOS;
-        else
+        } else if (!qsfp->need_poll) {
             dev_notice(qsfp->dev, "%s: There is LOS on few lanes which is not"
                        " reported 0x%X\n", __func__, irq_flags.los);
-
-        /* In case LOS we have to enable fpc prefetch of irq status */
-        qsfp->prefetch = true;
+        }
+        /* In case LOS we have to enable poll */
+        poll = true;
     }
 
     if (irq_flags.tx_fault) {
         /* Dont report TX Fault even if one lane works fine
          * Nibble represent TX Fault for 4 TX lanes
          */
-        if (irq_flags.tx_fault == 0xF)
+        if (irq_flags.tx_fault == 0xF) {
             state |= QSFP_F_TX_FAULT;
-        else
+        } else if (!qsfp->need_poll) {
             dev_notice(qsfp->dev, "%s: There is TX Fault on few lanes which "
                        "is not reported 0x%X\n", __func__, irq_flags.tx_fault);
-
-        /* In case TX Fault we have to enable fpc prefetch of irq status */
-        qsfp->prefetch = true;
+        }
+        /* In case TX Fault we have to enable poll */
+        poll = true;
     }
 
-    dev_notice(qsfp->dev, "%s: IRQ status dump: LOS 0x%X TX Fault 0x%X "
-    "eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor 0x%X "
-    "RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
-    "TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X\n", __func__,
-    irq_flags.los, irq_flags.tx_fault, irq_flags.tx_adap_eq_fault,
-    irq_flags.lol, irq_flags.init_complete, irq_flags.tc_ready,
-    irq_flags.temp_alarm, irq_flags.volt_alarm, irq_flags.vendor_specific1,
-    irq_flags.rx12_pow_alarm, irq_flags.rx34_pow_alarm,
-    irq_flags.tx12_bias_alarm, irq_flags.tx34_bias_alarm,
-    irq_flags.tx12_pow_alarm, irq_flags.tx34_pow_alarm,
-    irq_flags.vendor_specific2[0], irq_flags.vendor_specific2[1],
-    irq_flags.vendor_specific2[2]);
+    if (!qsfp->need_poll) {
+        dev_notice(qsfp->dev, "%s: IRQ status dump: LOS 0x%X TX Fault 0x%X "
+        "eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor 0x%X "
+        "RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
+        "TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X\n", __func__,
+        irq_flags.los, irq_flags.tx_fault, irq_flags.tx_adap_eq_fault,
+        irq_flags.lol, irq_flags.init_complete, irq_flags.tc_ready,
+        irq_flags.temp_alarm, irq_flags.volt_alarm, irq_flags.vendor_specific1,
+        irq_flags.rx12_pow_alarm, irq_flags.rx34_pow_alarm,
+        irq_flags.tx12_bias_alarm, irq_flags.tx34_bias_alarm,
+        irq_flags.tx12_pow_alarm, irq_flags.tx34_pow_alarm,
+        irq_flags.vendor_specific2[0], irq_flags.vendor_specific2[1],
+        irq_flags.vendor_specific2[2]);
+    }
+
+    qsfp->need_poll = poll;
 
     return state;
 }
@@ -505,12 +514,6 @@ const char *sff8636_mod_encoding_to_str(u8 mod_encoding)
     case 0x09 ... 0xFF:
         return "Reserved need to be update in future";
     }
-}
-
-void sff8636_irq_status_prefetch_start(const struct qsfp *qsfp)
-{
-    fpc_data_prefetch_start(qsfp, SFF8636_DEVICE0, SFF8636_IRQ_OFFSET,
-    SFF8636_IRQ_PREFETCH_LEN, SFF8636_PREFETCH_PERIOD);
 }
 
 /*
@@ -708,11 +711,9 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
-static void sff8636_rising_edge_irq(struct qsfp *qsfp)
+unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
 {
-    qsfp_data_prefetch_stop(qsfp);
-
-    qsfp_check_state(qsfp);
+    return 0;
 }
 
 struct qsfp_spec_ops sff8636_spec_ops = {
@@ -728,11 +729,10 @@ struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_low_power = sff8636_mod_low_power,
     .eeprom_print = sff8636_eeprom_print,
     .module_info = sff8636_module_info,
-    .irq_status_prefetch_start = sff8636_irq_status_prefetch_start,
     .get_connector_type = sff8636_get_connector_type,
     .get_lane_speed = sff8636_get_lane_speed,
     .get_transceiver_type = sff8636_get_transceiver_type,
     .get_lanes_presence = sff8636_get_lanes_presence,
     .get_breakout_config = sff8636_get_breakout_config,
-    .rising_edge_irq = sff8636_rising_edge_irq,
+    .irq_delay = sff8636_irq_delay,
 };

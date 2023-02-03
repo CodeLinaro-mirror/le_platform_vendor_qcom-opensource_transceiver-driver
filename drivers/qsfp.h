@@ -52,7 +52,6 @@ struct qsfp {
     u8 i2c_address_dev0;
     u8 i2c_address_dev1;
     bool module_flat_mem;
-    bool prefetch;
     u8 features;
     u8 module_power_class;
     u8 module_revision;
@@ -107,8 +106,6 @@ struct qsfp_spec_ops {
     void (*eeprom_print)(const struct qsfp *qsfp);
     /* Ethtool callback function to get module info */
     int (*module_info)(struct qsfp *qsfp, struct ethtool_modinfo *modinfo);
-    /* Starts FPC402 prefetch from irq status offset */
-    void (*irq_status_prefetch_start)(const struct qsfp *qsfp);
     /* Gets connector type */
     u8 (*get_connector_type)(const struct qsfp *qsfp);
     /* Gets lane speed */
@@ -120,7 +117,7 @@ struct qsfp_spec_ops {
     /* Gets Far-End Implementation */
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
-    void (*rising_edge_irq)(struct qsfp *qsfp);
+    unsigned long (*irq_delay)(const struct qsfp *qsfp);
 };
 
 enum {
@@ -259,14 +256,10 @@ extern struct qsfp_spec_ops sff8472_spec_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
-extern int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device,
-                                   u8 offset, u8 len, u8 period);
-extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);
 
 extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
-extern void qsfp_data_prefetch_stop(struct qsfp *qsfp);
 extern void qsfp_check_state(struct qsfp *qsfp);
 
 #endif

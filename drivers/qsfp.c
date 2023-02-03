@@ -527,7 +527,6 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
         break;
 
     case SFF8024_ID_SFP:
-    case SFF8024_ID_SFF_8472:
         qsfp->spec_ops = &sff8472_spec_ops;
         dev_notice(qsfp->dev, "%s: SFP spec id 0x%02X\n",
                                __func__, *spec_id);
@@ -881,6 +880,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->module_power_class = 0;
     qsfp->features = 0;
     qsfp->spec_ops = NULL;
+    qsfp->need_poll = false;
 
     dev_notice(qsfp->dev, "%s: Module removed\n", __func__);
 }
@@ -1359,18 +1359,20 @@ static void qsfp_poll(struct work_struct *work)
     }
 }
 
-void qsfp_falling_edge_irq(struct qsfp *qsfp)
+void qsfp_irq(struct qsfp *qsfp)
 {
-    qsfp_check_state(qsfp);
+    unsigned long delay;
 
-    if (qsfp->need_poll) {
-        dev_notice(qsfp->dev, "%s: Polling started\n", __func__);
-        /* Poll once per second */
-        mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
+    if (qsfp_set_spec_ops(qsfp) < 0) {
+        /* To make sure event wont get missed */
+        dev_err(qsfp->dev, "%s: Unable to set the spec ops. Process irq "
+                           "after 1sec\n", __func__);
+        delay = msecs_to_jiffies(1000);
+    } else {
+        delay = qsfp->spec_ops->irq_delay(qsfp);
     }
 
-    if (qsfp->prefetch)
-        qsfp->spec_ops->irq_status_prefetch_start(qsfp);
+    mod_delayed_work(system_wq, &qsfp->poll, delay);
 }
 
 void qsfp_stop_poll(struct qsfp *qsfp)
@@ -1379,24 +1381,6 @@ void qsfp_stop_poll(struct qsfp *qsfp)
         qsfp->need_poll = false;
         cancel_delayed_work_sync(&qsfp->poll);
         dev_notice(qsfp->dev, "%s: Polling stoped\n", __func__);
-    }
-}
-
-void qsfp_data_prefetch_stop(struct qsfp *qsfp)
-{
-    if (qsfp->prefetch) {
-        fpc_data_prefetch_stop(qsfp);
-        qsfp->prefetch = false;
-    }
-}
-
-void qsfp_rising_edge_irq(struct qsfp *qsfp)
-{
-    /* Below code is needed when ISR gets called before qsfp_sm_mod_probe */
-    if (qsfp_set_spec_ops(qsfp) < 0) {
-        dev_err(qsfp->dev, "%s: Unable to set the spec ops\n", __func__);
-    } else {
-        qsfp->spec_ops->rising_edge_irq(qsfp);
     }
 }
 
@@ -1416,8 +1400,6 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
     dev_notice(qsfp->dev, "%s:\n", __func__);
 
     qsfp_stop_poll(qsfp);
-
-    qsfp_data_prefetch_stop(qsfp);
 
     qsfp->state &= (~QSFP_F_PRESENT);
 
@@ -1462,7 +1444,6 @@ static struct qsfp *qsfp_alloc(struct device *dev)
 static void qsfp_cleanup(void *data)
 {
     struct qsfp *qsfp = data;
-    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 
@@ -1667,7 +1648,6 @@ int qsfp_remove(struct platform_device *pdev)
 void qsfp_shutdown(struct platform_device *pdev)
 {
     struct qsfp *qsfp = platform_get_drvdata(pdev);
-    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 }

@@ -13,7 +13,7 @@ static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
 
     qsfp->module_flat_mem = 1;
 
-    ret = qsfp_read(qsfp, SFF8472_ID, &id, sizeof(id.sff8472.base));
+    ret = qsfp_read(qsfp, SFF8472_ID, &id, sizeof(id.sff8472));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read base EEPROM: %d\n",
                             __func__, ret);
@@ -28,13 +28,6 @@ static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
         return -EINVAL;
     }
 
-    ret = qsfp_read(qsfp, SFF8472_EXT, &id.sff8472.ext, sizeof(id.sff8472.ext));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read extended EEPROM: %d\n",
-                            __func__, ret);
-        return ret;
-    }
-
     /* Validate the checksum over the extented structure */
     check = qsfp_check(&id.sff8472.ext, sizeof(id.sff8472.ext) - 1);
     if (check != id.sff8472.ext.cc_ext) {
@@ -43,9 +36,22 @@ static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
         return -EINVAL;
     }
 
-    qsfp->module_revision = id.sff8472.ext.sff8472_compliance;
+    if (id.sff8472.base.phys_ext_id != SFP_PHYS_EXT_ID_SFP) {
+        dev_err(qsfp->dev, "%s: Extended id 0x%X didnot match\n",
+                           id.sff8472.base.phys_ext_id, __func__);
+        return -E_UNSUPPORTED_SPEC;
+    }
 
     qsfp->id = id;
+
+    /* In case of sff8472 module version never be zero */
+    qsfp->module_revision = id.sff8472.ext.sff8472_compliance;
+
+    /* check state as there is no initial interrupt coming for sff8472 in case
+     * transceiver inserted during bootup and also needed in case interrupt
+     * called before EEPROM read
+     */
+    mod_delayed_work(system_wq, &qsfp->poll, 0);
 
     return 0;
 }
@@ -118,6 +124,8 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
     int ret;
     u8 val;
 
+    dev_notice(qsfp->dev, "%s:\n", __func__);
+
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: Failed to read extended module control."
@@ -141,6 +149,8 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 {
     int ret;
     u8 val;
+
+    dev_notice(qsfp->dev, "%s:\n", __func__);
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
@@ -200,16 +210,61 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
 
 static u8 sff8472_get_state(struct qsfp *qsfp)
 {
-    /* LOS flag always set irrespective of other end connected or not.
-     * No interrupt when other end removed.
-     * There is interrupt when other end connected.
-     * This function will be implemented after getting clarity till that time
-     * LOS and TX Fault events wont be reported.
+    int ret;
+    u8 state = 0;
+    u8 irq_flag = 0;
+    const __be16 los_inverted = cpu_to_be16(SFP_OPTIONS_LOS_INVERTED);
+    const __be16 los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
+    __be16 los_options;
+
+    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flag, sizeof(irq_flag));
+    if (ret < 0) {
+        dev_err(qsfp->dev, "%s: Failed to read IRQ status flag. "
+                           "ret %d\n", __func__, ret);
+        /* Preserve the current state */
+        return qsfp->state;
+    }
+
+    /* EEPROM not yet read so wont have details about feature
+     * and LOS polarity
+     * poll not necessary as it is handled in mod probe
      */
-    return qsfp->state;
+    if (qsfp->module_revision == 0) {
+        dev_notice(qsfp->dev, "%s: EEPROM not yet read\n", __func__);
+        return qsfp->state;
+    }
+
+    dev_notice(qsfp->dev, "%s: IRQ status flag: 0x%X\n", __func__, irq_flag);
+
+    los_options = qsfp->id.sff8472.ext.options & (los_inverted | los_normal);
+
+    if (qsfp->features & QSFP_F_LOS) {
+        if (los_options == los_normal) {
+            if (irq_flag & SFF8472_LOS) {
+                state |= QSFP_F_LOS;
+                dev_notice(qsfp->dev, "%s: LOS set\n", __func__);
+            }
+        } else if (los_options == los_inverted) {
+            if (!(irq_flag & SFF8472_LOS)) {
+                state |= QSFP_F_LOS;
+                dev_notice(qsfp->dev, "%s: LOS set (inverted)\n", __func__);
+            }
+        } else {
+            dev_err(qsfp->dev, "%s: LOS Neither normal nor inverted\n",
+                               __func__);
+        }
+    }
+
+    if ((qsfp->features & QSFP_F_TX_FAULT) && (irq_flag & SFF8472_TX_FAULT)) {
+        state |= QSFP_F_TX_FAULT;
+        dev_notice(qsfp->dev, "%s: TX Fault set\n", __func__);
+    }
+
+    return state;
 }
 
-static int sff8472_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
+static int sff8472_module_info(struct qsfp *qsfp,
+                               struct ethtool_modinfo *modinfo)
 {
     if (qsfp->id.sff8472.ext.sff8472_compliance &&
         !(qsfp->id.sff8472.ext.diagmon & SFP_DIAGMON_ADDRMODE)) {
@@ -313,13 +368,9 @@ static void sff8472_tx_disable(const struct qsfp *qsfp)
 
 }
 
-static void sff8472_irq_status_prefetch_start(const struct qsfp *qsfp)
+unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
 {
-}
-
-static void sff8472_rising_edge_irq(struct qsfp *qsfp)
-{
-    qsfp_check_state(qsfp);
+    return msecs_to_jiffies(100);
 }
 
 struct qsfp_spec_ops sff8472_spec_ops = {
@@ -335,11 +386,10 @@ struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_low_power = sff8472_mod_low_power,
     .eeprom_print = sff8472_eeprom_print,
     .module_info = sff8472_module_info,
-    .irq_status_prefetch_start = sff8472_irq_status_prefetch_start,
     .get_connector_type = sff8472_get_connector_type,
     .get_lane_speed = sff8472_get_lane_speed,
     .get_transceiver_type = sff8472_get_transceiver_type,
     .get_lanes_presence = sff8472_get_lanes_presence,
     .get_breakout_config = sff8472_get_breakout_config,
-    .rising_edge_irq = sff8472_rising_edge_irq,
+    .irq_delay = sff8472_irq_delay,
 };

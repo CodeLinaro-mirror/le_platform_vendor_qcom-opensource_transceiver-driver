@@ -8,7 +8,6 @@
 
 enum {
     SFF8472_ID                   = QSFP_ADDR(0, 0,   0),
-    SFF8472_EXT                  = QSFP_ADDR(0, 0,  64),
 
     /* Device 1 registers */
     SFF8472_STATUS_FLAGS         = QSFP_ADDR(1, 0, 110),
@@ -22,5 +21,7 @@ enum {
 #define SFF8472_LOS_IMPL (BIT(4))
 #define SFF8472_TX_FAULT_IMPL (BIT(5))
 #define SFF8472_TX_DISABLE_IMPL (BIT(6))
+#define SFF8472_LOS (BIT(1))
+#define SFF8472_TX_FAULT (BIT(2))
 
 #endif
