@@ -394,14 +394,17 @@ static int fpc_probe(struct platform_device *pdev)
         return PTR_ERR(fpc);
     }
 
-    platform_set_drvdata(pdev, fpc);
-
     ret = devm_add_action(fpc->dev, fpc_cleanup, fpc);
     if (ret < 0) {
         dev_err(fpc->dev, "%s: devm_add_action failed. "
                           "ret %d\n", __func__, ret);
         fpc_cleanup(fpc);
         return ret;
+    }
+
+    if (!node) {
+        dev_err(fpc->dev, "%s: dev node not found\n", __func__);
+        return -EINVAL;
     }
 
     ret = device_property_read_u32(fpc->dev, "i2c-address", &i2c_address);
@@ -435,7 +438,7 @@ static int fpc_probe(struct platform_device *pdev)
     if (ret < 0) {
         dev_info(fpc->dev, "%s: Not able to configure i2c address. ret %d\n",
                             __func__, ret);
-        return ret;
+        return -EPROBE_DEFER;
     }
 
     ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
@@ -511,6 +514,11 @@ static int fpc_probe(struct platform_device *pdev)
                           __func__);
         return -EINVAL;
     }
+
+    /* set driver data once everything is successful */
+    platform_set_drvdata(pdev, fpc);
+
+    dev_notice(fpc->dev, "%s: Success\n", __func__);
 
     return 0;
 }

@@ -47,8 +47,6 @@ static struct qsfp* get_qsfp(u32 qsfp_phandle)
         return NULL;
 
     qsfp = platform_get_drvdata(qsfp_pdev);
-    if (!qsfp)
-        return NULL;
 
     return qsfp;
 }
@@ -62,8 +60,11 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
     u8 connector;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_connector_type) {
         connector = qsfp->spec_ops->get_connector_type(qsfp);
@@ -135,8 +136,11 @@ int qsfp_trx_get_lane_speed(u32 qsfp_phandle, trx_lane_speed* lane_speed)
     int ret = -EINVAL;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_lane_speed) {
         ret = qsfp->spec_ops->get_lane_speed(qsfp, lane_speed);
@@ -158,8 +162,11 @@ int qsfp_trx_get_type(u32 qsfp_phandle, trx_type* type)
     u8 tansceivertype;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_transceiver_type) {
         tansceivertype = qsfp->spec_ops->get_transceiver_type(qsfp);
@@ -202,8 +209,11 @@ int qsfp_trx_get_laneconfig(u32 qsfp_phandle, trx_lane_cfg* laneinfo)
     int ret = -EINVAL;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_lanes_presence) {
         ret = qsfp->spec_ops->get_lanes_presence(qsfp, laneinfo);
@@ -226,8 +236,11 @@ int qsfp_trx_get_breakoutconfig(u32 qsfp_phandle,
     int ret = -EINVAL;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_breakout_config) {
         ret = qsfp->spec_ops->get_breakout_config(qsfp, bout_config);
@@ -1471,8 +1484,6 @@ int qsfp_probe(struct platform_device *pdev)
         return PTR_ERR(qsfp);
     }
 
-    platform_set_drvdata(pdev, qsfp);
-
     ret = devm_add_action(qsfp->dev, qsfp_cleanup, qsfp);
     if (ret < 0) {
         dev_err(qsfp->dev, "%s: devm_add_action failed. ret %d\n",
@@ -1481,7 +1492,7 @@ int qsfp_probe(struct platform_device *pdev)
         return ret;
     }
 
-    if (!pdev->dev.of_node) {
+    if (!node) {
         dev_err(qsfp->dev, "%s: dev node not found\n", __func__);
         return -EINVAL;
     }
@@ -1626,6 +1637,11 @@ int qsfp_probe(struct platform_device *pdev)
 
     transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
                                     QSFP_LED1 | QSFP_LED2);
+
+    /* set driver data once everything is successful */
+    platform_set_drvdata(pdev, qsfp);
+
+    dev_notice(qsfp->dev, "%s: Success\n", __func__);
 
     return 0;
 }
