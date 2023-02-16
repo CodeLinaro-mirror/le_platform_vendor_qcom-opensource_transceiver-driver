@@ -331,7 +331,7 @@ static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 status;
+    u8 status = 0;
     int ret;
 
     /* Ensure that the module is attached before processing  */

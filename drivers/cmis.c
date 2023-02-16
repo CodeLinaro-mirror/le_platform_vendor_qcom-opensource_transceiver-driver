@@ -8,8 +8,8 @@
 static int cmis_mod_probe(struct qsfp *qsfp, bool report)
 {
     /* QSFP module inserted - read I2C data */
-    struct cmis_id_stat id_stat;
-    struct qsfp_eeprom_id id;
+    struct cmis_id_stat id_stat = {0};
+    struct qsfp_eeprom_id id = {0};
     u8 check;
     int ret;
 
@@ -162,7 +162,7 @@ static u8 cmis_get_state(struct qsfp *qsfp)
 
     if (qsfp->need_poll) {
         struct cmis_tx_status tx_status = {0};
-        u8 rx_los;
+        u8 rx_los = 0;
 
         ret = qsfp_read(qsfp, CMIS_TX_FLAGS, &tx_status, sizeof(tx_status));
         if (ret < 0) {
@@ -361,7 +361,7 @@ static int cmis_handle_max_power_exceed(const struct qsfp *qsfp)
 static int cmis_mod_high_power(const struct qsfp *qsfp)
 {
     int ret;
-    u8 mod_ctrl;
+    u8 mod_ctrl = 0;
 
     ret = qsfp_read(qsfp, CMIS_MODULE_CONTROLS, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
@@ -378,7 +378,7 @@ static int cmis_mod_high_power(const struct qsfp *qsfp)
 static int cmis_mod_low_power(const struct qsfp *qsfp)
 {
     int ret;
-    u8 mod_ctrl;
+    u8 mod_ctrl = 0;
 
     ret = qsfp_read(qsfp, CMIS_MODULE_CONTROLS, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
@@ -489,7 +489,7 @@ u8 cmis_get_connector_type(const struct qsfp *qsfp)
 static int cmis_get_lanes_presence(const struct qsfp *qsfp,
                                    trx_lane_cfg* laneinfo)
 {
-    u8 channel;
+    u8 channel = 0;
     int ret;
 
     ret = qsfp_read(qsfp, CMIS_LANE_INFO, &channel,
@@ -515,7 +515,7 @@ static int cmis_get_lane_speed(const struct qsfp *qsfp,
                                trx_lane_speed* lane_speed)
 {
     u8 lane_cnt;
-    u8 channel;
+    u8 channel = 0;
     int ret;
 
      ret = cmis_get_lanes_presence(qsfp, &channel);

@@ -262,10 +262,10 @@ int qsfp_trx_get_info(u32 qsfp_phandle, struct qsfp_info* trx_info)
     int ret = -EINVAL;
 
     /* Local variables to get data */
-    trx_lane_speed trx_speed_t;
-    trx_type trx_type_t;
-    trx_lane_cfg trx_laneinfo_t;
-    trx_breakout_cfg trx_bout_config_t;
+    trx_lane_speed trx_speed_t = 0;
+    trx_type trx_type_t = 0;
+    trx_lane_cfg trx_laneinfo_t = 0;
+    trx_breakout_cfg trx_bout_config_t = 0;
 
     ret = qsfp_trx_get_lane_speed(qsfp_phandle, &trx_speed_t);
     if (ret == 0)
@@ -875,7 +875,7 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     /* call spec specific create debugfs function to create files
        specific to transceiver */
-    if (qsfp->spec_ops && qsfp->spec_ops->create_debugfs) {
+    if (qsfp->spec_ops->create_debugfs) {
         qsfp->spec_ops->create_debugfs(qsfp);
     } else {
         dev_warn(qsfp->dev, "%s: Spec ops for create debugfs not found\n",
@@ -1490,7 +1490,7 @@ int qsfp_probe(struct platform_device *pdev)
     struct platform_device *fpc_pdev;
     const struct of_device_id *id;
     struct qsfp *qsfp;
-    u32 fpc_handle, temp;
+    u32 fpc_handle = 0, temp = 0;
     int ret;
 
     qsfp = qsfp_alloc(&pdev->dev);

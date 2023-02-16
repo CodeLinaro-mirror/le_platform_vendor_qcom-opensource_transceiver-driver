@@ -643,7 +643,7 @@ static u8 sff8636_get_transceiver_type(const struct qsfp *qsfp)
 static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
                                       trx_lane_cfg* laneinfo)
 {
-    u8 channel;
+    u8 channel = 0;
     int ret;
 
     ret = qsfp_read(qsfp, SFF8636_CHANNEL_INFO, &channel,
@@ -668,7 +668,7 @@ static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
 static int sff8636_get_breakout_config(const struct qsfp *qsfp,
                                        trx_breakout_cfg* bout_config)
 {
-    u8 buf;
+    u8 buf = 0;
     int ret;
 
     ret = qsfp_read(qsfp, SFF8636_FREE_SIDE_PROP, &buf,

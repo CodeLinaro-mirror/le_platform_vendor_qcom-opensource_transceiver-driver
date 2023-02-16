@@ -644,8 +644,8 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
-    char temperature_data[75] = {};
-    int16_t tempc;
+    char temperature_data[75] = {0};
+    int16_t tempc = 0;
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -1062,8 +1062,8 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
-    char tx_power_data[500] ={};
-    u16 tx_power_t[4] = {};
+    char tx_power_data[500] = {0};
+    u16 tx_power_t[4] = {0};
     u8  tx_power[8] = {0};
     u8 diagmon;
     u8  cmis_tx_power[16] = {0};

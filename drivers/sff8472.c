@@ -124,7 +124,7 @@ static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
 static int sff8472_mod_high_power(const struct qsfp *qsfp)
 {
     int ret;
-    u8 val;
+    u8 val = 0;
 
     dev_notice(qsfp->dev, "%s:\n", __func__);
 
@@ -150,7 +150,7 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 static int sff8472_mod_low_power(const struct qsfp *qsfp)
 {
     int ret;
-    u8 val;
+    u8 val = 0;
 
     dev_notice(qsfp->dev, "%s:\n", __func__);
 
@@ -323,7 +323,7 @@ static int sff8472_get_breakout_config(const struct qsfp *qsfp,
 static void sff8472_tx_enable(const struct qsfp *qsfp)
 {
     int ret;
-    u8 ctrl;
+    u8 ctrl = 0;
 
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));
@@ -348,7 +348,7 @@ static void sff8472_tx_enable(const struct qsfp *qsfp)
 static void sff8472_tx_disable(const struct qsfp *qsfp)
 {
     int ret;
-    u8 ctrl;
+    u8 ctrl = 0;
 
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));

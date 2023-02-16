@@ -72,7 +72,7 @@ static int qsfp_debug_fault_info_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
     int ret;
-    u8 fault_cause;
+    u8 fault_cause = 0;
 
     /* Ensure that the module is attached before processing  */
     if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
@@ -127,7 +127,7 @@ static int qsfp_debug_global_ctrl_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 mod_gbl_ctrl;
+    u8 mod_gbl_ctrl = 0;
     int ret;
 
     /* Ensure that the module is attached before processing  */
@@ -183,7 +183,7 @@ static int qsfp_debug_inactive_revision_info_show(struct seq_file *s,
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 mod_inactive_rev[2];
+    u8 mod_inactive_rev[2] = {0};
     int ret;
 
     /* Ensure that the module is attached before processing  */
@@ -558,7 +558,7 @@ static int qsfp_debug_global_status_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 g_status;
+    u8 g_status = 0;
     int ret;
 
     /* Ensure that the module is attached before processing  */
@@ -620,7 +620,7 @@ static int qsfp_debug_module_properties_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 mod_prop;
+    u8 mod_prop = 0;
     int ret;
 
     /* Ensure that the module is attached before processing  */
@@ -677,7 +677,7 @@ static int qsfp_debug_active_firmware_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 mod_firmware[2];
+    u8 mod_firmware[2] = {0};
     u8 major_rev;
     u8 minor_rev;
     int ret;
@@ -804,7 +804,7 @@ static int qsfp_debug_lane_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
-    u8 laneinfo;
+    u8 laneinfo = 0;
     int ret, i;
 
     /* Ensure that the module is attached before processing  */
