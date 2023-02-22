@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7 &
@@ -47,8 +47,6 @@ static struct qsfp* get_qsfp(u32 qsfp_phandle)
         return NULL;
 
     qsfp = platform_get_drvdata(qsfp_pdev);
-    if (!qsfp)
-        return NULL;
 
     return qsfp;
 }
@@ -62,8 +60,11 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
     u8 connector;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_connector_type) {
         connector = qsfp->spec_ops->get_connector_type(qsfp);
@@ -135,8 +136,11 @@ int qsfp_trx_get_lane_speed(u32 qsfp_phandle, trx_lane_speed* lane_speed)
     int ret = -EINVAL;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_lane_speed) {
         ret = qsfp->spec_ops->get_lane_speed(qsfp, lane_speed);
@@ -158,8 +162,11 @@ int qsfp_trx_get_type(u32 qsfp_phandle, trx_type* type)
     u8 tansceivertype;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_transceiver_type) {
         tansceivertype = qsfp->spec_ops->get_transceiver_type(qsfp);
@@ -202,8 +209,11 @@ int qsfp_trx_get_laneconfig(u32 qsfp_phandle, trx_lane_cfg* laneinfo)
     int ret = -EINVAL;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_lanes_presence) {
         ret = qsfp->spec_ops->get_lanes_presence(qsfp, laneinfo);
@@ -226,8 +236,11 @@ int qsfp_trx_get_breakoutconfig(u32 qsfp_phandle,
     int ret = -EINVAL;
 
     qsfp = get_qsfp(qsfp_phandle);
-    if (!qsfp)
-        return -EINVAL;
+    if (!qsfp) {
+        /* There is chance that QSFP probe not yet successfully completed */
+        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        return -EAGAIN;
+    }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_breakout_config) {
         ret = qsfp->spec_ops->get_breakout_config(qsfp, bout_config);
@@ -249,10 +262,10 @@ int qsfp_trx_get_info(u32 qsfp_phandle, struct qsfp_info* trx_info)
     int ret = -EINVAL;
 
     /* Local variables to get data */
-    trx_lane_speed trx_speed_t;
-    trx_type trx_type_t;
-    trx_lane_cfg trx_laneinfo_t;
-    trx_breakout_cfg trx_bout_config_t;
+    trx_lane_speed trx_speed_t = 0;
+    trx_type trx_type_t = 0;
+    trx_lane_cfg trx_laneinfo_t = 0;
+    trx_breakout_cfg trx_bout_config_t = 0;
 
     ret = qsfp_trx_get_lane_speed(qsfp_phandle, &trx_speed_t);
     if (ret == 0)
@@ -357,13 +370,16 @@ const char *sm_state_to_str(unsigned short sm_state)
  * Reads from QSFP memory map using i2c transaction by taking into account
  * page number as well.
  */
-static int qsfp_i2c_read(const struct qsfp *qsfp, u8 page, u8 dev_addr,
-                         void *buf, size_t len)
+static int qsfp_i2c_read(const struct qsfp *qsfp, u8 device, u8 page,
+                         u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[2];
     size_t block_size = qsfp->i2c_block_size;
     size_t this_len;
+    u8 i2c_addr;
     int ret;
+
+    i2c_addr = device ? qsfp->i2c_address_dev1 : qsfp->i2c_address_dev0;
 
     if ((dev_addr + len - 1) > QSFP_PAGE_OFFSET && !qsfp->module_flat_mem) {
         u8 page_buf[2];
@@ -371,38 +387,42 @@ static int qsfp_i2c_read(const struct qsfp *qsfp, u8 page, u8 dev_addr,
         page_buf[0] = QSFP_PAGE_OFFSET;
         page_buf[1] = page;
 
-        msgs[0].addr = qsfp->i2c_address_dev0;
+        msgs[0].addr = i2c_addr;
         msgs[0].flags = 0;   // write
         msgs[0].len = sizeof(page_buf);
         msgs[0].buf = page_buf;
 
         ret = i2c_transfer(qsfp->i2c, msgs, 1);
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
     }
 
-    msgs[0].addr = qsfp->i2c_address_dev0;
+    msgs[0].addr = i2c_addr;
     msgs[0].flags = 0;     // write
     msgs[0].len = 1;
     msgs[0].buf = &dev_addr;
-    msgs[1].addr = qsfp->i2c_address_dev0;
+
+    msgs[1].addr = i2c_addr;
     msgs[1].flags = I2C_M_RD;
     msgs[1].len = len;
     msgs[1].buf = buf;
 
     while (len) {
         this_len = len;
-        if (this_len > block_size)
+        if (this_len > block_size) {
             this_len = block_size;
-
+        }
         msgs[1].len = this_len;
 
         ret = i2c_transfer(qsfp->i2c, msgs, ARRAY_SIZE(msgs));
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
 
-        if (ret != ARRAY_SIZE(msgs))
+        if (ret != ARRAY_SIZE(msgs)) {
             return -EIO;
+        }
 
         msgs[1].buf += this_len;
         dev_addr += this_len;
@@ -416,11 +436,14 @@ static int qsfp_i2c_read(const struct qsfp *qsfp, u8 page, u8 dev_addr,
  * Writes into QSFP memory map using i2c transaction by taking into account
  * page number as well.
  */
-static int qsfp_i2c_write(const struct qsfp *qsfp, u8 page, u8 dev_addr,
-                          void *buf, size_t len)
+static int qsfp_i2c_write(const struct qsfp *qsfp, u8 device, u8 page,
+                          u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[1];
+    u8 i2c_addr;
     int ret;
+
+    i2c_addr = device ? qsfp->i2c_address_dev1 : qsfp->i2c_address_dev0;
 
     if ((dev_addr + len - 1) > QSFP_PAGE_OFFSET && !qsfp->module_flat_mem) {
         u8 page_buf[2];
@@ -428,22 +451,24 @@ static int qsfp_i2c_write(const struct qsfp *qsfp, u8 page, u8 dev_addr,
         page_buf[0] = QSFP_PAGE_OFFSET;
         page_buf[1] = page;
 
-        msgs[0].addr = qsfp->i2c_address_dev0;
+        msgs[0].addr = i2c_addr;
         msgs[0].flags = 0;   // write
         msgs[0].len = sizeof(page_buf);
         msgs[0].buf = page_buf;
 
         ret = i2c_transfer(qsfp->i2c, msgs, 1);
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
     }
 
-    msgs[0].addr = qsfp->i2c_address_dev0;
+    msgs[0].addr = i2c_addr;
     msgs[0].flags = 0;
     msgs[0].len = 1 + len;
     msgs[0].buf = kmalloc(1 + len, GFP_KERNEL);
-    if (!msgs[0].buf)
+    if (!msgs[0].buf) {
         return -ENOMEM;
+    }
 
     msgs[0].buf[0] = dev_addr;
     memcpy(&msgs[0].buf[1], buf, len);
@@ -452,8 +477,9 @@ static int qsfp_i2c_write(const struct qsfp *qsfp, u8 page, u8 dev_addr,
 
     kfree(msgs[0].buf);
 
-    if (ret < 0)
+    if (ret < 0) {
         return ret;
+    }
 
     return ret == ARRAY_SIZE(msgs) ? 0 : -EIO;
 }
@@ -474,20 +500,18 @@ static int qsfp_i2c_configure(struct qsfp *qsfp)
     }
 
     qsfp->i2c = i2c;
-    qsfp->read = qsfp_i2c_read;
-    qsfp->write = qsfp_i2c_write;
 
     return 0;
 }
 
-int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len)
+int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
-    return qsfp->read(qsfp, addr >> 8, addr, buf, len);
+    return qsfp_i2c_read(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
 }
 
-int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len)
+int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
-    return qsfp->write(qsfp, addr >> 8, addr, buf, len);
+    return qsfp_i2c_write(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
 }
 
 static int qsfp_set_spec_ops(struct qsfp *qsfp)
@@ -510,19 +534,27 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
-         qsfp->spec_ops = &sff8636_spec_ops;
-         dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
+        qsfp->spec_ops = &sff8636_spec_ops;
+        dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
+                              __func__, *spec_id);
+        break;
+
+    case SFF8024_ID_SFP:
+        qsfp->spec_ops = &sff8472_spec_ops;
+        dev_notice(qsfp->dev, "%s: SFP spec id 0x%02X\n",
                                __func__, *spec_id);
-         break;
+        break;
+
     case SFF8024_ID_QSFPDD_CMIS:
-         qsfp->spec_ops = &cmis_spec_ops;
-         dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
-                               __func__, *spec_id);
-         break;
+        qsfp->spec_ops = &cmis_spec_ops;
+        dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
+                              __func__, *spec_id);
+        break;
+
     default:
-         dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
-                           __func__,*spec_id);
-         return -E_UNSUPPORTED_SPEC;
+        dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
+                            __func__,*spec_id);
+        return -E_UNSUPPORTED_SPEC;
     }
 
     return 0;
@@ -572,8 +604,10 @@ static u8 qsfp_get_state(struct qsfp *qsfp)
 
     state = qsfp->spec_ops->get_state(qsfp);
 
-    dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
-               qsfp_state_to_str(state, state_str, sizeof(state_str)));
+    if (!qsfp->need_poll) {
+        dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
+                   qsfp_state_to_str(state, state_str, sizeof(state_str)));
+    }
 
     return state;
 }
@@ -838,6 +872,17 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
         }
     }
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    /* call spec specific create debugfs function to create files
+       specific to transceiver */
+    if (qsfp->spec_ops->create_debugfs) {
+        qsfp->spec_ops->create_debugfs(qsfp);
+    } else {
+        dev_warn(qsfp->dev, "%s: Spec ops for create debugfs not found\n",
+                                                                __func__);
+    }
+#endif
+
     qsfp->spec_ops->eeprom_print(qsfp);
 
     return 0;
@@ -853,12 +898,17 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 
     transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1 | QSFP_LED2);
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    module_debugfs_exit(qsfp);
+#endif
+
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
     qsfp->module_power_class = 0;
     qsfp->features = 0;
     qsfp->spec_ops = NULL;
+    qsfp->need_poll = false;
 
     dev_notice(qsfp->dev, "%s: Module removed\n", __func__);
 }
@@ -1296,6 +1346,10 @@ void qsfp_check_state(struct qsfp *qsfp)
     changed = state ^ qsfp->state;
     changed &= QSFP_F_LOS | QSFP_F_TX_FAULT;
 
+    if (!changed) {
+        return;
+    }
+
     dev_notice(qsfp->dev, "%s: Current state %s 0x%X, Next state %s 0x%X, "
     "Changed state to be processed %s 0x%X\n",__func__,
     qsfp_state_to_str(qsfp->state, cur_state_str, sizeof(cur_state_str)),
@@ -1321,27 +1375,41 @@ void qsfp_check_state(struct qsfp *qsfp)
     rtnl_unlock();
 }
 
-void qsfp_falling_edge_irq(struct qsfp *qsfp)
+static void qsfp_poll(struct work_struct *work)
 {
+    struct qsfp *qsfp = container_of(work, struct qsfp, poll.work);
+
     qsfp_check_state(qsfp);
 
-    if (qsfp->prefetch)
-        qsfp->spec_ops->irq_status_prefetch_start(qsfp);
-}
-
-static void qsfp_data_prefetch_stop(struct qsfp *qsfp)
-{
-    if (qsfp->prefetch) {
-        fpc_data_prefetch_stop(qsfp);
-        qsfp->prefetch = false;
+    if (qsfp->need_poll) {
+        /* Poll once per second */
+        mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
     }
 }
 
-void qsfp_rising_edge_irq(struct qsfp *qsfp)
+void qsfp_irq(struct qsfp *qsfp)
 {
-    qsfp_data_prefetch_stop(qsfp);
+    unsigned long delay;
 
-    qsfp_check_state(qsfp);
+    if (qsfp_set_spec_ops(qsfp) < 0) {
+        /* To make sure event wont get missed */
+        dev_err(qsfp->dev, "%s: Unable to set the spec ops. Process irq "
+                           "after 1sec\n", __func__);
+        delay = msecs_to_jiffies(1000);
+    } else {
+        delay = qsfp->spec_ops->irq_delay(qsfp);
+    }
+
+    mod_delayed_work(system_wq, &qsfp->poll, delay);
+}
+
+void qsfp_stop_poll(struct qsfp *qsfp)
+{
+    if (qsfp->need_poll) {
+        qsfp->need_poll = false;
+        cancel_delayed_work_sync(&qsfp->poll);
+        dev_notice(qsfp->dev, "%s: Polling stoped\n", __func__);
+    }
 }
 
 void qsfp_module_insert_irq(struct qsfp *qsfp)
@@ -1359,7 +1427,7 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
 {
     dev_notice(qsfp->dev, "%s:\n", __func__);
 
-    qsfp_data_prefetch_stop(qsfp);
+    qsfp_stop_poll(qsfp);
 
     qsfp->state &= (~QSFP_F_PRESENT);
 
@@ -1382,6 +1450,8 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->dev = dev;
 
     mutex_init(&qsfp->sm_mutex);
+
+    INIT_DELAYED_WORK(&qsfp->poll, qsfp_poll);
     INIT_DELAYED_WORK(&qsfp->timeout, qsfp_timeout);
 
     /* valid port numbers are 0,1,2,3.
@@ -1394,6 +1464,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
      * a time.
      */
     qsfp->i2c_block_size = 16;
+    qsfp->need_poll = false;
 
     return qsfp;
 }
@@ -1401,7 +1472,6 @@ static struct qsfp *qsfp_alloc(struct device *dev)
 static void qsfp_cleanup(void *data)
 {
     struct qsfp *qsfp = data;
-    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 
@@ -1420,7 +1490,7 @@ int qsfp_probe(struct platform_device *pdev)
     struct platform_device *fpc_pdev;
     const struct of_device_id *id;
     struct qsfp *qsfp;
-    u32 fpc_handle, temp;
+    u32 fpc_handle = 0, temp = 0;
     int ret;
 
     qsfp = qsfp_alloc(&pdev->dev);
@@ -1428,8 +1498,6 @@ int qsfp_probe(struct platform_device *pdev)
         dev_err(&pdev->dev, "%s: qsfp_alloc failed\n", __func__);
         return PTR_ERR(qsfp);
     }
-
-    platform_set_drvdata(pdev, qsfp);
 
     ret = devm_add_action(qsfp->dev, qsfp_cleanup, qsfp);
     if (ret < 0) {
@@ -1439,7 +1507,7 @@ int qsfp_probe(struct platform_device *pdev)
         return ret;
     }
 
-    if (!pdev->dev.of_node) {
+    if (!node) {
         dev_err(qsfp->dev, "%s: dev node not found\n", __func__);
         return -EINVAL;
     }
@@ -1585,6 +1653,11 @@ int qsfp_probe(struct platform_device *pdev)
     transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
                                     QSFP_LED1 | QSFP_LED2);
 
+    /* set driver data once everything is successful */
+    platform_set_drvdata(pdev, qsfp);
+
+    dev_notice(qsfp->dev, "%s: Success\n", __func__);
+
     return 0;
 }
 
@@ -1606,7 +1679,6 @@ int qsfp_remove(struct platform_device *pdev)
 void qsfp_shutdown(struct platform_device *pdev)
 {
     struct qsfp *qsfp = platform_get_drvdata(pdev);
-    qsfp_data_prefetch_stop(qsfp);
 
     cancel_delayed_work_sync(&qsfp->timeout);
 }

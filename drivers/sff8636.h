@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/sfp.h?h=cex7
@@ -15,25 +15,22 @@
 
 #define SFF8636_DEVICE0 (0)
 #define SFF8636_IRQ_OFFSET (3)
-#define SFF8636_IRQ_PREFETCH_LEN (2)
-#define SFF8636_PREFETCH_PERIOD (100)
 
 enum {
-#define SFF8636_ADDR(page, addr)    ((page) << 8 | (addr))
-    SFF8636_IRQ_FLAGS                   = SFF8636_ADDR(0,   2),
-    SFF8636_TEMPERATURE                 = SFF8636_ADDR(0,  22),
-    SFF8636_SUPPLY_VOLTAGE              = SFF8636_ADDR(0,  26),
-    SFF8636_RX_POWER                    = SFF8636_ADDR(0,  34),
-    SFF8636_TX_BIAS                     = SFF8636_ADDR(0,  42),
-    SFF8636_TX_POWER                    = SFF8636_ADDR(0,  50),
-    SFF8636_TX_DISABLE                  = SFF8636_ADDR(0,  86),
-    SFF8636_POWER_ENABLE                = SFF8636_ADDR(0,  93),
-    SFF8636_INTERRUPT_MASK              = SFF8636_ADDR(0, 100),
-    SFF8636_CHANNEL_INTERRUPT_MASK      = SFF8636_ADDR(3, 242),
-    SFF8636_CLS8_MAX_POWER              = SFF8636_ADDR(0, 107),
-    SFF8636_FREE_SIDE_PROP              = SFF8636_ADDR(0, 110),
-    SFF8636_CHANNEL_INFO                = SFF8636_ADDR(0, 113),
-    SFF8636_ID                          = SFF8636_ADDR(0, 128),
+    SFF8636_IRQ_FLAGS                   = QSFP_ADDR(0, 0,   3),
+    SFF8636_TEMPERATURE                 = QSFP_ADDR(0, 0,  22),
+    SFF8636_SUPPLY_VOLTAGE              = QSFP_ADDR(0, 0,  26),
+    SFF8636_RX_POWER                    = QSFP_ADDR(0, 0,  34),
+    SFF8636_TX_BIAS                     = QSFP_ADDR(0, 0,  42),
+    SFF8636_TX_POWER                    = QSFP_ADDR(0, 0,  50),
+    SFF8636_TX_DISABLE                  = QSFP_ADDR(0, 0,  86),
+    SFF8636_POWER_ENABLE                = QSFP_ADDR(0, 0,  93),
+    SFF8636_INTERRUPT_MASK              = QSFP_ADDR(0, 0, 100),
+    SFF8636_CHANNEL_INTERRUPT_MASK      = QSFP_ADDR(0, 3, 242),
+    SFF8636_CLS8_MAX_POWER              = QSFP_ADDR(0, 0, 107),
+    SFF8636_FREE_SIDE_PROP              = QSFP_ADDR(0, 0, 110),
+    SFF8636_CHANNEL_INFO                = QSFP_ADDR(0, 0, 113),
+    SFF8636_ID                          = QSFP_ADDR(0, 0, 128),
 };
 
 enum {
@@ -221,11 +218,6 @@ struct sff8636_id_stat {
 } __packed;
 
 struct sff8636_irq_flags {
-    u8 data_not_ready:1;
-    u8 intl:1;
-    u8 flat_mem:1;
-    u8 reserved_0:5;
-
     u8 los;
 
     u8 tx_fault:4;

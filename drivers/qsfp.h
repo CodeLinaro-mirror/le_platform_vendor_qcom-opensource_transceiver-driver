@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/sfp.h?h=cex7
@@ -15,9 +15,12 @@
 #include <linux/rtnetlink.h>
 #include <linux/of_platform.h>
 
+#define QSFP_ADDR(device, page, addr) ((device) << 16 | (page) << 8 | (addr))
+
 #include "sfp.h"
 #include "sff8636.h"
 #include "cmis.h"
+#include "sff8472.h"
 #include "transceiver_api.h"
 
 #define QSFP_COMPATIBLE "sff,qsfp"
@@ -32,6 +35,7 @@ struct qsfp_eeprom_id {
     union {
         struct sff8636_eeprom_id sff8636;
         struct cmis_eeprom_id cmis;
+        struct sfp_eeprom_id sff8472;
     };
 };
 
@@ -48,7 +52,6 @@ struct qsfp {
     u8 i2c_address_dev0;
     u8 i2c_address_dev1;
     bool module_flat_mem;
-    bool prefetch;
     u8 features;
     u8 module_power_class;
     u8 module_revision;
@@ -60,17 +63,17 @@ struct qsfp {
     unsigned short sm_state;
     size_t i2c_block_size;
 
-    int (*read)(const struct qsfp *, u8, u8, void *, size_t);
-    int (*write)(const struct qsfp *, u8, u8, void *, size_t);
-
     struct delayed_work timeout;
     struct mutex sm_mutex;            /* Protects state machine */
 
     struct qsfp_eeprom_id id;
     struct qsfp_spec_ops *spec_ops;
+    bool need_poll;
+    struct delayed_work poll;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
+    struct dentry *module_debugfs_dir;
 #endif
 
 };
@@ -104,8 +107,6 @@ struct qsfp_spec_ops {
     void (*eeprom_print)(const struct qsfp *qsfp);
     /* Ethtool callback function to get module info */
     int (*module_info)(struct qsfp *qsfp, struct ethtool_modinfo *modinfo);
-    /* Starts FPC402 prefetch from irq status offset */
-    void (*irq_status_prefetch_start)(const struct qsfp *qsfp);
     /* Gets connector type */
     u8 (*get_connector_type)(const struct qsfp *qsfp);
     /* Gets lane speed */
@@ -117,6 +118,8 @@ struct qsfp_spec_ops {
     /* Gets Far-End Implementation */
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
+    unsigned long (*irq_delay)(const struct qsfp *qsfp);
+    int (*create_debugfs)(struct qsfp *qsfp);
 };
 
 enum {
@@ -251,15 +254,20 @@ enum {
 extern const struct of_device_id fpc_qsfp_of_match[];
 extern struct qsfp_spec_ops sff8636_spec_ops;
 extern struct qsfp_spec_ops cmis_spec_ops;
+extern struct qsfp_spec_ops sff8472_spec_ops;
 
 extern int fpc_is_module_present(const struct qsfp *qsfp);
 extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
-extern int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device,
-                                   u8 offset, u8 len, u8 period);
-extern int fpc_data_prefetch_stop(const struct qsfp *qsfp);
 
-extern int qsfp_read(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
-extern int qsfp_write(const struct qsfp *qsfp, u16 addr, void *buf, size_t len);
+extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
+extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
+extern void qsfp_check_state(struct qsfp *qsfp);
+
+extern const char *mod_identifier_to_str(u8 spec_id);
+extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
+extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
+extern int cmis_create_debugfs_files(struct qsfp *qsfp);
+extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
 
 #endif

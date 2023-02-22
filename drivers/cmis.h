@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -250,41 +250,12 @@ struct cmis_irq_flags {
     u8 bank3:4;
     u8 reserved_5:4;
 
-    u8 mod_state_change:1;
-    u8 mod_fw_err:1;
-    u8 data_fw_err:1;
-    u8 reserved_6:3;
-    u8 cdb_cmd_complete1:1;
-    u8 cdb_cmd_complete2:1;
-
-    u8 temp_high_alarm:1;
-    u8 temp_low_alarm:1;
-    u8 temp_high_warn:1;
-    u8 temp_low_warn:1;
-    u8 vcc_high_alarm:1;
-    u8 vcc_low_alarm:1;
-    u8 vcc_high_warn:1;
-    u8 vcc_low_warn:1;
-
-    u8 aux1_high_alarm:1;
-    u8 aux1_low_alarm:1;
-    u8 aux1_high_warn:1;
-    u8 aux1_low_warn:1;
-    u8 aux2_high_alarm:1;
-    u8 aux2_low_alarm:1;
-    u8 aux2_high_warn:1;
-    u8 aux2_low_warn:1;
-
-    u8 aux3_high_alarm:1;
-    u8 aux3_low_alarm:1;
-    u8 aux3_high_warn:1;
-    u8 aux3_low_warn:1;
-    u8 custom_high_alarm:1;
-    u8 custom_low_alarm:1;
-    u8 custom_high_warn:1;
-    u8 custom_low_warn:1;
 } __packed;
 
+struct cmis_tx_status {
+    u8 tx_failure;
+    u8 tx_los;
+} __packed;
 
 struct cmis_bank0_page11 {
     u8 dp_state_lane1:4;
@@ -328,26 +299,50 @@ struct cmis_bank0_page11 {
 } __packed;
 
 enum {
-#define CMIS_ADDR(page, addr)    ((page) << 8 | (addr))
-    CMIS_IRQ_FLAGS                   = CMIS_ADDR(0,   3),
-    CMIS_ID                          = CMIS_ADDR(0, 128),
-    CMIS_POWER_CLASS                 = CMIS_ADDR(0, 200),
-    CMIS_MODULE_CONTROLS             = CMIS_ADDR(0,  26),
-    CMIS_LANE_INFO                   = CMIS_ADDR(0, 210),
+    CMIS_MOD_CFG                     = QSFP_ADDR(0, 0x0,   2),
+    CMIS_IRQ_FLAGS                   = QSFP_ADDR(0, 0x0,   3),
+    CMIS_MOD_TEMPMON                 = QSFP_ADDR(0, 0x0,  14),
+    CMIS_MOD_VCCMON                  = QSFP_ADDR(0, 0x0,  16),
+    CMIS_MOD_GLOBAL_CTRL             = QSFP_ADDR(0, 0x0,  26),
+    CMIS_ACTIVE_FIRMWARE             = QSFP_ADDR(0, 0x0,  39),
+    CMIS_MOD_FAULT_CAUSE             = QSFP_ADDR(0, 0x0,  41),
+    CMIS_MODULE_CONTROLS             = QSFP_ADDR(0, 0x0,  26),
+    CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
+    CMIS_ID                          = QSFP_ADDR(0, 0x0, 128),
+    CMIS_POWER_CLASS                 = QSFP_ADDR(0, 0x0, 200),
+    CMIS_LANE_INFO                   = QSFP_ADDR(0, 0x0, 210),
 
-    CMIS_ID_EXT                      = CMIS_ADDR(1, 130),
+    CMIS_INACTIVE_FIRMWARE           = QSFP_ADDR(0, 0x1, 128),
+    CMIS_ID_EXT                      = QSFP_ADDR(0, 0x1, 130),
 
-    CMIS_TX_DISABLE                  = CMIS_ADDR(0x10,130),
-    CMIS_LANE_MASKS                  = CMIS_ADDR(0x10,213),
+    CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
+    CMIS_PAGE10_MASKS                = QSFP_ADDR(0, 0x10, 213),
+    CMIS_TX_FAILURE_MASK             = QSFP_ADDR(0, 0x10, 214),
+    CMIS_TX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 215),
+    CMIS_RX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 226),
 
-    CMIS_LANE_FLAGS                  = CMIS_ADDR(0x11,128),
-    CMIS_BANK0_PAGE12                = CMIS_ADDR(0x12,128),
-    CMIS_BANK0_PAGE14                = CMIS_ADDR(0x14,128),
-    CMIS_BANK0_PAGE2C                = CMIS_ADDR(0x2C,128),
+    CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 128),
+    CMIS_TX_FLAGS                    = QSFP_ADDR(0, 0x11, 135),
+    CMIS_RX_LOS                      = QSFP_ADDR(0, 0x11, 147),
+    CMIS_TX_POWER                    = QSFP_ADDR(0, 0x11, 154),
+    CMIS_TX_BIAS                     = QSFP_ADDR(0, 0x11, 170),
+    CMIS_RX_POWER                    = QSFP_ADDR(0, 0x11, 186),
 
+    CMIS_PAGE12_MASKS                = QSFP_ADDR(0, 0x12, 239),
+    CMIS_BANK0_PAGE12                = QSFP_ADDR(0, 0x12, 128),
+
+    CMIS_PAGE13_MASKS                = QSFP_ADDR(0, 0x13, 206),
+
+    CMIS_BANK0_PAGE14                = QSFP_ADDR(0, 0x14, 128),
+
+    CMIS_PAGE17_MASKS                = QSFP_ADDR(0, 0x17, 192),
+
+    CMIS_BANK0_PAGE2C                = QSFP_ADDR(0, 0x2C, 128),
 };
 
 #define CMIS_LOW_POWER_REQ_SW   (BIT(4))
 #define CMIS_LOW_POWER_ALLOW_HW (BIT(6))
+
+#define CMIS_MODULE_STATE_READY (0x3)
 
 #endif

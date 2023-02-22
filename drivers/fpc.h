@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef LINUX_FPC_H
 #define LINUX_FPC_H
@@ -72,18 +72,10 @@
 #define FPC_OUT_A_DISABLE (0x00)
 #define FPC_OUT_A_ENABLE (0x0F)
 
-#define FPC_PREFETCH_GATE (0x0B)
-#define FPC_PREFETCH_START (BIT(1))
-#define FPC_PREFETCH_STOP (BIT(2))
-#define FPC_PREFETCH_PERIOID_STEP (5)
-
 enum {
     FPC_LED_MODE_SELECT,
     FPC_INPUT_PIN_INTERRUPT_ENABLE,
     FPC_INPUT_PIN_INTERRUPT_STATUS,
-    FPC_PREFETCH_CONTROL,
-    FPC_PREFETCH_OFFSET,
-    FPC_PREFETCH_PERIOD,
 };
 
 enum {
@@ -111,7 +103,6 @@ extern void qsfp_shutdown(struct platform_device *pdev);
 extern void qsfp_check_state(struct qsfp *qsfp);
 extern void qsfp_module_insert_irq(struct qsfp *qsfp);
 extern void qsfp_module_remove_irq(struct qsfp *qsfp);
-extern void qsfp_falling_edge_irq(struct qsfp *qsfp);
-extern void qsfp_rising_edge_irq(struct qsfp *qsfp);
+extern void qsfp_irq(struct qsfp *qsfp);
 
 #endif

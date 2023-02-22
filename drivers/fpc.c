@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include "fpc.h"
 #include "qsfp.h"
@@ -15,12 +15,6 @@ const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     {0x20 , 0x40 , 0x60 , 0x80},
     /* FPC_INPUT_PIN_INTERRUPT_STATUS */
     {0x21 , 0x41 , 0x61 , 0x81},
-    /* FPC_PREFETCH_CONTROL */
-    {0x1D , 0x3D, 0x5D , 0x7D},
-    /* FPC_PREFETCH_OFFSET */
-    {0x1E , 0x3E, 0x5E , 0x7E},
-    /* FPC_PREFETCH_PERIOD */
-    {0x1F , 0x3F, 0x5F , 0x7F},
 };
 
 const struct of_device_id fpc_qsfp_of_match[] = {
@@ -111,110 +105,6 @@ int fpc_is_module_present(const struct qsfp *qsfp)
 }
 
 /*
- * Configures FPC402 data prefetch with device, offset, length and period.
- */
-int fpc_data_prefetch_start(const struct qsfp *qsfp, u8 device, u8 offset,
-                            u8 len, u8 period)
-{
-    int ret;
-    u8 buf;
-
-    dev_notice(qsfp->dev, "%s: Device %u Offset 0x%X Length %u Perioid %u"
-                          " ms\n", __func__, device, offset, len, period);
-
-    buf = period / FPC_PREFETCH_PERIOID_STEP;
-    ret = fpc_write(qsfp->fpc,
-          FPC_PORT_REG[FPC_PREFETCH_PERIOD][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write prefetch period. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    buf = offset;
-    ret = fpc_write(qsfp->fpc,
-          FPC_PORT_REG[FPC_PREFETCH_OFFSET][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write prefetch offset. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    buf = FPC_PREFETCH_START | device | ((len - 1) << 3);
-    ret = fpc_write(qsfp->fpc,
-          FPC_PORT_REG[FPC_PREFETCH_CONTROL][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write prefetch control. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    return 0;
-}
-
-/*
- * Stops FPC402 data prefetch.
- */
-int fpc_data_prefetch_stop(const struct qsfp *qsfp)
-{
-    int ret;
-    u8 buf;
-
-    dev_notice(qsfp->dev, "%s:\n", __func__);
-
-    buf = FPC_PREFETCH_STOP;
-    ret = fpc_write(qsfp->fpc,
-          FPC_PORT_REG[FPC_PREFETCH_CONTROL][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write prefetch control. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    buf = 0;
-    ret = fpc_write(qsfp->fpc,
-          FPC_PORT_REG[FPC_PREFETCH_PERIOD][qsfp->port_num],
-          &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write prefetch period. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-   buf = 0;
-   ret = fpc_write(qsfp->fpc,
-         FPC_PORT_REG[FPC_PREFETCH_OFFSET][qsfp->port_num],
-         &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write prefetch offset. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    buf = 0;
-    ret = fpc_read(qsfp->fpc, FPC_PREFETCH_GATE, &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read prefetch gate. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    buf |= (1 << qsfp->port_num);
-    ret = fpc_write(qsfp->fpc, FPC_PREFETCH_GATE, &buf, sizeof(buf));
-    if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read prefetch gate. "
-                           "ret %d\n", __func__, ret);
-        return ret;
-    }
-
-    return 0;
-}
-
-/*
  * Process QSFP presence and QSFP module interrupts
  */
 static int fpc_qsfp_irq(struct qsfp *qsfp)
@@ -250,11 +140,13 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
     if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
         dev_notice(qsfp->dev, "%s: QSFP Falling edge interrupt 0x%X\n",
                           __func__, buf);
-        qsfp_falling_edge_irq(qsfp);
-    } else if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
+        qsfp_irq(qsfp);
+    }
+
+    if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
         dev_notice(qsfp->dev, "%s: QSFP Rising edge interrupt 0x%X\n",
                           __func__, buf);
-        qsfp_rising_edge_irq(qsfp);
+        qsfp_irq(qsfp);
     }
 
     return 0;
@@ -502,14 +394,17 @@ static int fpc_probe(struct platform_device *pdev)
         return PTR_ERR(fpc);
     }
 
-    platform_set_drvdata(pdev, fpc);
-
     ret = devm_add_action(fpc->dev, fpc_cleanup, fpc);
     if (ret < 0) {
         dev_err(fpc->dev, "%s: devm_add_action failed. "
                           "ret %d\n", __func__, ret);
         fpc_cleanup(fpc);
         return ret;
+    }
+
+    if (!node) {
+        dev_err(fpc->dev, "%s: dev node not found\n", __func__);
+        return -EINVAL;
     }
 
     ret = device_property_read_u32(fpc->dev, "i2c-address", &i2c_address);
@@ -543,7 +438,7 @@ static int fpc_probe(struct platform_device *pdev)
     if (ret < 0) {
         dev_info(fpc->dev, "%s: Not able to configure i2c address. ret %d\n",
                             __func__, ret);
-        return ret;
+        return -EPROBE_DEFER;
     }
 
     ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
@@ -619,6 +514,11 @@ static int fpc_probe(struct platform_device *pdev)
                           __func__);
         return -EINVAL;
     }
+
+    /* set driver data once everything is successful */
+    platform_set_drvdata(pdev, fpc);
+
+    dev_notice(fpc->dev, "%s: Success\n", __func__);
 
     return 0;
 }
