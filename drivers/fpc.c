@@ -24,6 +24,8 @@ const struct of_device_id fpc_qsfp_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
 
+void *trx_ipc_log_buf = NULL;
+
 /*
  * Reads FPC402 register memory map using i2c transaction
  * returns 0 on successful read of 'len' bytes otherwise error
@@ -91,8 +93,7 @@ int fpc_is_module_present(const struct qsfp *qsfp)
     ret = fpc_read(qsfp->fpc, FPC_IN_B_STATUS_REGISTER, &mod_present,
                    sizeof(mod_present));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read ModulePresent GPIO status\n",
-                            __func__);
+        TRX_LOG_ERR(qsfp, "Fail to read ModulePresent GPIO status");
         return ret;
     }
 
@@ -119,33 +120,29 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
           FPC_PORT_REG[FPC_INPUT_PIN_INTERRUPT_STATUS][qsfp->port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read input pin interrupt status. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read input pin interrupt status. "
+                           "ret %d", ret);
         return ret;
     }
 
-    dev_notice(qsfp->dev, "%s: Input Interrupt status 0x%X\n", __func__, buf);
+    TRX_LOG_INFO(qsfp, "Input Interrupt status 0x%X", buf);
 
     if (buf & FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK) {
-        dev_notice(qsfp->dev, "%s: ModulePresent Rising edge interrupt 0x%X\n",
-                          __func__, buf);
+        TRX_LOG_INFO(qsfp, "ModulePresent Rising edge interrupt 0x%X", buf);
         qsfp_module_remove_irq(qsfp);
         return 0;
     } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
-        dev_notice(qsfp->dev, "%s: ModulePresent Falling edge interrupt 0x%X\n",
-                          __func__, buf);
+        TRX_LOG_INFO(qsfp, "ModulePresent Falling edge interrupt 0x%X", buf);
         qsfp_module_insert_irq(qsfp);
     }
 
     if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
-        dev_notice(qsfp->dev, "%s: QSFP Falling edge interrupt 0x%X\n",
-                          __func__, buf);
+        TRX_LOG_INFO(qsfp, "QSFP Falling edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
     }
 
     if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
-        dev_notice(qsfp->dev, "%s: QSFP Rising edge interrupt 0x%X\n",
-                          __func__, buf);
+        TRX_LOG_INFO(qsfp, "QSFP Rising edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
     }
 
@@ -165,14 +162,12 @@ void fpc_enable_i2c_stuck_interrupt(const struct fpc *fpc)
     ret = fpc_write(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf,
                     sizeof(buf));
     if (ret < 0)
-        dev_warn(fpc->dev, "%s: Failed to enable SCL stuck interrupt. "
-                          "ret %d\n", __func__, ret);
+        TRX_LOG_WARN(fpc, "Failed to enable SCL stuck interrupt. ret %d", ret);
 
     ret = fpc_write(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf,
                     sizeof(buf));
     if (ret < 0)
-        dev_warn(fpc->dev, "%s: Failed to enable SDA stuck interrupt. "
-                          "ret %d\n", __func__, ret);
+        TRX_LOG_WARN(fpc, "Failed to enable SDA stuck interrupt. ret %d", ret);
 
 }
 
@@ -187,20 +182,18 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
     ret = fpc_read(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf,
                    sizeof(buf));
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Failed to read SCL stuck status. "
-                          "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(fpc, "Failed to read SCL stuck status. ret %d", ret);
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
-        dev_err(fpc->dev, "%s: SCL stuck error 0x%X\n", __func__, buf);
+        TRX_LOG_ERR(fpc, "SCL stuck error 0x%X", buf);
     }
 
     buf = 0;
     ret = fpc_read(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf,
                    sizeof(buf));
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Failed to read SDA stuck status. "
-                          "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(fpc, "Failed to read SDA stuck status. ret %d", ret);
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
-        dev_err(fpc->dev, "%s: SDA stuck error 0x%X\n", __func__, buf);
+        TRX_LOG_ERR(fpc, "SDA stuck error 0x%X", buf);
     }
 }
 
@@ -235,13 +228,11 @@ static irqreturn_t fpc_irq(int irq, void *data)
     ret = fpc_read(fpc, FPC_INTERRUPT_STATUS_REGISTER,
                    &port_interrupt, sizeof(port_interrupt));
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Fail to read FPC interrupt status. "
-                          "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(fpc, "Fail to read FPC interrupt status. ret %d", ret);
         return IRQ_HANDLED;
     }
 
-    dev_notice(fpc->dev, "%s Aggregated Interrupt status 0x%X\n", __func__,
-                         port_interrupt);
+    TRX_LOG_INFO(fpc, "Aggregated Interrupt status 0x%X", port_interrupt);
 
     for (port_num = 0 ; port_num < FPC_MAX_PORTS ; port_num++) {
         if (port_interrupt & 1) {
@@ -271,7 +262,7 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
         fpc->i2c_address = i2c_address >> 1;
         ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, sizeof(buf));
         if (ret < 0) {
-            dev_info(fpc->dev, "%s: Unable to write i2c address\n", __func__);
+            TRX_LOG_INFO(fpc, "Unable to write i2c address");
             return ret;
         }
     } else {
@@ -331,16 +322,14 @@ static int fpc_reset(const struct fpc *fpc)
 
     ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Fail to write reset register. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_ERR(fpc, "Fail to write reset register. ret %d", ret);
         return ret;
     }
 
     buf = 0;
     ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
     if (ret < 0)
-        dev_err(fpc->dev, "%s: Fail to revert port reset sequence. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_ERR(fpc, "Fail to revert port reset sequence. ret %d", ret);
 
     return ret;
 }
@@ -354,24 +343,21 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
     buf = FPC_QSFP_RESET_SEQUENCE;
     ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
     if (ret < 0) {
-        dev_warn(fpc->dev, "%s: Fail to write Reset sequence. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_WARN(fpc, "Fail to write Reset sequence. ret %d", ret);
         return;
     }
 
     buf = FPC_OUT_A_ENABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
-        dev_warn(fpc->dev, "%s: Fail to enable Reset gpio. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_WARN(fpc, "Fail to enable Reset gpio. ret %d", ret);
         return;
     }
 
     buf = FPC_OUT_A_DISABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0)
-        dev_warn(fpc->dev, "%s: Fail to disable Reset gpio. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
 }
 
 /*
@@ -390,36 +376,34 @@ static int fpc_probe(struct platform_device *pdev)
 
     fpc = fpc_alloc(&pdev->dev);
     if (IS_ERR(fpc)) {
-        dev_err(&pdev->dev, "%s: fpc_alloc failed\n", __func__);
+        TRX_LOG_ERR(&pdev, "fpc_alloc failed");
         return PTR_ERR(fpc);
     }
 
     ret = devm_add_action(fpc->dev, fpc_cleanup, fpc);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: devm_add_action failed. "
-                          "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(fpc, "devm_add_action failed. ret %d", ret);
         fpc_cleanup(fpc);
         return ret;
     }
 
     if (!node) {
-        dev_err(fpc->dev, "%s: dev node not found\n", __func__);
+        TRX_LOG_ERR(fpc, "dev node not found");
         return -EINVAL;
     }
 
     ret = device_property_read_u32(fpc->dev, "i2c-address", &i2c_address);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Fail to get i2c-address attribute. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(fpc, "Fail to get i2c-address attribute. ret %d", ret);
         return ret;
     }
 
-    dev_notice(fpc->dev, "%s: i2c_address 0x%02X (0x%02X)\n", __func__,
-                         i2c_address, i2c_address >> 1);
+    TRX_LOG_INFO(fpc, "i2c_address 0x%02X (0x%02X)",
+                    i2c_address, i2c_address >> 1);
 
     i2c_np = of_parse_phandle(node, "i2c-bus", 0);
     if (!i2c_np) {
-        dev_err(fpc->dev, "%s: Missing 'i2c-bus' property\n", __func__);
+        TRX_LOG_ERR(fpc, "Missing 'i2c-bus' property");
         return -ENODEV;
     }
 
@@ -427,41 +411,36 @@ static int fpc_probe(struct platform_device *pdev)
     of_node_put(i2c_np);
 
     if (!fpc->i2c) {
-        dev_err(fpc->dev, "%s: Not able to find i2c adapter from node %s\n",
-                           __func__, i2c_np->full_name);
+        TRX_LOG_ERR(fpc, "Not able to find i2c adapter from node %s",
+                       i2c_np->full_name);
         return -EPROBE_DEFER;
     }
 
-    dev_notice(fpc->dev, "%s: i2c adapter i2c-%d\n", __func__, fpc->i2c->nr);
+    TRX_LOG_INFO(fpc, "i2c adapter i2c-%d", fpc->i2c->nr);
 
     ret = fpc_configure_i2c_address(fpc, i2c_address & 0xFF);
     if (ret < 0) {
-        dev_info(fpc->dev, "%s: Not able to configure i2c address. ret %d\n",
-                            __func__, ret);
+        TRX_LOG_INFO(fpc, "Not able to configure i2c address. ret %d", ret);
         return -EPROBE_DEFER;
     }
 
     ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Fail to get instance-num attribute. ret %d\n",
-                                   __func__, ret);
+        TRX_LOG_ERR(fpc, "Fail to get instance-num attribute. ret %d", ret);
         return ret;
     }
 
     if ((fpc_instance_no & 0xFF) >= FPC_MAX_INSTANCES) {
-        dev_err(fpc->dev, "%s: Invalid instance-num attribute\n",
-                                   __func__);
+        TRX_LOG_ERR(fpc, "Invalid instance-num attribute");
         return -EINVAL;
     }
     fpc->instance_num = fpc_instance_no & 0xFF;
 
-    dev_notice(fpc->dev, "%s: fpc instance number %u\n", __func__,
-                         fpc->instance_num);
+    TRX_LOG_INFO(fpc, "fpc instance number %u", fpc->instance_num);
 
     ret = fpc_reset(fpc);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Unable to reset FPC402. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_ERR(fpc, "Unable to reset FPC402. ret %d", ret);
         return -EPROBE_DEFER;
     }
 
@@ -471,8 +450,7 @@ static int fpc_probe(struct platform_device *pdev)
     fpc->gpio_irq = gpiod_to_irq(fpc->interrupt_gpio);
 
     if (fpc->gpio_irq < 0) {
-        dev_err(fpc->dev, "%s: Unable to get gpio for interrupt %d\n",
-                          __func__, fpc->gpio_irq);
+        TRX_LOG_ERR(fpc, "Unable to get gpio for interrupt %d", fpc->gpio_irq);
         return -EPROBE_DEFER;
     }
 
@@ -481,12 +459,12 @@ static int fpc_probe(struct platform_device *pdev)
                                   "Interrupt");
 
     if (!fpc_irq_name) {
-        dev_err(fpc->dev, "%s: Unable to get interrupt name\n", __func__);
+        TRX_LOG_ERR(fpc, "Unable to get interrupt name");
         return -EPROBE_DEFER;
     }
 
-    dev_notice(fpc->dev, "%s: gpio_irq 0x%X fpc_irq_name %s\n", __func__,
-                          fpc->gpio_irq, fpc_irq_name);
+    TRX_LOG_INFO(fpc, "gpio_irq 0x%X fpc_irq_name %s",
+                    fpc->gpio_irq, fpc_irq_name);
 
     ret = devm_request_threaded_irq(fpc->dev, fpc->gpio_irq,
                                     NULL, fpc_irq,
@@ -494,8 +472,7 @@ static int fpc_probe(struct platform_device *pdev)
                                     IRQF_TRIGGER_FALLING,
                                     fpc_irq_name, fpc);
     if (ret < 0) {
-        dev_err(fpc->dev, "%s: Interrupt register failed. ret %d\n",
-                          __func__, ret);
+        TRX_LOG_ERR(fpc, "Interrupt register failed. ret %d", ret);
         return -EPROBE_DEFER;
     }
 
@@ -510,15 +487,14 @@ static int fpc_probe(struct platform_device *pdev)
         fpc_global[fpc->instance_num] = fpc;
     }
     else {
-        dev_err(fpc->dev, "%s: Invalid instance-num attribute\n",
-                          __func__);
+        TRX_LOG_ERR(fpc, "Invalid instance-num attribute");
         return -EINVAL;
     }
 
     /* set driver data once everything is successful */
     platform_set_drvdata(pdev, fpc);
 
-    dev_notice(fpc->dev, "%s: Success\n", __func__);
+    TRX_LOG_INFO(fpc, "Success");
 
     return 0;
 }
@@ -532,13 +508,13 @@ static bool is_fpc_device(const struct platform_device *pdev)
     const struct of_device_id *id;
 
     if (!node) {
-        dev_err(&pdev->dev, "%s: No dev of_node\n", __func__);
+        TRX_LOG_ERR(&pdev, "No dev of_node");
         return -EINVAL;
     }
 
     id = of_match_node(fpc_qsfp_of_match, node);
     if (WARN_ON(!id)) {
-        dev_err(&pdev->dev, "%s: No of_match_node\n", __func__);
+        TRX_LOG_ERR(&pdev, "No of_match_node");
         return -EINVAL;
     }
 
@@ -604,7 +580,7 @@ static struct platform_driver fpc_qsfp_driver = {
     .remove = fpc_qsfp_remove,
     .shutdown = fpc_qsfp_shutdown,
     .driver = {
-        .name = "fpc-qsfp",
+        .name = DRV_NAME,
         .of_match_table = fpc_qsfp_of_match,
     },
 };
@@ -614,6 +590,13 @@ static struct platform_driver fpc_qsfp_driver = {
  */
 static int fpc_qsfp_init(void)
 {
+    trx_ipc_log_buf = ipc_log_context_create(TRX_IPC_LOG_PAGES, DRV_NAME, 0);
+    if (trx_ipc_log_buf == NULL) {
+        TRX_LOG_ERR_NODEV("IPC log creation failed");
+    } else {
+        TRX_LOG_INFO_NODEV("IPC log creation successful");
+    }
+
     transceiver_debugfs_init();
     return platform_driver_register(&fpc_qsfp_driver);
 }
@@ -626,6 +609,10 @@ static void fpc_qsfp_exit(void)
 {
     platform_driver_unregister(&fpc_qsfp_driver);
     transceiver_debugfs_exit();
+
+    if (trx_ipc_log_buf) {
+        ipc_log_context_destroy(trx_ipc_log_buf);
+    }
 }
 module_exit(fpc_qsfp_exit);
 
