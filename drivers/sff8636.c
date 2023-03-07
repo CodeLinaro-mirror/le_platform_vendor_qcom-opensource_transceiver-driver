@@ -360,18 +360,22 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
         return qsfp->state;
     }
 
-    if (irq_flags.los) {
+    if (irq_flags.los_rx) {
         /* Dont report LOS even if one lane works fine
-         * 1st Nibble represent LOS for 4 RX lanes
-         * 2nd Nibble represent LOS for 4 TX lanes
+         * consider only RX lanes
          */
-        if (irq_flags.los == 0xFF) {
+        if (irq_flags.los_rx == 0xF) {
             state |= QSFP_F_LOS;
         } else if (!qsfp->need_poll) {
             TRX_LOG_INFO(qsfp, "There is LOS on few lanes which is not"
-                       " reported 0x%X", irq_flags.los);
+                       " reported 0x%X", irq_flags.los_rx);
         }
-        /* In case LOS we have to enable poll */
+        /* In case RX LOS we have to enable poll */
+        poll = true;
+    }
+
+    if (irq_flags.los_tx) {
+        /* In case TX LOS we have to enable poll */
         poll = true;
     }
 
@@ -390,18 +394,18 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
     }
 
     if (!qsfp->need_poll) {
-        TRX_LOG_INFO(qsfp, "IRQ status dump: LOS 0x%X TX Fault 0x%X "
-        "eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor 0x%X "
-        "RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
+        TRX_LOG_INFO(qsfp, "IRQ status dump: LOS RX 0x%X LOS TX 0x%X TX Fault"
+        " 0x%X eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor"
+        " 0x%X RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
         "TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X",
-        irq_flags.los, irq_flags.tx_fault, irq_flags.tx_adap_eq_fault,
-        irq_flags.lol, irq_flags.init_complete, irq_flags.tc_ready,
-        irq_flags.temp_alarm, irq_flags.volt_alarm, irq_flags.vendor_specific1,
-        irq_flags.rx12_pow_alarm, irq_flags.rx34_pow_alarm,
-        irq_flags.tx12_bias_alarm, irq_flags.tx34_bias_alarm,
-        irq_flags.tx12_pow_alarm, irq_flags.tx34_pow_alarm,
-        irq_flags.vendor_specific2[0], irq_flags.vendor_specific2[1],
-        irq_flags.vendor_specific2[2]);
+        irq_flags.los_rx, irq_flags.los_tx, irq_flags.tx_fault,
+        irq_flags.tx_adap_eq_fault, irq_flags.lol, irq_flags.init_complete,
+        irq_flags.tc_ready, irq_flags.temp_alarm, irq_flags.volt_alarm,
+        irq_flags.vendor_specific1, irq_flags.rx12_pow_alarm,
+        irq_flags.rx34_pow_alarm, irq_flags.tx12_bias_alarm,
+        irq_flags.tx34_bias_alarm, irq_flags.tx12_pow_alarm,
+        irq_flags.tx34_pow_alarm, irq_flags.vendor_specific2[0],
+        irq_flags.vendor_specific2[1], irq_flags.vendor_specific2[2]);
     }
 
     qsfp->need_poll = poll;
