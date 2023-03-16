@@ -5,8 +5,7 @@
 #include "fpc.h"
 #include "qsfp.h"
 #include "transceiver_debugfs.h"
-
-struct fpc *fpc_global[FPC_MAX_INSTANCES];
+#include "trx_sysfs.h"
 
 const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     /* FPC_LED_MODE_SELECT */
@@ -281,9 +280,6 @@ static void fpc_cleanup(void *data)
 {
     struct fpc *fpc = data;
 
-    if (fpc->instance_num < FPC_MAX_INSTANCES)
-        fpc_global[fpc->instance_num] = NULL;
-
     kfree(fpc);
 }
 
@@ -482,14 +478,6 @@ static int fpc_probe(struct platform_device *pdev)
     fpc_reset_qsfp_ports(fpc);
 
     fpc_debugfs_init(fpc);
-
-    if (fpc_global[fpc->instance_num] == NULL) {
-        fpc_global[fpc->instance_num] = fpc;
-    }
-    else {
-        TRX_LOG_ERR(fpc, "Invalid instance-num attribute");
-        return -EINVAL;
-    }
 
     /* set driver data once everything is successful */
     platform_set_drvdata(pdev, fpc);
