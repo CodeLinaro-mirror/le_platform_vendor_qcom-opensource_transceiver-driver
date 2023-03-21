@@ -1021,20 +1021,11 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         err = sfp_module_insert(qsfp->sfp_bus,
                        (const struct sfp_eeprom_id*)&qsfp->id);
         if (err < 0) {
-            u8 *spec_id;
-            spec_id = (u8*)&qsfp->id;
-            if (*spec_id == SFF8024_ID_SFP) {
-                dev_err(qsfp->dev, "%s: sfp_module_insert upstream ops "
-                                      "failed. ret %d\n", __func__, err);
-                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
-                break;
-            } else {
-                dev_notice(qsfp->dev, "%s: Ignore sfp_module_insert upstream"
-                           " ops error. ret %d\n", __func__, err);
-            }
+            qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
+            break;
         } else {
             dev_notice(qsfp->dev, "%s: sfp_module_insert upstream ops "
-                                  "successful\n", __func__);
+                                  "called\n", __func__);
         }
 
         /* If this is a power level 1 module, we are done */
