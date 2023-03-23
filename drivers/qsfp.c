@@ -1002,17 +1002,8 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         err = sfp_module_insert(qsfp->sfp_bus,
                        (const struct sfp_eeprom_id*)&qsfp->id);
         if (err < 0) {
-            u8 *spec_id;
-            spec_id = (u8*)&qsfp->id;
-            if (*spec_id == SFF8024_ID_SFP) {
-                TRX_LOG_ERR(qsfp, "sfp_module_insert upstream ops "
-                                "failed. ret %d", err);
-                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
-                break;
-            } else {
-                TRX_LOG_INFO(qsfp, "Ignore sfp_module_insert upstream"
-                           " ops error. ret %d", err);
-            }
+            TRX_LOG_INFO(qsfp, "Ignore sfp_module_insert upstream"
+                               " ops error. ret %d", err);
         } else {
             TRX_LOG_INFO(qsfp, "sfp_module_insert upstream ops successful");
         }
