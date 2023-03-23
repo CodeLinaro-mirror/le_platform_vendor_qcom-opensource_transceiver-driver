@@ -82,11 +82,12 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     int ret;
     u8 mod_mask[] = {0xC7, 0xFF, 0xFF, 0xFF};
     u8 page10_mask[] = {0xFF,
-                0x00, /* TX Fault/TX Failure */
-                0x00, /* TX LOS */
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                0x00, /* RX LOS */
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+                        0x00, /* TX Fault/TX Failure */
+                        0xFF, /* TX LOS disable */
+                        0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                        0x00, /* RX LOS enable */
+                        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     u8 page12_mask[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     u8 page13_mask[] = {0x80, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     u8 page17_mask[] = {0xFF};
@@ -155,10 +156,10 @@ static u8 cmis_get_state(struct qsfp *qsfp)
     }
 
     if (qsfp->need_poll) {
-        struct cmis_tx_status tx_status = {0};
+        u8 tx_failure = 0;
         u8 rx_los = 0;
 
-        ret = qsfp_read(qsfp, CMIS_TX_FLAGS, &tx_status, sizeof(tx_status));
+        ret = qsfp_read(qsfp, CMIS_TX_FAILURE, &tx_failure, sizeof(tx_failure));
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to read TX status. ret %d", ret);
             return qsfp->state;
@@ -170,15 +171,16 @@ static u8 cmis_get_state(struct qsfp *qsfp)
             return qsfp->state;
         }
 
-        if (tx_status.tx_los || rx_los) {
-            if ((tx_status.tx_los == 0xFF) && (rx_los == 0xFF)) {
+        if (rx_los) {
+            /* Only RX LOS considered */
+            if (rx_los == 0xFF) {
                 state |= QSFP_F_LOS;
             }
             poll = true;
         }
 
-        if (tx_status.tx_failure) {
-            if (tx_status.tx_failure == 0xFF) {
+        if (tx_failure) {
+            if (tx_failure == 0xFF) {
                 state |= QSFP_F_TX_FAULT;
             }
             poll = true;
@@ -186,12 +188,6 @@ static u8 cmis_get_state(struct qsfp *qsfp)
 
         /* If none of flag set then unmask the interrupt */
         if (!poll) {
-            ret = qsfp_write(qsfp, CMIS_TX_LOS_MASK, &buf_0, sizeof(buf_0));
-            if (ret < 0) {
-                TRX_LOG_ERR(qsfp, "poll Failed to unmask QSFP TX LOS. "
-                                    "ret %d", ret);
-            }
-
             ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf_0, sizeof(buf_0));
             if (ret < 0) {
                 TRX_LOG_ERR(qsfp, "poll Failed to unmask QSFP RX LOS. "
@@ -230,13 +226,12 @@ static u8 cmis_get_state(struct qsfp *qsfp)
             return qsfp->state;
         }
 
-        if (b0p11.tx_los || b0p11.rx_los) {
-            if ((b0p11.tx_los == 0xFF) && (b0p11.rx_los == 0xFF)) {
+        if (b0p11.rx_los) {
+            if (b0p11.rx_los == 0xFF) {
                 state |= QSFP_F_LOS;
-            } else if ((b0p11.tx_los != 0) || (b0p11.rx_los != 0)) {
+            } else {
                 TRX_LOG_INFO(qsfp, "There is LOS on few lanes which"
-                " is not reported TX 0x%X RX 0x%X", b0p11.tx_los,
-                b0p11.rx_los);
+                " is not reported RX LOS 0x%X", b0p11.rx_los);
             }
             poll = true;
         }
@@ -253,11 +248,6 @@ static u8 cmis_get_state(struct qsfp *qsfp)
 
         /* If flag is set then mask the interrupt */
         if (poll) {
-            ret = qsfp_write(qsfp, CMIS_TX_LOS_MASK, &buf_ff, 1);
-            if (ret < 0) {
-                TRX_LOG_ERR(qsfp, "Failed to mask QSFP TX LOS. ret %d", ret);
-            }
-
             ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf_ff, 1);
             if (ret < 0) {
                 TRX_LOG_ERR(qsfp, "Failed to mask QSFP RX LOS. ret %d", ret);
@@ -314,20 +304,23 @@ static int cmis_check_feature_impl(struct qsfp *qsfp)
         return 0;
     }
 
-    if (!qsfp->id.cmis.ext.tx_los_sup && !qsfp->id.cmis.ext.rx_los_sup)
-        TRX_LOG_WARN(qsfp, "LOS not implemented");
-    else
+    if (qsfp->id.cmis.ext.rx_los_sup) {
         qsfp->features |= QSFP_F_LOS;
+    } else {
+        TRX_LOG_WARN(qsfp, "RX LOS not implemented");
+    }
 
-    if (!qsfp->id.cmis.ext.tx_fault_sup)
-        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
-    else
+    if (qsfp->id.cmis.ext.tx_fault_sup) {
         qsfp->features |= QSFP_F_TX_FAULT;
+    } else {
+        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
+    }
 
-    if (!qsfp->id.cmis.ext.tx_dis_sup)
-        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
-    else
+    if (qsfp->id.cmis.ext.tx_dis_sup) {
         qsfp->features |= QSFP_F_TX_DISABLE;
+    } else {
+        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
+    }
 
     return 0;
 }

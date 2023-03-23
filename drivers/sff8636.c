@@ -66,20 +66,32 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
 
 static int sff8636_check_feature_impl(struct qsfp *qsfp)
 {
-    if (!qsfp->id.sff8636.ext.tx_los_impl)
-        TRX_LOG_WARN(qsfp, "TX LOS not implemented");
-    else
+    int ret;
+    u8 link_info = PORT_OTHER;
+
+    ret = qsfp_get_link_type(qsfp, &link_info);
+
+    /* There is no field in EEPROM which gives info about RX LOS is
+     * supported or not. In SFF8636 optical always support RX LOS while DAC
+     * wont support it
+     */
+    if ((0 == ret) && (PORT_FIBRE == link_info)) {
         qsfp->features |= QSFP_F_LOS;
+    } else {
+        TRX_LOG_WARN(qsfp, "RX LOS not implemented");
+    }
 
-    if (!qsfp->id.sff8636.ext.tx_fault_impl)
-        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
-    else
+    if (qsfp->id.sff8636.ext.tx_fault_impl) {
         qsfp->features |= QSFP_F_TX_FAULT;
+    } else {
+        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
+    }
 
-    if (!qsfp->id.sff8636.ext.tx_dis_impl)
-        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
-    else
+    if (qsfp->id.sff8636.ext.tx_dis_impl) {
         qsfp->features |= QSFP_F_TX_DISABLE;
+    } else {
+        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
+    }
 
     return 0;
 }
@@ -152,7 +164,7 @@ static void sff8636_disable_redundant_irq(const struct qsfp *qsfp)
 {
     int ret;
     /* Enable only TX/RX LOS and TX Fault intterupts */
-    u8 buf1[] = {0x00, /* TX LOS , RX LOS enable */
+    u8 buf1[] = {0xF0, /* TX LOS disable, RX LOS enable */
                  0xF0, /* TX Fault enable */
                  0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     u8 buf2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -371,11 +383,6 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
                        " reported 0x%X", irq_flags.los_rx);
         }
         /* In case RX LOS we have to enable poll */
-        poll = true;
-    }
-
-    if (irq_flags.los_tx) {
-        /* In case TX LOS we have to enable poll */
         poll = true;
     }
 

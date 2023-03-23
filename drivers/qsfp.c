@@ -51,15 +51,10 @@ static struct qsfp* get_qsfp(u32 qsfp_phandle)
     return qsfp;
 }
 
-/*
- * API to determine whether link type is optics or copper
- */
-int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
 {
-    struct qsfp *qsfp;
     u8 connector;
 
-    qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp) {
         /* There is chance that QSFP probe not yet successfully completed */
         TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
@@ -115,6 +110,18 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
     TRX_LOG_INFO(qsfp, "link info 0x%X", *link_info);
 
     return 0;
+}
+
+/*
+ * API to determine whether link type is optics or copper
+ */
+int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+{
+    struct qsfp *qsfp;
+
+    qsfp = get_qsfp(qsfp_phandle);
+
+    return qsfp_get_link_type(qsfp, link_info);
 }
 EXPORT_SYMBOL_GPL(qsfp_eth_get_link_type);
 
@@ -1002,6 +1009,9 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         err = sfp_module_insert(qsfp->sfp_bus,
                        (const struct sfp_eeprom_id*)&qsfp->id);
         if (err < 0) {
+            /* Checks done in phylink_sfp_module_insert() may cause
+             * sfp_module_insert() failure which are not necessary and not
+             * used by MTIP MAC driver so ignoring its return value */
             TRX_LOG_INFO(qsfp, "Ignore sfp_module_insert upstream"
                                " ops error. ret %d", err);
         } else {

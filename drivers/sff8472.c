@@ -64,7 +64,7 @@ static int sff8472_check_feature_impl(struct qsfp *qsfp)
     if (features & SFF8472_LOS_IMPL) {
         qsfp->features |= QSFP_F_LOS;
     } else {
-        TRX_LOG_WARN(qsfp, "TX LOS not implemented");
+        TRX_LOG_WARN(qsfp, "RX LOS not implemented");
     }
 
     if (features & SFF8472_TX_FAULT_IMPL) {

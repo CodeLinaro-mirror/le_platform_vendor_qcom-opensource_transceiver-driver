@@ -270,6 +270,7 @@ extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
 extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
 extern int cmis_create_debugfs_files(struct qsfp *qsfp);
 extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
+extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
 
 extern void *trx_ipc_log_buf;
 
