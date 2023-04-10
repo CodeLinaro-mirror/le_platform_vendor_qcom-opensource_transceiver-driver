@@ -29,6 +29,8 @@
  *
  */
 
+#define DRV_NAME "fpc-qsfp"
+
 #define FPC_COMPATIBLE "sff,fpc402"
 
 #define FPC_MAX_PORTS (4)

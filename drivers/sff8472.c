@@ -17,30 +17,29 @@ static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_read(qsfp, SFF8472_ID, &id, sizeof(id.sff8472));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read base EEPROM: %d\n",
-                            __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read base EEPROM: %d", ret);
         return ret;
     }
 
     /* Validate the checksum over the base structure */
     check = qsfp_check(&id.sff8472.base, sizeof(id.sff8472.base) - 1);
     if (check != id.sff8472.base.cc_base) {
-        dev_err(qsfp->dev, "%s: EEPROM base structure checksum failure: "
-                "0x%02x != 0x%02x\n", __func__, check, id.sff8472.base.cc_base);
+        TRX_LOG_ERR(qsfp, "EEPROM base structure checksum failure: "
+                  "0x%02x != 0x%02x", check, id.sff8472.base.cc_base);
         return -EINVAL;
     }
 
     /* Validate the checksum over the extented structure */
     check = qsfp_check(&id.sff8472.ext, sizeof(id.sff8472.ext) - 1);
     if (check != id.sff8472.ext.cc_ext) {
-        dev_err(qsfp->dev, "%s: EEPROM extended structure checksum failure: "
-                "0x%02x != 0x%02x\n", __func__, check, id.sff8472.ext.cc_ext);
+        TRX_LOG_ERR(qsfp, "EEPROM extended structure checksum failure: "
+                  "0x%02x != 0x%02x", check, id.sff8472.ext.cc_ext);
         return -EINVAL;
     }
 
     if (id.sff8472.base.phys_ext_id != SFP_PHYS_EXT_ID_SFP) {
-        dev_err(qsfp->dev, "%s: Extended id 0x%X didnot match\n",
-                           id.sff8472.base.phys_ext_id, __func__);
+        TRX_LOG_ERR(qsfp, "Extended id 0x%X didnot match",
+                        id.sff8472.base.phys_ext_id);
         return -E_UNSUPPORTED_SPEC;
     }
 
@@ -65,19 +64,19 @@ static int sff8472_check_feature_impl(struct qsfp *qsfp)
     if (features & SFF8472_LOS_IMPL) {
         qsfp->features |= QSFP_F_LOS;
     } else {
-        dev_warn(qsfp->dev, "%s: TX LOS not implemented\n", __func__);
+        TRX_LOG_WARN(qsfp, "RX LOS not implemented");
     }
 
     if (features & SFF8472_TX_FAULT_IMPL) {
         qsfp->features |= QSFP_F_TX_FAULT;
     } else {
-        dev_warn(qsfp->dev, "%s: TX Fault not implemented\n", __func__);
+        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
     }
 
     if (features & SFF8472_TX_DISABLE_IMPL) {
         qsfp->features |= QSFP_F_TX_DISABLE;
     } else {
-        dev_warn(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
     }
 
     return 0;
@@ -126,12 +125,12 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
     int ret;
     u8 val = 0;
 
-    dev_notice(qsfp->dev, "%s:\n", __func__);
+    TRX_LOG_INFO(qsfp, "");
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read extended module control."
-                           " ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read extended module control."
+                        " ret %d", ret);
         return ret;
     }
 
@@ -139,8 +138,8 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write extended module control."
-                           " ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to write extended module control."
+                        " ret %d", ret);
         return ret;
     }
 
@@ -152,12 +151,12 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
     int ret;
     u8 val = 0;
 
-    dev_notice(qsfp->dev, "%s:\n", __func__);
+    TRX_LOG_INFO(qsfp, "");
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read extended module control."
-                           " ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read extended module control."
+                        " ret %d", ret);
         return ret;
     }
 
@@ -165,8 +164,8 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write extended module control."
-                           " ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to write extended module control."
+                        " ret %d", ret);
         return ret;
     }
 
@@ -178,8 +177,8 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
     const struct sfp_eeprom_id *id = &qsfp->id.sff8472;
     char date[9];
 
-    dev_notice(qsfp->dev, "%s: phys_id 0x%X phys_ext_id 0x%X connector 0x%X "
-    "encoding 0x%X \n", __func__, id->base.phys_id, id->base.phys_ext_id,
+    TRX_LOG_INFO(qsfp, "phys_id 0x%X phys_ext_id 0x%X connector 0x%X "
+    "encoding 0x%X ", id->base.phys_id, id->base.phys_ext_id,
     id->base.connector, id->base.encoding);
 
     date[0] = id->ext.datecode[4];
@@ -192,20 +191,20 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
     date[7] = id->ext.datecode[1];
     date[8] = '\0';
 
-    dev_notice(qsfp->dev, "%s: date %s\n", __func__, date);
+    TRX_LOG_INFO(qsfp, "date %s", date);
 
-    dev_notice(qsfp->dev, "%s: vendor name %.*s\n", __func__,
+    TRX_LOG_INFO(qsfp, "vendor name %.*s",
                            (int)sizeof(id->base.vendor_name),
                            id->base.vendor_name);
-    dev_notice(qsfp->dev, "%s: vendor pn %.*s\n", __func__,
+    TRX_LOG_INFO(qsfp, "vendor pn %.*s",
                            (int)sizeof(id->base.vendor_pn),
                            id->base.vendor_pn);
 
-    dev_notice(qsfp->dev, "%s: opt 0x%X enhopts 0x%X sff8472_compliance "
-    "0x%X\n", __func__, id->ext.options, id->ext.enhopts,
+    TRX_LOG_INFO(qsfp, "opt 0x%X enhopts 0x%X sff8472_compliance "
+    "0x%X", id->ext.options, id->ext.enhopts,
     id->ext.sff8472_compliance);
 
-    dev_notice(qsfp->dev, "%s: vendor sn %.*s\n", __func__,
+    TRX_LOG_INFO(qsfp, "vendor sn %.*s",
                            (int)sizeof(id->ext.vendor_sn),
                            id->ext.vendor_sn);
 }
@@ -221,8 +220,7 @@ static u8 sff8472_get_state(struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flag, sizeof(irq_flag));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read IRQ status flag. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read IRQ status flag. ret %d", ret);
         /* Preserve the current state */
         return qsfp->state;
     }
@@ -232,11 +230,11 @@ static u8 sff8472_get_state(struct qsfp *qsfp)
      * poll not necessary as it is handled in mod probe
      */
     if (qsfp->module_revision == 0) {
-        dev_notice(qsfp->dev, "%s: EEPROM not yet read\n", __func__);
+        TRX_LOG_INFO(qsfp, "EEPROM not yet read");
         return qsfp->state;
     }
 
-    dev_notice(qsfp->dev, "%s: IRQ status flag: 0x%X\n", __func__, irq_flag);
+    TRX_LOG_INFO(qsfp, "IRQ status flag: 0x%X", irq_flag);
 
     los_options = qsfp->id.sff8472.ext.options & (los_inverted | los_normal);
 
@@ -244,22 +242,21 @@ static u8 sff8472_get_state(struct qsfp *qsfp)
         if (los_options == los_normal) {
             if (irq_flag & SFF8472_LOS) {
                 state |= QSFP_F_LOS;
-                dev_notice(qsfp->dev, "%s: LOS set\n", __func__);
+                TRX_LOG_INFO(qsfp, "LOS set");
             }
         } else if (los_options == los_inverted) {
             if (!(irq_flag & SFF8472_LOS)) {
                 state |= QSFP_F_LOS;
-                dev_notice(qsfp->dev, "%s: LOS set (inverted)\n", __func__);
+                TRX_LOG_INFO(qsfp, "LOS set (inverted)");
             }
         } else {
-            dev_err(qsfp->dev, "%s: LOS Neither normal nor inverted\n",
-                               __func__);
+            TRX_LOG_ERR(qsfp, "LOS Neither normal nor inverted");
         }
     }
 
     if ((qsfp->features & QSFP_F_TX_FAULT) && (irq_flag & SFF8472_TX_FAULT)) {
         state |= QSFP_F_TX_FAULT;
-        dev_notice(qsfp->dev, "%s: TX Fault set\n", __func__);
+        TRX_LOG_INFO(qsfp, "TX Fault set");
     }
 
     return state;
@@ -289,7 +286,7 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
                                   trx_lane_speed* lane_speed)
 {
     *lane_speed = TRX_LANE_SPEED_10G;
-    dev_notice(qsfp->dev, "%s: Lane speed: 0x%X \n", __func__, *lane_speed);
+    TRX_LOG_INFO(qsfp, "Lane speed: 0x%X ", *lane_speed);
 
     return 0;
 }
@@ -307,7 +304,7 @@ static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
 {
     *laneinfo = 0x1;
 
-    dev_notice(qsfp->dev, "%s: Lane info: 0x%X\n", __func__, *laneinfo);
+    TRX_LOG_INFO(qsfp, "Lane info: 0x%X", *laneinfo);
 
     return 0;
 }
@@ -328,19 +325,17 @@ static void sff8472_tx_enable(const struct qsfp *qsfp)
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read control register. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read control register. ret %d", ret);
         return;
     }
 
-    dev_notice(qsfp->dev, "%s: Ctrl: 0x%X\n", __func__, ctrl);
+    TRX_LOG_INFO(qsfp, "Ctrl: 0x%X", ctrl);
     ctrl &= (~SFF8472_TX_DISABLE);
 
     ret = qsfp_write(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write control register. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to write control register. ret %d", ret);
     }
 
 }
@@ -353,19 +348,17 @@ static void sff8472_tx_disable(const struct qsfp *qsfp)
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read control register. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read control register. ret %d", ret);
         return;
     }
 
-    dev_notice(qsfp->dev, "%s: Ctrl: 0x%X\n", __func__, ctrl);
+    TRX_LOG_INFO(qsfp, "Ctrl: 0x%X", ctrl);
     ctrl |= SFF8472_TX_DISABLE;
 
     ret = qsfp_write(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to write control register. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to write control register. ret %d", ret);
     }
 
 }
@@ -381,8 +374,7 @@ int sff8472_create_debugfs_files(struct qsfp *qsfp) {
     ret = module_debugfs_init(qsfp);
     if (ret != 0)
     {
-        dev_err(qsfp->dev, "%s: qsfp module_spec_info debugfs dir fail \n",
-                           __func__);
+        TRX_LOG_ERR(qsfp, "qsfp module_spec_info debugfs dir fail");
     }
     /* Need to implement debugfs support for SFF-8472 */
     return 0;

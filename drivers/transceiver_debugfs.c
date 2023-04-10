@@ -350,8 +350,8 @@ void transceiver_debugfs_init(void)
 {
     transceiver_debugfs_dir = debugfs_create_dir("transceiver_module", NULL);
     if (IS_ERR(transceiver_debugfs_dir)) {
-        pr_err("%s: debugfs_create_dir fail, error (%ld)\n",__func__,
-                                   PTR_ERR(transceiver_debugfs_dir));
+        TRX_LOG_ERR_NODEV("debugfs_create_dir fail, error (%ld)",
+                        PTR_ERR(transceiver_debugfs_dir));
        return;
     }
 }
@@ -359,8 +359,8 @@ void transceiver_debugfs_init(void)
 void transceiver_debugfs_exit(void)
 {
     if (IS_ERR(transceiver_debugfs_dir)) {
-        pr_err("%s: debugfs_create_dir fail, error (%ld)\n",__func__,
-                                  PTR_ERR(transceiver_debugfs_dir));
+        TRX_LOG_ERR_NODEV("debugfs_create_dir fail, error (%ld)",
+                        PTR_ERR(transceiver_debugfs_dir));
         return;
     }
     debugfs_remove_recursive(transceiver_debugfs_dir);
@@ -393,8 +393,8 @@ void fpc_debugfs_init(struct fpc *fpc)
     strlcpy(fpc_devname,dev_name(fpc->dev),sizeof(fpc_devname));
 
     if (IS_ERR(transceiver_debugfs_dir)) {
-        dev_err(fpc->dev,"%s:transceiver debugfs_create_dir fail, error %ld\n",
-                         __func__,PTR_ERR(transceiver_debugfs_dir));
+        TRX_LOG_ERR(fpc, "transceiver debugfs_create_dir fail, error %ld",
+                       PTR_ERR(transceiver_debugfs_dir));
         return;
     }
 
@@ -405,22 +405,21 @@ void fpc_debugfs_init(struct fpc *fpc)
         strlcpy(fpc_devsubname, fpc_devname,sizeof(fpc_devsubname));
     }
 
-    dev_notice(fpc->dev,"%s: dev %s , sub %s\n", __func__, dev_name(fpc->dev),
-                                            fpc_devsubname);
+    TRX_LOG_INFO(fpc, "dev %s , sub %s", dev_name(fpc->dev), fpc_devsubname);
 
     fpc->debugfs_dir = debugfs_create_dir(fpc_devsubname,
                              transceiver_debugfs_dir);
     if (IS_ERR(fpc->debugfs_dir)) {
-        dev_err(fpc->dev,"%s: fpc debugfs_create_dir fail, error %ld\n",
-                         __func__,PTR_ERR(fpc->debugfs_dir));
+        TRX_LOG_ERR(fpc, "fpc debugfs_create_dir fail, error %ld",
+                       PTR_ERR(fpc->debugfs_dir));
         return;
     }
 
     file = debugfs_create_file("i2c_address", 0600, fpc->debugfs_dir, fpc,
                         &fpc_debug_i2c_address_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(fpc->dev,"%s: fpc i2c address debugfs_create_file fail,"
-                       " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(fpc, "fpc i2c address debugfs_create_file fail,"
+                       " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(fpc->debugfs_dir);
         return;
     }
@@ -428,8 +427,8 @@ void fpc_debugfs_init(struct fpc *fpc)
     file = debugfs_create_file("i2c_adapter", 0600, fpc->debugfs_dir, fpc,
                         &fpc_debug_i2c_adapter_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(fpc->dev,"%s: fpc i2c adapter debugfs_create_file fail,"
-                       " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(fpc, "fpc i2c adapter debugfs_create_file fail,"
+                       " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(fpc->debugfs_dir);
     }
 }
@@ -437,9 +436,9 @@ void fpc_debugfs_init(struct fpc *fpc)
 void fpc_debugfs_exit(struct fpc *fpc)
 {
     if (IS_ERR(fpc->debugfs_dir) || IS_ERR(transceiver_debugfs_dir)) {
-        dev_err(fpc->dev,"%s: debugfs_create_dir fail, error (%ld %ld)\n",
-                               __func__,PTR_ERR(transceiver_debugfs_dir),
-                               PTR_ERR(fpc->debugfs_dir));
+        TRX_LOG_ERR(fpc, "debugfs_create_dir fail, error (%ld %ld)",
+                       PTR_ERR(transceiver_debugfs_dir),
+                       PTR_ERR(fpc->debugfs_dir));
         return;
     }
     debugfs_remove_recursive(fpc->debugfs_dir);
@@ -1178,8 +1177,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
                                    qsfp->module_debugfs_dir,
                                    qsfp, &qsfp_debug_revision_info_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp module_revision debugfs_create_file fail,"
-                           "error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp module_revision debugfs_create_file fail,"
+                        "error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
      }
@@ -1187,8 +1186,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     file = debugfs_create_file("connector", 0600, qsfp->module_debugfs_dir,
                                qsfp, &qsfp_debug_connector_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp phys_ext_id debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp phys_ext_id debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
     }
@@ -1196,8 +1195,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     file = debugfs_create_file("vendor_info", 0600, qsfp->module_debugfs_dir,
                         qsfp, &qsfp_debug_vendor_info_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp vendor_info debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp vendor_info debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
         return -1;
     }
@@ -1205,8 +1204,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     file = debugfs_create_file("temperature", 0600, qsfp->module_debugfs_dir,
                         qsfp, &qsfp_debug_device_temperature_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp temperature debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp temperature debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
     }
@@ -1215,8 +1214,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
                         qsfp->module_debugfs_dir, qsfp,
                         &qsfp_debug_device_Supply_Voltage_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp supply_voltage debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp supply_voltage debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
     }
@@ -1224,8 +1223,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     file = debugfs_create_file("rx_power", 0600, qsfp->module_debugfs_dir,
                         qsfp, &qsfp_debug_device_rx_power_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp rx_power debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp rx_power debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
     }
@@ -1234,8 +1233,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
                         qsfp->module_debugfs_dir,
                         qsfp, &qsfp_debug_device_tx_bias_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp tx_bias debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp tx_bias debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
     }
@@ -1243,8 +1242,8 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     file = debugfs_create_file("tx_power", 0600, qsfp->module_debugfs_dir,
                         qsfp, &qsfp_debug_device_tx_power_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp tx_power debugfs_create_file fail,"
-                           " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp tx_power debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
         return -1;
     }
@@ -1256,19 +1255,19 @@ int module_debugfs_init(struct qsfp *qsfp)
 {
     if (IS_ERR(qsfp->debugfs_dir) || IS_ERR(qsfp->fpc->debugfs_dir) ||
         IS_ERR(transceiver_debugfs_dir)) {
-        dev_err(qsfp->dev, "%s: debugfs_create_dir fail, "
-                            "error (%ld %ld %ld)\n",
-                            __func__,PTR_ERR(transceiver_debugfs_dir),
-                            PTR_ERR(qsfp->fpc->debugfs_dir),
-                            PTR_ERR(qsfp->debugfs_dir));
+        TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, "
+                        "error (%ld %ld %ld)",
+                        PTR_ERR(transceiver_debugfs_dir),
+                        PTR_ERR(qsfp->fpc->debugfs_dir),
+                        PTR_ERR(qsfp->debugfs_dir));
         return -1;
     }
     qsfp->module_debugfs_dir = debugfs_create_dir("module_spec_info",
                                                   qsfp->debugfs_dir);
     if (IS_ERR(qsfp->module_debugfs_dir)) {
-        dev_err(qsfp->dev, "%s: qsfp module_spec_info debugfs_create_dir"
-                           "fail, error %ld\n",
-                           __func__,PTR_ERR(qsfp->module_debugfs_dir));
+        TRX_LOG_ERR(qsfp, "qsfp module_spec_info debugfs_create_dir"
+                        "fail, error %ld",
+                        PTR_ERR(qsfp->module_debugfs_dir));
         return -1;
     }
 
@@ -1280,9 +1279,9 @@ void module_debugfs_exit(struct qsfp *qsfp)
     if (IS_ERR(qsfp->module_debugfs_dir) || IS_ERR(qsfp->debugfs_dir) ||
         IS_ERR(qsfp->fpc->debugfs_dir) ||
         IS_ERR(transceiver_debugfs_dir)) {
-        dev_err(qsfp->dev,"%s: debugfs_create_dir fail, error "
-                          "(%ld %ld %ld %ld)\n",
-                        __func__,PTR_ERR(transceiver_debugfs_dir),
+        TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, error "
+                        "(%ld %ld %ld %ld)",
+                        PTR_ERR(transceiver_debugfs_dir),
                         PTR_ERR(qsfp->fpc->debugfs_dir),
                         PTR_ERR(qsfp->debugfs_dir),
                         PTR_ERR(qsfp->module_debugfs_dir));
@@ -1300,9 +1299,9 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     strlcpy(qsfp_devname,dev_name(qsfp->dev),sizeof(qsfp_devname));
 
     if (IS_ERR(qsfp->fpc->debugfs_dir) || IS_ERR(transceiver_debugfs_dir)) {
-        dev_err(qsfp->dev, "%s: debugfs_create_dir fail, error (%ld %ld)\n",
-                           __func__,PTR_ERR(transceiver_debugfs_dir),
-                           PTR_ERR(qsfp->fpc->debugfs_dir));
+        TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, error (%ld %ld)",
+                        PTR_ERR(transceiver_debugfs_dir),
+                        PTR_ERR(qsfp->fpc->debugfs_dir));
         return;
     }
 
@@ -1313,23 +1312,22 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
         strlcpy(qsfp_devsubname,qsfp_devname,sizeof(qsfp_devsubname));
     }
 
-    dev_notice(qsfp->dev,"%s: dev %s , sub %s\n", __func__,
-                                       dev_name(qsfp->dev),
-                                       qsfp_devsubname);
+    TRX_LOG_INFO(qsfp, "dev %s , sub %s", dev_name(qsfp->dev),
+                                          qsfp_devsubname);
 
     qsfp->debugfs_dir = debugfs_create_dir(qsfp_devsubname,
                          qsfp->fpc->debugfs_dir);
     if (IS_ERR(qsfp->debugfs_dir)) {
-        dev_err(qsfp->dev, "%s: qsfp debugfs_create_dir fail, error %ld\n",
-                           __func__,PTR_ERR(qsfp->debugfs_dir));
+        TRX_LOG_ERR(qsfp, "qsfp debugfs_create_dir fail, error %ld",
+                        PTR_ERR(qsfp->debugfs_dir));
         return;
     }
 
     file = debugfs_create_file("state_info", 0600, qsfp->debugfs_dir, qsfp,
                         &qsfp_debug_qsfp_state_info_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp state_info debugfs_create_file fail,"
-                             " error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp state_info debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
         return;
     }
@@ -1337,8 +1335,8 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     file = debugfs_create_file("i2c_address_info", 0600, qsfp->debugfs_dir,
                         qsfp, &qsfp_debug_qsfp_i2c_address_info_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp i2c_address_info debugfs_create_file "
-                             "fail, error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp i2c_address_info debugfs_create_file "
+                        "fail, error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
         return;
     }
@@ -1346,8 +1344,8 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     file = debugfs_create_file("port_num_info", 0600, qsfp->debugfs_dir, qsfp,
                         &qsfp_debug_qsfp_port_num_info_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp port_num_info debugfs_create_file fail,"
-                           "error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp port_num_info debugfs_create_file fail,"
+                        "error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
         return;
     }
@@ -1355,8 +1353,8 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     file = debugfs_create_file("module_identifier", 0600, qsfp->debugfs_dir,
                    qsfp, &qsfp_debug_qsfp_module_identifier_info_fops);
     if (!file || IS_ERR(file)) {
-        dev_err(qsfp->dev, "%s: qsfp module_identifier debugfs_create_file"
-                          " fail, error %ld\n", __func__,PTR_ERR(file));
+        TRX_LOG_ERR(qsfp, "qsfp module_identifier debugfs_create_file"
+                        " fail, error %ld", PTR_ERR(file));
         debugfs_remove_recursive(qsfp->debugfs_dir);
     }
     return;
@@ -1367,8 +1365,8 @@ void qsfp_debugfs_exit(struct qsfp *qsfp)
 {
     if (IS_ERR(qsfp->debugfs_dir) || IS_ERR(qsfp->fpc->debugfs_dir) ||
         IS_ERR(transceiver_debugfs_dir)) {
-        dev_err(qsfp->dev,"%s: debugfs_create_dir fail, error (%ld %ld %ld)\n",
-                        __func__,PTR_ERR(transceiver_debugfs_dir),
+        TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, error (%ld %ld %ld)",
+                        PTR_ERR(transceiver_debugfs_dir),
                         PTR_ERR(qsfp->fpc->debugfs_dir),
                         PTR_ERR(qsfp->debugfs_dir));
         return;

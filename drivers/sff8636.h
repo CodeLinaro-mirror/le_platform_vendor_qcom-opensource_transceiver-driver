@@ -218,7 +218,8 @@ struct sff8636_id_stat {
 } __packed;
 
 struct sff8636_irq_flags {
-    u8 los;
+    u8 los_rx:4;
+    u8 los_tx:4;
 
     u8 tx_fault:4;
     u8 tx_adap_eq_fault:4;

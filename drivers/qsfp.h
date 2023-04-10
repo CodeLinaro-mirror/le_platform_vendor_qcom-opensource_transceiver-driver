@@ -14,6 +14,7 @@
 #include <linux/platform_device.h>
 #include <linux/rtnetlink.h>
 #include <linux/of_platform.h>
+#include <linux/ipc_logging.h>
 
 #define QSFP_ADDR(device, page, addr) ((device) << 16 | (page) << 8 | (addr))
 
@@ -269,5 +270,58 @@ extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
 extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
 extern int cmis_create_debugfs_files(struct qsfp *qsfp);
 extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
+extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
+
+extern void *trx_ipc_log_buf;
+
+#define TRX_IPC_LOG_PAGES 50
+
+#define TRX_IPC_Log(buf, fmt, args...) \
+do {\
+    ipc_log_string((buf), fmt, ## args); \
+} while (0)
+
+#define TRX_LOG_INFO(p, fmt, args...) \
+do {\
+    dev_notice(p->dev, " %s: " fmt, __func__, ## args);\
+    if (trx_ipc_log_buf) { \
+        TRX_IPC_Log(trx_ipc_log_buf , " %s:%s: " fmt, dev_name(p->dev), __func__\
+                                  , ## args); \
+    } \
+} while (0)
+
+#define TRX_LOG_WARN(p, fmt, args...) \
+do {\
+    dev_warn(p->dev, " %s: " fmt, __func__, ## args);\
+    if (trx_ipc_log_buf) { \
+        TRX_IPC_Log(trx_ipc_log_buf , " %s:%s: " fmt, dev_name(p->dev), __func__\
+                                  , ## args); \
+    } \
+} while (0)
+
+#define TRX_LOG_ERR(p, fmt, args...) \
+do {\
+    dev_err(p->dev, " %s: " fmt, __func__, ## args);\
+    if (trx_ipc_log_buf) { \
+        TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s:%s: " fmt, dev_name(p->dev), __func__\
+                                  , ## args); \
+    } \
+} while (0)
+
+#define TRX_LOG_INFO_NODEV(fmt, args...) \
+do {\
+    pr_notice(" %s: " fmt, __func__, ## args);\
+    if (trx_ipc_log_buf) { \
+        TRX_IPC_Log(trx_ipc_log_buf , " %s: " fmt, __func__, ## args); \
+    } \
+} while (0)
+
+#define TRX_LOG_ERR_NODEV(fmt, args...) \
+do {\
+    pr_err(" %s: " fmt, __func__, ## args);\
+    if (trx_ipc_log_buf) { \
+        TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s: " fmt, __func__, ## args); \
+    } \
+} while (0)
 
 #endif

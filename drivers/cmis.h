@@ -252,11 +252,6 @@ struct cmis_irq_flags {
 
 } __packed;
 
-struct cmis_tx_status {
-    u8 tx_failure;
-    u8 tx_los;
-} __packed;
-
 struct cmis_bank0_page11 {
     u8 dp_state_lane1:4;
     u8 dp_state_lane2:4;
@@ -318,11 +313,10 @@ enum {
     CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
     CMIS_PAGE10_MASKS                = QSFP_ADDR(0, 0x10, 213),
     CMIS_TX_FAILURE_MASK             = QSFP_ADDR(0, 0x10, 214),
-    CMIS_TX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 215),
     CMIS_RX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 226),
 
     CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 128),
-    CMIS_TX_FLAGS                    = QSFP_ADDR(0, 0x11, 135),
+    CMIS_TX_FAILURE                  = QSFP_ADDR(0, 0x11, 135),
     CMIS_RX_LOS                      = QSFP_ADDR(0, 0x11, 147),
     CMIS_TX_POWER                    = QSFP_ADDR(0, 0x11, 154),
     CMIS_TX_BIAS                     = QSFP_ADDR(0, 0x11, 170),

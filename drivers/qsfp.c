@@ -51,25 +51,20 @@ static struct qsfp* get_qsfp(u32 qsfp_phandle)
     return qsfp;
 }
 
-/*
- * API to determine whether link type is optics or copper
- */
-int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
 {
-    struct qsfp *qsfp;
     u8 connector;
 
-    qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp) {
         /* There is chance that QSFP probe not yet successfully completed */
-        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
         return -EAGAIN;
     }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_connector_type) {
         connector = qsfp->spec_ops->get_connector_type(qsfp);
     } else {
-        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
     }
 
@@ -107,14 +102,26 @@ int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
         *link_info = PORT_BNC;
         break;
     default:
-        dev_warn(qsfp->dev, "Unknown connector id 0x%X\n", connector);
+        TRX_LOG_WARN(qsfp, "Unknown connector id 0x%X", connector);
         *link_info = PORT_OTHER;
         break;
     }
 
-    dev_notice(qsfp->dev, "%s: link info 0x%X\n", __func__, *link_info);
+    TRX_LOG_INFO(qsfp, "link info 0x%X", *link_info);
 
     return 0;
+}
+
+/*
+ * API to determine whether link type is optics or copper
+ */
+int qsfp_eth_get_link_type(u32 qsfp_phandle, u8* link_info)
+{
+    struct qsfp *qsfp;
+
+    qsfp = get_qsfp(qsfp_phandle);
+
+    return qsfp_get_link_type(qsfp, link_info);
 }
 EXPORT_SYMBOL_GPL(qsfp_eth_get_link_type);
 
@@ -138,14 +145,14 @@ int qsfp_trx_get_lane_speed(u32 qsfp_phandle, trx_lane_speed* lane_speed)
     qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp) {
         /* There is chance that QSFP probe not yet successfully completed */
-        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
         return -EAGAIN;
     }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_lane_speed) {
         ret = qsfp->spec_ops->get_lane_speed(qsfp, lane_speed);
     } else {
-        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
     }
 
@@ -164,14 +171,14 @@ int qsfp_trx_get_type(u32 qsfp_phandle, trx_type* type)
     qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp) {
         /* There is chance that QSFP probe not yet successfully completed */
-        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
         return -EAGAIN;
     }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_transceiver_type) {
         tansceivertype = qsfp->spec_ops->get_transceiver_type(qsfp);
     } else {
-        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
     }
 
@@ -194,7 +201,7 @@ int qsfp_trx_get_type(u32 qsfp_phandle, trx_type* type)
         break;
     }
 
-    dev_notice(qsfp->dev, "%s: Transceiver type 0x%X\n", __func__, *type);
+    TRX_LOG_INFO(qsfp, "Transceiver type 0x%X", *type);
 
     return 0;
 }
@@ -211,14 +218,14 @@ int qsfp_trx_get_laneconfig(u32 qsfp_phandle, trx_lane_cfg* laneinfo)
     qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp) {
         /* There is chance that QSFP probe not yet successfully completed */
-        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
         return -EAGAIN;
     }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_lanes_presence) {
         ret = qsfp->spec_ops->get_lanes_presence(qsfp, laneinfo);
     } else {
-        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
     }
 
@@ -238,14 +245,14 @@ int qsfp_trx_get_breakoutconfig(u32 qsfp_phandle,
     qsfp = get_qsfp(qsfp_phandle);
     if (!qsfp) {
         /* There is chance that QSFP probe not yet successfully completed */
-        pr_err("%s: Unable to get QSFP handler\n", __func__);
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
         return -EAGAIN;
     }
 
     if (qsfp->spec_ops && qsfp->spec_ops->get_breakout_config) {
         ret = qsfp->spec_ops->get_breakout_config(qsfp, bout_config);
     } else {
-        dev_warn(qsfp->dev, "%s: Spec ops not yet initialised\n", __func__);
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
     }
 
@@ -489,13 +496,12 @@ static int qsfp_i2c_configure(struct qsfp *qsfp)
     struct i2c_adapter *i2c = qsfp->fpc->i2c;
 
     if (!i2c) {
-        dev_err(qsfp->dev, "%s: FPC I2C adapter missing\n", __func__);
+        TRX_LOG_ERR(qsfp, "FPC I2C adapter missing");
         return -ENODEV;
     }
 
     if (!i2c_check_functionality(i2c, I2C_FUNC_I2C)) {
-        dev_err(qsfp->dev, "%s: I2C expected functionality "
-                           "not supported\n", __func__);
+        TRX_LOG_ERR(qsfp, "I2C expected functionality not supported");
         return -EINVAL;
     }
 
@@ -524,8 +530,7 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, 0, &qsfp->id, 1);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to read spec id. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(qsfp, "Failed to read spec id. ret %d", ret);
         return -EAGAIN;
     }
 
@@ -535,25 +540,21 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         qsfp->spec_ops = &sff8636_spec_ops;
-        dev_notice(qsfp->dev, "%s: SFF8636 spec id 0x%02X\n",
-                              __func__, *spec_id);
+        TRX_LOG_INFO(qsfp, "SFF8636 spec id 0x%02X", *spec_id);
         break;
 
     case SFF8024_ID_SFP:
         qsfp->spec_ops = &sff8472_spec_ops;
-        dev_notice(qsfp->dev, "%s: SFP spec id 0x%02X\n",
-                               __func__, *spec_id);
+        TRX_LOG_INFO(qsfp, "SFP spec id 0x%02X", *spec_id);
         break;
 
     case SFF8024_ID_QSFPDD_CMIS:
         qsfp->spec_ops = &cmis_spec_ops;
-        dev_notice(qsfp->dev, "%s: QSFP-DD CMIS spec id 0x%02X\n",
-                              __func__, *spec_id);
+        TRX_LOG_INFO(qsfp, "QSFP-DD CMIS spec id 0x%02X", *spec_id);
         break;
 
     default:
-        dev_warn(qsfp->dev, "%s: Unsupported spec id 0x%02X\n",
-                            __func__,*spec_id);
+        TRX_LOG_WARN(qsfp, "Unsupported spec id 0x%02X", *spec_id);
         return -E_UNSUPPORTED_SPEC;
     }
 
@@ -598,14 +599,14 @@ static u8 qsfp_get_state(struct qsfp *qsfp)
     char state_str[QSFP_STATE_STR_MAX_LEN];
 
     if (qsfp_set_spec_ops(qsfp) < 0) {
-        dev_err(qsfp->dev, "%s: Unable to set the spec ops\n", __func__);
+        TRX_LOG_ERR(qsfp, "Unable to set the spec ops");
         return qsfp->state;
     }
 
     state = qsfp->spec_ops->get_state(qsfp);
 
     if (!qsfp->need_poll) {
-        dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
+        TRX_LOG_INFO(qsfp, "state 0x%X %s", state,
                    qsfp_state_to_str(state, state_str, sizeof(state_str)));
     }
 
@@ -619,7 +620,7 @@ static void qsfp_set_state(const struct qsfp *qsfp, u8 state)
 {
     char state_str[QSFP_STATE_STR_MAX_LEN];
 
-    dev_notice(qsfp->dev, "%s: state 0x%X %s\n", __func__, state,
+    TRX_LOG_INFO(qsfp, "state 0x%X %s", state,
                qsfp_state_to_str(state, state_str, sizeof(state_str)));
 
     if (state & QSFP_F_PRESENT) {
@@ -643,11 +644,11 @@ u8 qsfp_check(void *buf, size_t len)
 static void qsfp_module_tx_disable(struct qsfp *qsfp)
 {
     if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
-        dev_info(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        TRX_LOG_INFO(qsfp, "TX Disable not implemented");
         return;
     }
 
-    dev_notice(qsfp->dev, "%s: TX Disable %s -> Disable\n", __func__,
+    TRX_LOG_INFO(qsfp, "TX Disable %s -> Disable",
                qsfp->state & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
     qsfp->state |= QSFP_F_TX_DISABLE;
     qsfp_set_state(qsfp, qsfp->state);
@@ -656,11 +657,11 @@ static void qsfp_module_tx_disable(struct qsfp *qsfp)
 static void qsfp_module_tx_enable(struct qsfp *qsfp)
 {
     if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
-        dev_info(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        TRX_LOG_INFO(qsfp, "TX Disable not implemented");
         return;
     }
 
-    dev_notice(qsfp->dev, "%s: TX Enable: %s -> Enable\n", __func__,
+    TRX_LOG_INFO(qsfp, "TX Enable: %s -> Enable",
                qsfp->state & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
     qsfp->state &= ~QSFP_F_TX_DISABLE;
     qsfp_set_state(qsfp, qsfp->state);
@@ -674,7 +675,7 @@ static void qsfp_module_tx_fault_reset(struct qsfp *qsfp)
         return;
 
     if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
-        dev_info(qsfp->dev, "%s: TX Disable not implemented\n", __func__);
+        TRX_LOG_INFO(qsfp, "TX Disable not implemented");
         return;
     }
 
@@ -712,7 +713,7 @@ static void qsfp_sm_mod_next(struct qsfp *qsfp, u32 state,
 static void qsfp_sm_link_up(struct qsfp *qsfp)
 {
     sfp_link_up(qsfp->sfp_bus);
-    dev_notice(qsfp->dev, "%s: sfp_link_up upstream ops called\n", __func__);
+    TRX_LOG_INFO(qsfp, "sfp_link_up upstream ops called");
     transceiver_led_on(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED2);
     qsfp_sm_next(qsfp, QSFP_S_LINK_UP, 0);
 }
@@ -720,8 +721,7 @@ static void qsfp_sm_link_up(struct qsfp *qsfp)
 static void qsfp_sm_link_down(const struct qsfp *qsfp)
 {
     sfp_link_down(qsfp->sfp_bus);
-    dev_notice(qsfp->dev, "%s: sfp_link_down upstream ops called\n",
-                           __func__);
+    TRX_LOG_INFO(qsfp, "sfp_link_down upstream ops called");
     transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED2);
 }
 
@@ -753,13 +753,11 @@ static void qsfp_sm_fault(struct qsfp *qsfp, u32 next_state,
                           bool warn)
 {
     if (qsfp->sm_fault_retries && !--qsfp->sm_fault_retries) {
-        dev_err(qsfp->dev,"%s: Module persistently indicates Fault,"
-                           "Disabling\n", __func__);
+        TRX_LOG_ERR(qsfp, "Module persistently indicates Fault, Disabling");
         qsfp_sm_next(qsfp, QSFP_S_TX_DISABLE, 0);
     } else {
         if (warn)
-            dev_err(qsfp->dev, "%s: Module TX fault indicated\n",
-                                __func__);
+            TRX_LOG_ERR(qsfp, "Module TX fault indicated");
 
         qsfp_sm_next(qsfp, next_state, T_FAULT_RECOVER);
     }
@@ -784,21 +782,18 @@ static int qsfp_sm_mod_hpower(const struct qsfp *qsfp, bool enable)
         ret = qsfp->spec_ops->mod_low_power(qsfp);
 
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Failed to set Power class: enable %u "
-                           "ret %d\n",__func__, enable, ret);
+        TRX_LOG_ERR(qsfp, "Failed to set Power class: enable %u "
+                        "ret %d", enable, ret);
         return -EAGAIN;
     }
 
     if (enable && qsfp->module_power_mW > qsfp->max_power_mW)
-        dev_notice(qsfp->dev, "%s: Module high power is greater than max "
-        "allowed so handled by moving to allowed lower power class\n",
-        __func__);
+        TRX_LOG_INFO(qsfp, "Module high power is greater than max "
+        "allowed so handled by moving to allowed lower power class");
     else if (enable)
-        dev_notice(qsfp->dev, "%s: Module switched to High Power class\n",
-                              __func__);
+        TRX_LOG_INFO(qsfp, "Module switched to High Power class");
     else
-        dev_notice(qsfp->dev, "%s: Module switched to Low Power class\n",
-                              __func__);
+        TRX_LOG_INFO(qsfp, "Module switched to Low Power class");
 
     return 0;
 }
@@ -812,12 +807,12 @@ static int qsfp_module_parse_power(struct qsfp *qsfp)
 
     ret = qsfp->spec_ops->module_parse_power(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: spec parse power failed\n", __func__);
+        TRX_LOG_ERR(qsfp, "spec parse power failed");
         return ret;
     }
 
-    dev_notice(qsfp->dev, "%s: Module Power class %u Power %u.%uW\n",
-    __func__, qsfp->module_power_class, qsfp->module_power_mW / 1000,
+    TRX_LOG_INFO(qsfp, "Module Power class %u Power %u.%uW",
+    qsfp->module_power_class, qsfp->module_power_mW / 1000,
     (qsfp->module_power_mW / 100) % 10);
 
     return 0;
@@ -829,22 +824,20 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_set_spec_ops(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Unable to set spec ops. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(qsfp, "Unable to set spec ops. ret %d", ret);
         return ret;
     }
 
     ret = qsfp->spec_ops->mod_probe(qsfp, report);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: spec mod probe failed. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(qsfp, "spec mod probe failed. ret %d", ret);
         return ret;
     }
 
     ret = qsfp->spec_ops->check_features_impl(qsfp);
     if (ret < 0) {
-        dev_warn(qsfp->dev, "%s: required features not implemented so rejecting"
-                           " module. ret %d\n", __func__, ret);
+        TRX_LOG_WARN(qsfp, "required features not implemented so rejecting"
+                         " module. ret %d", ret);
         return ret;
     }
 
@@ -858,16 +851,14 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
     /* Parse the module power requirement */
     ret = qsfp_module_parse_power(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: spec module parse power failed. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "spec module parse power failed. ret %d", ret);
         return ret;
     }
 
     if (qsfp->module_power_mW > qsfp->max_power_mW) {
         ret = qsfp->spec_ops->handle_max_power_exceed(qsfp);
         if (ret < 0) {
-           dev_err(qsfp->dev, "%s: handle max power exceed failed. "
-                              "ret %d\n", __func__, ret);
+           TRX_LOG_ERR(qsfp, "handle max power exceed failed. ret %d", ret);
            return ret;
         }
     }
@@ -878,8 +869,7 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
     if (qsfp->spec_ops->create_debugfs) {
         qsfp->spec_ops->create_debugfs(qsfp);
     } else {
-        dev_warn(qsfp->dev, "%s: Spec ops for create debugfs not found\n",
-                                                                __func__);
+        TRX_LOG_WARN(qsfp, "Spec ops for create debugfs not found");
     }
 #endif
 
@@ -892,8 +882,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 {
     if (qsfp->sm_mod_state > QSFP_MOD_WAITDEV) {
         sfp_module_remove(qsfp->sfp_bus);
-        dev_notice(qsfp->dev, "%s: sfp_module_remove upstream ops called\n",
-                               __func__);
+        TRX_LOG_INFO(qsfp, "sfp_module_remove upstream ops called");
     }
 
     transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1 | QSFP_LED2);
@@ -910,7 +899,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->spec_ops = NULL;
     qsfp->need_poll = false;
 
-    dev_notice(qsfp->dev, "%s: Module removed\n", __func__);
+    TRX_LOG_INFO(qsfp, "Module removed");
 }
 
 /* This state machine tracks the upstream's state */
@@ -986,8 +975,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
                 break;
             } else if (qsfp->sm_mod_tries && --qsfp->sm_mod_tries) {
                 if (qsfp->sm_mod_tries == R_PROBE_RETRY_SLOW - 1)
-                    dev_warn(qsfp->dev,
-                    "please wait, module slow to respond\n");
+                    TRX_LOG_WARN(qsfp, "please wait, module slow to respond");
                 qsfp_sm_set_timer(qsfp, T_PROBE_RETRY_SLOW);
                 break;
             }
@@ -1021,20 +1009,13 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         err = sfp_module_insert(qsfp->sfp_bus,
                        (const struct sfp_eeprom_id*)&qsfp->id);
         if (err < 0) {
-            u8 *spec_id;
-            spec_id = (u8*)&qsfp->id;
-            if (*spec_id == SFF8024_ID_SFP) {
-                dev_err(qsfp->dev, "%s: sfp_module_insert upstream ops "
-                                      "failed. ret %d\n", __func__, err);
-                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
-                break;
-            } else {
-                dev_notice(qsfp->dev, "%s: Ignore sfp_module_insert upstream"
-                           " ops error. ret %d\n", __func__, err);
-            }
+            /* Checks done in phylink_sfp_module_insert() may cause
+             * sfp_module_insert() failure which are not necessary and not
+             * used by MTIP MAC driver so ignoring its return value */
+            TRX_LOG_INFO(qsfp, "Ignore sfp_module_insert upstream"
+                               " ops error. ret %d", err);
         } else {
-            dev_notice(qsfp->dev, "%s: sfp_module_insert upstream ops "
-                                  "successful\n", __func__);
+            TRX_LOG_INFO(qsfp, "sfp_module_insert upstream ops successful");
         }
 
         /* If this is a power level 1 module, we are done */
@@ -1049,8 +1030,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         if (err < 0) {
             if (err != -EAGAIN) {
                 sfp_module_remove(qsfp->sfp_bus);
-                dev_notice(qsfp->dev, "%s: sfp_module_remove upstream ops"
-                                      " called\n", __func__);
+                TRX_LOG_INFO(qsfp, "sfp_module_remove upstream ops called");
                 qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
             } else {
                 qsfp_sm_set_timer(qsfp, T_PROBE_RETRY_INIT);
@@ -1198,8 +1178,7 @@ static void qsfp_sm_main(struct qsfp *qsfp, u32 event)
         if (event == QSFP_E_TIMEOUT && qsfp->state & QSFP_F_TX_FAULT) {
             qsfp_sm_fault(qsfp, QSFP_S_TX_FAULT, false);
         } else if (event == QSFP_E_TIMEOUT || event == QSFP_E_TX_CLEAR) {
-            dev_notice(qsfp->dev, "%s: Module TX Fault recovered\n",
-                           __func__);
+            TRX_LOG_INFO(qsfp, "Module TX Fault recovered");
             qsfp_sm_link_check_los(qsfp);
         }
         break;
@@ -1213,20 +1192,20 @@ static void qsfp_sm_event(struct qsfp *qsfp, u32 event)
 {
     mutex_lock(&qsfp->sm_mutex);
 
-    dev_notice(qsfp->dev, "%s: Enter [%7s:%8s:%8s]   Event: %s\n", __func__,
-                          mod_state_to_str(qsfp->sm_mod_state),
-                          dev_state_to_str(qsfp->sm_dev_state),
-                          sm_state_to_str(qsfp->sm_state),
-                          event_to_str(event));
+    TRX_LOG_INFO(qsfp, "Enter [%7s:%8s:%8s]   Event: %s",
+                     mod_state_to_str(qsfp->sm_mod_state),
+                     dev_state_to_str(qsfp->sm_dev_state),
+                     sm_state_to_str(qsfp->sm_state),
+                     event_to_str(event));
 
     qsfp_sm_device(qsfp, event);
     qsfp_sm_module(qsfp, event);
     qsfp_sm_main(qsfp, event);
 
-    dev_notice(qsfp->dev, "%s: Exit  [%7s:%8s:%8s]\n", __func__,
-                          mod_state_to_str(qsfp->sm_mod_state),
-                          dev_state_to_str(qsfp->sm_dev_state),
-                          sm_state_to_str(qsfp->sm_state));
+    TRX_LOG_INFO(qsfp, "Exit  [%7s:%8s:%8s]",
+                     mod_state_to_str(qsfp->sm_mod_state),
+                     dev_state_to_str(qsfp->sm_dev_state),
+                     sm_state_to_str(qsfp->sm_state));
 
     mutex_unlock(&qsfp->sm_mutex);
 }
@@ -1263,7 +1242,7 @@ static int qsfp_module_info(struct sfp *sfp, struct ethtool_modinfo *modinfo)
 {
     struct qsfp *qsfp = (struct qsfp*)sfp;
 
-    dev_notice(qsfp->dev, "%s:", __func__);
+    TRX_LOG_INFO(qsfp, "");
 
     return qsfp->spec_ops->module_info(qsfp, modinfo);
 }
@@ -1274,16 +1253,15 @@ static int qsfp_module_eeprom(struct sfp *sfp, struct ethtool_eeprom *ee,
     int ret;
     struct qsfp *qsfp = (struct qsfp*)sfp;
 
-    dev_notice(qsfp->dev, "%s: offset %u length %u\n", __func__,
-                          ee->offset, ee->len);
+    TRX_LOG_INFO(qsfp, "offset %u length %u", ee->offset, ee->len);
 
     if (ee->len == 0)
         return -EINVAL;
 
     ret = qsfp_read(qsfp, ee->offset, data, ee->len);
     if (ret < 0)
-        dev_err(qsfp->dev, "%s: Fail to read EEPROM from offset %u "
-                "length %u. ret %d\n", __func__, ee->offset, ee->len, ret);
+        TRX_LOG_ERR(qsfp, "Fail to read EEPROM from offset %u "
+                  "length %u. ret %d", ee->offset, ee->len, ret);
 
     return ret;
 }
@@ -1295,18 +1273,18 @@ static int qsfp_module_eeprom_by_page(struct sfp *sfp,
     int ret;
     struct qsfp *qsfp = (struct qsfp*)sfp;
 
-    dev_notice(qsfp->dev, "%s: bank %u page %u offset %u length %u\n",
-               __func__, page->bank, page->page, page->offset, page->length);
+    TRX_LOG_INFO(qsfp, "bank %u page %u offset %u length %u",
+               page->bank, page->page, page->offset, page->length);
 
     if (page->bank) {
-        dev_err(qsfp->dev, "%s: Banks not supported", __func__);
+        TRX_LOG_ERR(qsfp, "Banks not supported");
         NL_SET_ERR_MSG(extack, "Banks not supported");
         return -EOPNOTSUPP;
     }
 
     if (page->i2c_address != 0x50) {
-        dev_err(qsfp->dev, "%s: I2C address 0x%X not supported\
-                Only address 0x50 supported", __func__, page->i2c_address);
+        TRX_LOG_ERR(qsfp, "I2C address 0x%X not supported\
+                  Only address 0x50 supported", page->i2c_address);
         NL_SET_ERR_MSG(extack, "Only address 0x50 supported");
         return -EOPNOTSUPP;
     }
@@ -1314,9 +1292,9 @@ static int qsfp_module_eeprom_by_page(struct sfp *sfp,
     ret = qsfp_read(qsfp, (page->page << 8) | page->offset,
             page->data, page->length);
     if (ret < 0)
-        dev_err(qsfp->dev, "%s: Fail to read EEPROM from page %u offset %u "
-                "length %u. ret %d\n", __func__, page->page, page->offset,
-                page->length, ret);
+        TRX_LOG_ERR(qsfp, "Fail to read EEPROM from page %u offset %u "
+                  "length %u. ret %d", page->page, page->offset,
+                  page->length, ret);
 
     return ret;
 
@@ -1359,8 +1337,8 @@ void qsfp_check_state(struct qsfp *qsfp)
         return;
     }
 
-    dev_notice(qsfp->dev, "%s: Current state %s 0x%X, Next state %s 0x%X, "
-    "Changed state to be processed %s 0x%X\n",__func__,
+    TRX_LOG_INFO(qsfp, "Current state %s 0x%X, Next state %s 0x%X, "
+    "Changed state to be processed %s 0x%X",
     qsfp_state_to_str(qsfp->state, cur_state_str, sizeof(cur_state_str)),
     qsfp->state,
     qsfp_state_to_str(state, next_state_str, sizeof(next_state_str)),
@@ -1402,8 +1380,7 @@ void qsfp_irq(struct qsfp *qsfp)
 
     if (qsfp_set_spec_ops(qsfp) < 0) {
         /* To make sure event wont get missed */
-        dev_err(qsfp->dev, "%s: Unable to set the spec ops. Process irq "
-                           "after 1sec\n", __func__);
+        TRX_LOG_ERR(qsfp, "Unable to set the spec ops. Process irq after 1sec");
         delay = msecs_to_jiffies(1000);
     } else {
         delay = qsfp->spec_ops->irq_delay(qsfp);
@@ -1417,13 +1394,13 @@ void qsfp_stop_poll(struct qsfp *qsfp)
     if (qsfp->need_poll) {
         qsfp->need_poll = false;
         cancel_delayed_work_sync(&qsfp->poll);
-        dev_notice(qsfp->dev, "%s: Polling stoped\n", __func__);
+        TRX_LOG_INFO(qsfp, "Polling stoped");
     }
 }
 
 void qsfp_module_insert_irq(struct qsfp *qsfp)
 {
-    dev_notice(qsfp->dev, "%s:\n", __func__);
+    TRX_LOG_INFO(qsfp, "");
 
     qsfp->state |= QSFP_F_PRESENT;
 
@@ -1434,7 +1411,7 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
 
 void qsfp_module_remove_irq(struct qsfp *qsfp)
 {
-    dev_notice(qsfp->dev, "%s:\n", __func__);
+    TRX_LOG_INFO(qsfp, "");
 
     qsfp_stop_poll(qsfp);
 
@@ -1504,112 +1481,106 @@ int qsfp_probe(struct platform_device *pdev)
 
     qsfp = qsfp_alloc(&pdev->dev);
     if (IS_ERR(qsfp)) {
-        dev_err(&pdev->dev, "%s: qsfp_alloc failed\n", __func__);
+        TRX_LOG_ERR(&pdev, "qsfp_alloc failed");
         return PTR_ERR(qsfp);
     }
 
     ret = devm_add_action(qsfp->dev, qsfp_cleanup, qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: devm_add_action failed. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(qsfp, "devm_add_action failed. ret %d", ret);
         qsfp_cleanup(qsfp);
         return ret;
     }
 
     if (!node) {
-        dev_err(qsfp->dev, "%s: dev node not found\n", __func__);
+        TRX_LOG_ERR(qsfp, "dev node not found");
         return -EINVAL;
     }
 
     id = of_match_node(fpc_qsfp_of_match, node);
     if (WARN_ON(!id)) {
-        dev_err(qsfp->dev, "%s: Node match id not found\n", __func__);
+        TRX_LOG_ERR(qsfp, "Node match id not found");
         return -EINVAL;
     }
 
     ret = of_property_read_u32(node, "fpc", &fpc_handle);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Unable to read property 'fpc'. ret %d\n",
-                    __func__, ret);
+        TRX_LOG_ERR(qsfp, "Unable to read property 'fpc'. ret %d", ret);
         return ret;
     }
 
     fpc_node = of_find_node_by_phandle(fpc_handle);
     if (!fpc_node) {
-        dev_err(qsfp->dev, "%s: Unable to find FPC node\n", __func__);
+        TRX_LOG_ERR(qsfp, "Unable to find FPC node");
         return -EPROBE_DEFER;
     }
 
     fpc_pdev = of_find_device_by_node(fpc_node);
     if (!fpc_pdev) {
-        dev_err(qsfp->dev, "%s: Unable to get FPC pdev\n", __func__);
+        TRX_LOG_ERR(qsfp, "Unable to get FPC pdev");
         return -EPROBE_DEFER;
     }
 
     qsfp->fpc = platform_get_drvdata(fpc_pdev);
     if (!qsfp->fpc) {
-        dev_info(qsfp->dev, "%s: Unable to get FPC handler\n", __func__);
+        TRX_LOG_INFO(qsfp, "Unable to get FPC handler");
         return -EPROBE_DEFER;
     }
 
     ret = qsfp_i2c_configure(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: I2C configuration failed. ret %d\n",
-                            __func__, ret);
+        TRX_LOG_ERR(qsfp, "I2C configuration failed. ret %d", ret);
         return ret;
     }
 
     ret = device_property_read_u32(&pdev->dev, "port-num", &temp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to get 'port-num' property. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to get 'port-num' property. ret %d", ret);
         return ret;
     }
     qsfp->port_num = temp & 0xFF;
 
-    dev_notice(qsfp->dev, "%s: port_num %u\n", __func__, qsfp->port_num);
+    TRX_LOG_INFO(qsfp, "port_num %u", qsfp->port_num);
 
     if (qsfp->port_num < 0 || qsfp->port_num >= FPC_MAX_PORTS) {
-        dev_err(qsfp->dev, "%s: port_num %0X is Invalid\n", __func__,
-                           qsfp->port_num);
+        TRX_LOG_ERR(qsfp, "port_num %0X is Invalid", qsfp->port_num);
         return -EINVAL;
     }
 
     ret = device_property_read_u32(&pdev->dev, "maximum-power-milliwatt",
                                    &qsfp->max_power_mW);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to get 'maximum-power-milliwatt' "
-                           "property. ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to get 'maximum-power-milliwatt' "
+                        "property. ret %d", ret);
         return ret;
     }
-    dev_notice(qsfp->dev, "%s: Maximum-power-milliwatt %u\n", __func__,
-                          qsfp->max_power_mW);
+    TRX_LOG_INFO(qsfp, "Maximum-power-milliwatt %u", qsfp->max_power_mW);
 
-    dev_notice(qsfp->dev, "%s: Host maximum power %u.%uW\n", __func__,
+    TRX_LOG_INFO(qsfp, "Host maximum power %u.%uW",
                qsfp->max_power_mW / 1000, (qsfp->max_power_mW / 100) % 10);
 
     ret = device_property_read_u32(&pdev->dev, "i2c-address-device0",
                                    &temp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to get 'i2c-address-device0' property. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to get 'i2c-address-device0' property. "
+                        "ret %d", ret);
         return ret;
     }
     qsfp->i2c_address_dev0 = temp & 0xFF;
 
-    dev_notice(qsfp->dev, "%s: I2C-address-device0  0x%02X (0x%02X)\n",
-     __func__, qsfp->i2c_address_dev0, qsfp->i2c_address_dev0 >> 1);
+    TRX_LOG_INFO(qsfp, "I2C-address-device0  0x%02X (0x%02X)",
+               qsfp->i2c_address_dev0, qsfp->i2c_address_dev0 >> 1);
 
     ret = device_property_read_u32(&pdev->dev, "i2c-address-device1",
                                    &temp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to get 'i2c-address-device1' property. "
-                           "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to get 'i2c-address-device1' property. "
+                        "ret %d", ret);
         return ret;
     }
     qsfp->i2c_address_dev1 = temp & 0xFF;
-    dev_notice(qsfp->dev, "%s: I2C-address-device1  0x%02X (0x%02X)\n",
-     __func__, qsfp->i2c_address_dev1, qsfp->i2c_address_dev1 >> 1);
+    TRX_LOG_INFO(qsfp, "I2C-address-device1  0x%02X (0x%02X)",
+               qsfp->i2c_address_dev1, qsfp->i2c_address_dev1 >> 1);
 
     /* Convert 8-bit to 7-bit i2c address
      * In HW spec they mention i2c address in 8-bit form with last bit 0
@@ -1620,8 +1591,7 @@ int qsfp_probe(struct platform_device *pdev)
     qsfp->i2c_address_dev1 >>= 1;
 
     if (qsfp->fpc->qsfp[qsfp->port_num]) {
-        dev_err(qsfp->dev, "%s: QSFP port number %u already used",
-                           __func__, qsfp->port_num);
+        TRX_LOG_ERR(qsfp, "QSFP port number %u already used", qsfp->port_num);
         return -EINVAL;
     } else {
         qsfp->fpc->qsfp[qsfp->port_num] = qsfp;
@@ -1633,27 +1603,25 @@ int qsfp_probe(struct platform_device *pdev)
      */
     ret = fpc_is_module_present(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: fpc_is_module_present failed. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(qsfp, "fpc_is_module_present failed. ret %d", ret);
         return -EPROBE_DEFER;
     } else if (ret == QSFP_PRESENT) {
-        dev_notice(qsfp->dev, "%s: QSFP present during probe\n", __func__);
+        TRX_LOG_INFO(qsfp, "QSFP present during probe");
         qsfp_module_insert_irq(qsfp);
     } else {
-        dev_notice(qsfp->dev, "%s: QSFP Port Empty during probe\n", __func__);
+        TRX_LOG_INFO(qsfp, "QSFP Port Empty during probe");
     }
 
     ret = fpc_enable_qsfp_interrupt(qsfp);
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Enable QSFP interrupt failed. ret %d\n",
-                           __func__, ret);
+        TRX_LOG_ERR(qsfp, "Enable QSFP interrupt failed. ret %d", ret);
         return -EPROBE_DEFER;
     }
 
     qsfp->sfp_bus = sfp_register_socket(qsfp->dev, (struct sfp*)qsfp,
                                         &qsfp_module_ops);
     if (!qsfp->sfp_bus) {
-        dev_err(qsfp->dev, "%s: Socket register failed\n", __func__);
+        TRX_LOG_ERR(qsfp, "Socket register failed");
         return -ENOMEM;
     }
 
@@ -1665,7 +1633,7 @@ int qsfp_probe(struct platform_device *pdev)
     /* set driver data once everything is successful */
     platform_set_drvdata(pdev, qsfp);
 
-    dev_notice(qsfp->dev, "%s: Success\n", __func__);
+    TRX_LOG_INFO(qsfp, "Success");
 
     return 0;
 }

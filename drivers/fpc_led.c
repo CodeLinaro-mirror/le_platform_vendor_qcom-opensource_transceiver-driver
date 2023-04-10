@@ -21,27 +21,23 @@ int transceiver_led_on (u8 fpc_instance, u8 port_num, u8 led_num)
 
     /* Validation of input data from the caller */
     if (fpc_instance >= FPC_MAX_INSTANCES) {
-        pr_err(" %s: Invalid FPC instance input data: %u\n", __func__,
-                                                        fpc_instance);
+        TRX_LOG_ERR_NODEV("Invalid FPC instance input data: %u", fpc_instance);
         return ERROR_INVALID_FPC_INSTANCE_INPUT;
     }
 
     if (port_num >= FPC_MAX_PORTS) {
-        pr_err(" %s: Invalid QSFP port number input data: %u\n", __func__,
-                                                                port_num);
+        TRX_LOG_ERR_NODEV("Invalid QSFP port number input data: %u", port_num);
         return ERROR_INVALID_QSFP_PORT_NUM_INPUT;
     }
 
     /* For LED1(0001) LED2(0010) and for both led's(0011) */
     if ((led_num == 0) || (led_num > 3)) {
-        pr_err(" %s: Invalid LED number input data: %u\n", __func__,
-                                                           led_num);
+        TRX_LOG_ERR_NODEV("Invalid LED number input data: %u", led_num);
         return ERROR_INVALID_LED_NUM_INPUT;
     }
 
     if (fpc_global[fpc_instance] == NULL) {
-        pr_err(" %s: FPC probe failed for instance: %u ", __func__,
-                                                     fpc_instance);
+        TRX_LOG_ERR_NODEV("FPC probe failed for instance: %u ", fpc_instance);
         return ERROR_FPC_PROBE;
     }
 
@@ -49,8 +45,7 @@ int transceiver_led_on (u8 fpc_instance, u8 port_num, u8 led_num)
     qsfp = fpc->qsfp[port_num];
 
     if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        dev_notice(qsfp->dev, "%s: QSFP module is not attached\n",
-                             __func__);
+        TRX_LOG_INFO(qsfp, "QSFP module is not attached");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 
@@ -58,8 +53,7 @@ int transceiver_led_on (u8 fpc_instance, u8 port_num, u8 led_num)
           FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read LED mode set register\n"
-                               "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to read LED mode set register. ret %d", ret);
         return ERROR_FPC_I2C_READ;
     }
 
@@ -79,14 +73,12 @@ int transceiver_led_on (u8 fpc_instance, u8 port_num, u8 led_num)
           FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to write LED mode set register"
-                               " ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to write LED mode set register. ret %d", ret);
         return ERROR_FPC_I2C_WRITE;
     }
 
-    dev_notice(qsfp->dev, "%s: %s %s ON\n", __func__,
-                         (led_num & QSFP_LED1) ? "LED1 ":"",
-                         (led_num & QSFP_LED2) ? "LED2 ":"");
+    TRX_LOG_INFO(qsfp, "%s %s ON", (led_num & QSFP_LED1) ? "LED1 ":"",
+                                   (led_num & QSFP_LED2) ? "LED2 ":"");
     return ret;
 }
 
@@ -102,27 +94,23 @@ int transceiver_led_off(u8 fpc_instance, u8 port_num, u8 led_num)
 
     /* Validation of input data from the caller */
     if (fpc_instance >= FPC_MAX_INSTANCES) {
-        pr_err(" %s: Invalid FPC instance input data: %u\n", __func__,
-                                                        fpc_instance);
+        TRX_LOG_ERR_NODEV("Invalid FPC instance input data: %u", fpc_instance);
         return ERROR_INVALID_FPC_INSTANCE_INPUT;
     }
 
     if (port_num >= FPC_MAX_PORTS) {
-        pr_err(" %s: Invalid QSFP port number input data: %u\n", __func__,
-                                                                port_num);
+        TRX_LOG_ERR_NODEV("Invalid QSFP port number input data: %u", port_num);
         return ERROR_INVALID_QSFP_PORT_NUM_INPUT;
     }
 
     /* For LED1(0001) LED2(0010) and for both led's(0011) */
     if ((led_num == 0) || (led_num > 3)) {
-        pr_err(" %s: Invalid LED number input data: %u\n", __func__,
-                                                           led_num);
+        TRX_LOG_ERR_NODEV("Invalid LED number input data: %u", led_num);
         return ERROR_INVALID_LED_NUM_INPUT;
     }
 
     if (fpc_global[fpc_instance] == NULL) {
-        pr_err(" %s: FPC probe failed for instance: %u ", __func__,
-                                                     fpc_instance);
+        TRX_LOG_ERR_NODEV("FPC probe failed for instance: %u ", fpc_instance);
         return ERROR_FPC_PROBE;
     }
 
@@ -130,8 +118,7 @@ int transceiver_led_off(u8 fpc_instance, u8 port_num, u8 led_num)
     qsfp = fpc->qsfp[port_num];
 
     if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        dev_notice(qsfp->dev, "%s: QSFP module is not attached\n",
-                             __func__);
+        TRX_LOG_WARN(qsfp, "QSFP module is not attached");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 
@@ -139,8 +126,7 @@ int transceiver_led_off(u8 fpc_instance, u8 port_num, u8 led_num)
           FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read LED mode set register"
-                               "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to read LED mode set register. ret %d", ret);
         return ERROR_FPC_I2C_READ;
     }
 
@@ -160,14 +146,12 @@ int transceiver_led_off(u8 fpc_instance, u8 port_num, u8 led_num)
           FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to write LED mode set register"
-                               " ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to write LED mode set register. ret %d", ret);
         return ERROR_FPC_I2C_WRITE;
     }
 
-    dev_notice(qsfp->dev, "%s: %s %s OFF\n", __func__,
-                         (led_num & QSFP_LED1) ? "LED1 ":"",
-                         (led_num & QSFP_LED2) ? "LED2 ":"");
+    TRX_LOG_INFO(qsfp, "%s %s OFF", (led_num & QSFP_LED1) ? "LED1 ":"",
+                                  (led_num & QSFP_LED2) ? "LED2 ":"");
     return ret;
 }
 
@@ -186,33 +170,28 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
 
     /* Validation of input data from the caller */
     if (fpc_instance >= FPC_MAX_INSTANCES) {
-        pr_err(" %s: Invalid FPC instance input data: %u\n", __func__,
-                                                        fpc_instance);
+        TRX_LOG_ERR_NODEV("Invalid FPC instance input data: %u", fpc_instance);
         return ERROR_INVALID_FPC_INSTANCE_INPUT;
     }
 
     if (port_num >= FPC_MAX_PORTS) {
-        pr_err(" %s: Invalid QSFP port number input data: %u\n", __func__,
-                                                                port_num);
+        TRX_LOG_ERR_NODEV("Invalid QSFP port number input data: %u", port_num);
         return ERROR_INVALID_QSFP_PORT_NUM_INPUT;
     }
 
     /* For LED1(0001) LED2(0010) and for both led's(0011) */
     if ((led_num == 0) || (led_num > 3)) {
-        pr_err(" %s: Invalid LED number input data: %u\n", __func__,
-                                                           led_num);
+        TRX_LOG_ERR_NODEV("Invalid LED number input data: %u", led_num);
         return ERROR_INVALID_LED_NUM_INPUT;
     }
 
     if (percent > 100) {
-        pr_err(" %s: Invalid PWM register input data: %u\n", __func__,
-                                                             percent);
+        TRX_LOG_ERR_NODEV("Invalid PWM register input data: %u", percent);
         return ERROR_INVALID_PWM_REG_INPUT;
     }
 
     if (fpc_global[fpc_instance] == NULL) {
-        pr_err(" %s: FPC probe failed for instance: %u ", __func__,
-                                                     fpc_instance);
+        TRX_LOG_ERR_NODEV("FPC probe failed for instance: %u ", fpc_instance);
         return ERROR_FPC_PROBE;
     }
 
@@ -220,8 +199,7 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
     qsfp = fpc->qsfp[port_num];
 
     if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        dev_notice(qsfp->dev, "%s: QSFP module is not attached\n",
-                             __func__);
+        TRX_LOG_WARN(qsfp, "QSFP module is not attached");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 
@@ -229,8 +207,7 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
           FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read LED mode set register "
-                               "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to read LED mode set register. ret %d", ret);
 
         return ERROR_FPC_I2C_READ;
     }
@@ -259,8 +236,8 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
               FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
               &buf, sizeof(buf));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED mode set register "
-                                  "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED mode set register."
+                            " ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -270,8 +247,7 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
               FPC_PORT_LED_REG[FPC_LED1_PWM_CTRL_REG][port_num],
               &pwm_reg, sizeof(pwm_reg));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED1 pwm ctrl reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED1 pwm ctrl reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
     }
@@ -285,8 +261,7 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
               FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
               &buf, sizeof(buf));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED mode "
-                                  "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED mode. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -296,16 +271,15 @@ int transceiver_led_brightness_set(u8 fpc_instance, u8 port_num,
               FPC_PORT_LED_REG[FPC_LED2_PWM_CTRL_REG][port_num],
               &pwm_reg, sizeof(pwm_reg));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED2 pwm ctrl reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED2 pwm ctrl reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
     }
 
-    dev_notice(qsfp->dev, "%s: %s %s PWM with Percent: %u\n", __func__,
-                          (led_num & QSFP_LED1) ? "LED1 ":"",
-                          (led_num & QSFP_LED2) ? "LED2 ":"",
-                          percent);
+    TRX_LOG_INFO(qsfp, "%s %s PWM with Percent: %u",
+                     (led_num & QSFP_LED1) ? "LED1 ":"",
+                     (led_num & QSFP_LED2) ? "LED2 ":"",
+                     percent);
      return ret;
 }
 
@@ -326,33 +300,28 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
 
     /* Validation of input data from the caller */
     if (fpc_instance >= FPC_MAX_INSTANCES) {
-        pr_err(" %s: Invalid FPC instance input data: %u\n", __func__,
-                                                        fpc_instance);
+        TRX_LOG_ERR_NODEV("Invalid FPC instance input data: %u", fpc_instance);
         return ERROR_INVALID_FPC_INSTANCE_INPUT;
     }
 
     if (port_num >= FPC_MAX_PORTS) {
-        pr_err(" %s: Invalid QSFP port number input data: %u\n", __func__,
-                                                                port_num);
+        TRX_LOG_ERR_NODEV("Invalid QSFP port number input data: %u", port_num);
         return ERROR_INVALID_QSFP_PORT_NUM_INPUT;
     }
 
     /* For LED1(0001) LED2(0010) and for both led's(0011) */
     if ((led_num == 0) || (led_num > 3)) {
-        pr_err(" %s: Invalid LED number input data: %u\n", __func__,
-                                                           led_num);
+        TRX_LOG_ERR_NODEV("Invalid LED number input data: %u", led_num);
         return ERROR_INVALID_LED_NUM_INPUT;
     }
 
     if (percent > 100) {
-        pr_err(" %s: Invalid PWM register input data: %u\n", __func__,
-                                                             percent);
+        TRX_LOG_ERR_NODEV("Invalid PWM register input data: %u", percent);
         return ERROR_INVALID_PWM_REG_INPUT;
     }
 
     if (fpc_global[fpc_instance] == NULL) {
-        pr_err(" %s: FPC probe failed for instance: %u ", __func__,
-                                                     fpc_instance);
+        TRX_LOG_ERR_NODEV("FPC probe failed for instance: %u ", fpc_instance);
         return ERROR_FPC_PROBE;
     }
 
@@ -360,8 +329,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
     qsfp = fpc->qsfp[port_num];
 
     if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        dev_notice(qsfp->dev, "%s: QSFP module is not attached\n",
-                          __func__);
+        TRX_LOG_WARN(qsfp, "QSFP module is not attached");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 
@@ -369,8 +337,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
           FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
           &buf, sizeof(buf));
     if (ret < 0) {
-        dev_err(qsfp->dev, "%s: Fail to read LED mode "
-                               "ret %d\n", __func__, ret);
+        TRX_LOG_ERR(qsfp, "Fail to read LED mode. ret %d", ret);
         return ERROR_FPC_I2C_READ;
     }
 
@@ -392,8 +359,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
               &buf, sizeof(buf));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED1 mode "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED1 mode. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -403,8 +369,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_LED_REG[FPC_LED1_PWM_CTRL_REG][port_num],
               &pwm_reg, sizeof(pwm_reg));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED1 pwm ctrl reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED1 pwm ctrl reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -414,8 +379,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_LED_REG[FPC_LED1_BLINK_OFF_TIME_REG][port_num],
               &blink_off_time_value, sizeof(blink_off_time_value));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED1 blink off reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED1 blink off reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -424,8 +388,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_LED_REG[FPC_LED1_BLINK_ON_TIME_REG][port_num],
               &blink_on_time_value, sizeof(blink_on_time_value));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED1 blink on reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED1 blink on reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
     }
@@ -438,8 +401,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_REG[FPC_LED_MODE_SELECT][port_num],
               &buf, sizeof(buf));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED2 mode reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED2 mode reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -449,8 +411,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_LED_REG[FPC_LED2_PWM_CTRL_REG][port_num],
               &pwm_reg , sizeof(pwm_reg));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED2 pwm ctrl reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED2 pwm ctrl reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -460,8 +421,7 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_LED_REG[FPC_LED2_BLINK_OFF_TIME_REG][port_num],
               &blink_off_time_value, sizeof(blink_off_time_value));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED2 blink off reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED2 blink off reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
 
@@ -470,15 +430,12 @@ int transceiver_led_blink_set(u8 fpc_instance, u8 port_num, u8 led_num,
               FPC_PORT_LED_REG[FPC_LED2_BLINK_ON_TIME_REG][port_num],
               &blink_on_time_value, sizeof(blink_on_time_value));
         if (ret < 0) {
-            dev_err(qsfp->dev, "%s: Fail to write LED2 blink on reg "
-                              "ret %d\n", __func__, ret);
+            TRX_LOG_ERR(qsfp, "Fail to write LED2 blink on reg. ret %d", ret);
             return ERROR_FPC_I2C_WRITE;
         }
     }
 
-    dev_notice(qsfp->dev, "%s: %s %s BLINK with ON:OFF:Percent "
-                         "%u:%u:%u\n",
-                         __func__,
+    TRX_LOG_INFO(qsfp, "%s %s BLINK with ON:OFF:Percent %u:%u:%u",
                          (led_num & QSFP_LED1) ? "LED1 ":"",
                          (led_num & QSFP_LED2) ? "LED2 ":"",
                          on_val,off_val,percent);
@@ -538,8 +495,7 @@ int led_calculate_pwm_value(struct qsfp *qsfp, u8* pwm_reg, bool pwm_mode)
     pwm_cal_val = (max_data_speed * 255) / 100;
     *pwm_reg = (u8)pwm_cal_val;
 
-    dev_notice(qsfp->dev," %s: pwm reg: 0x%02X specid: 0x%02X", __func__,
-                      *pwm_reg, *spec_id);
+    TRX_LOG_INFO(qsfp, "pwm reg: 0x%02X specid: 0x%02X", *pwm_reg, *spec_id);
     return ret;
 }
 
