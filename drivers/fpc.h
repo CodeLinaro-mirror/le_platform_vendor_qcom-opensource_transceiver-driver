@@ -12,6 +12,8 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
+#include <linux/delay.h>
+
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 #include <linux/debugfs.h>
@@ -73,6 +75,8 @@
 #define FPC_QSFP_RESET_SEQUENCE (0x00)
 #define FPC_OUT_A_DISABLE (0x00)
 #define FPC_OUT_A_ENABLE (0x0F)
+#define FPC_INTERNAL_TPOR (60)
+
 
 enum {
     FPC_LED_MODE_SELECT,

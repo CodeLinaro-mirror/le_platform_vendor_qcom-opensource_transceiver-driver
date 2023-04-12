@@ -251,6 +251,10 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
     int ret;
     u8 buf;
 
+    /* Allow FPC402 HW to be properly configured by an internal POR time
+     * of maximum 60 msec, so that it will respond to i2c transfer.*/
+    mdelay(FPC_INTERNAL_TPOR);
+
     buf = i2c_address;
     ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
