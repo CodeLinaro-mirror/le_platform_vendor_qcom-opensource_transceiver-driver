@@ -76,7 +76,7 @@ struct qsfp {
     struct dentry *debugfs_dir;
     struct dentry *module_debugfs_dir;
 #endif
-
+   struct kobject *qsfp_sysfs_dir;
 };
 
 struct qsfp_spec_ops {

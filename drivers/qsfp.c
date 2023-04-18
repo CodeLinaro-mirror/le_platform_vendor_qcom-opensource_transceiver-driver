@@ -15,6 +15,7 @@
 #include "qsfp.h"
 #include "transceiver_debugfs.h"
 #include "fpc_led.h"
+#include "trx_sysfs.h"
 
 /* QSFP Device tree example
  *
@@ -714,7 +715,7 @@ static void qsfp_sm_link_up(struct qsfp *qsfp)
 {
     sfp_link_up(qsfp->sfp_bus);
     TRX_LOG_INFO(qsfp, "sfp_link_up upstream ops called");
-    transceiver_led_on(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED2);
+    transceiver_led_on(qsfp, QSFP_LED2);
     qsfp_sm_next(qsfp, QSFP_S_LINK_UP, 0);
 }
 
@@ -722,7 +723,7 @@ static void qsfp_sm_link_down(const struct qsfp *qsfp)
 {
     sfp_link_down(qsfp->sfp_bus);
     TRX_LOG_INFO(qsfp, "sfp_link_down upstream ops called");
-    transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED2);
+    transceiver_led_off(qsfp, QSFP_LED2);
 }
 
 static void qsfp_sm_link_check_los(struct qsfp *qsfp)
@@ -873,6 +874,7 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp, bool report)
     }
 #endif
 
+    module_sysfs_init(qsfp);
     qsfp->spec_ops->eeprom_print(qsfp);
 
     return 0;
@@ -885,12 +887,13 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
         TRX_LOG_INFO(qsfp, "sfp_module_remove upstream ops called");
     }
 
-    transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1 | QSFP_LED2);
+    transceiver_led_off(qsfp, QSFP_LED1 | QSFP_LED2);
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     module_debugfs_exit(qsfp);
 #endif
 
+    module_sysfs_exit(qsfp);
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
@@ -983,18 +986,15 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
         if (err == -E_UNSUPPORTED_SPEC) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_SPEC, 0);
-            transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
-                                           QSFP_LED1 | QSFP_LED2);
+            transceiver_led_off(qsfp, QSFP_LED1 | QSFP_LED2);
             break;
         } else if (err == -E_MAX_POWER_EXCEED) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_PWR, 0);
-            transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
-                                      QSFP_LED1 | QSFP_LED2);
+            transceiver_led_off(qsfp, QSFP_LED1 | QSFP_LED2);
             break;
         } else if (err < 0) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
-            transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
-                                      QSFP_LED1 | QSFP_LED2);
+            transceiver_led_off(qsfp, QSFP_LED1 | QSFP_LED2);
             break;
         }
 
@@ -1048,7 +1048,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
     insert:
         qsfp_sm_mod_next(qsfp, QSFP_MOD_PRESENT, 0);
-        transceiver_led_on(qsfp->fpc->instance_num, qsfp->port_num, QSFP_LED1);
+        transceiver_led_on(qsfp, QSFP_LED1);
         break;
 
     case QSFP_MOD_PRESENT:
@@ -1627,8 +1627,10 @@ int qsfp_probe(struct platform_device *pdev)
 
     qsfp_debugfs_init(qsfp);
 
-    transceiver_led_off(qsfp->fpc->instance_num, qsfp->port_num,
-                                    QSFP_LED1 | QSFP_LED2);
+    qsfp->qsfp_sysfs_dir = &pdev->dev.kobj;
+    qsfp_sysfs_init(qsfp);
+
+    transceiver_led_off(qsfp, QSFP_LED1 | QSFP_LED2);
 
     /* set driver data once everything is successful */
     platform_set_drvdata(pdev, qsfp);
@@ -1649,6 +1651,7 @@ int qsfp_remove(struct platform_device *pdev)
     rtnl_unlock();
 
     qsfp_debugfs_exit(qsfp);
+    qsfp_sysfs_exit(qsfp);
 
     return 0;
 }
