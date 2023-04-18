@@ -364,6 +364,34 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
         TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
 }
 
+/* Reset particular QSFP port using reset gpio line */
+void fpc_reset_qsfp(const struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf;
+    struct fpc *fpc = qsfp->fpc;
+
+    buf = (1 << qsfp->port_num) ^ 0xF;
+    ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to write Reset sequence. ret %d", ret);
+        return;
+    }
+
+    buf = 1 << qsfp->port_num;
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to enable Reset gpio. ret %d", ret);
+        return;
+    }
+
+    buf = (1 << qsfp->port_num) ^ 0xF;
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
+    }
+}
+
 /*
  * Probe function which processes FPC device node
  * it reads i2c adapter , i2c address and register ISR

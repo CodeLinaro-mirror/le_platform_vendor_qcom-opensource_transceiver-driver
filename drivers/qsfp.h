@@ -75,6 +75,7 @@ struct qsfp {
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
     struct dentry *module_debugfs_dir;
+    u8 sim;
 #endif
    struct kobject *qsfp_sysfs_dir;
 };
@@ -128,6 +129,11 @@ enum {
     QSFP_F_LOS          = BIT(1),
     QSFP_F_TX_FAULT     = BIT(2),
     QSFP_F_TX_DISABLE   = BIT(3),
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    QSFP_F_SIM_REMOVE   = BIT(0),
+    QSFP_F_SIM_FAR_END  = BIT(1),
+#endif
 
     QSFP_E_INSERT = 0,
     QSFP_E_REMOVE,
@@ -271,6 +277,7 @@ extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
 extern int cmis_create_debugfs_files(struct qsfp *qsfp);
 extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
 extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
+extern void qsfp_sm_event(struct qsfp *qsfp, u32 event);
 
 extern void *trx_ipc_log_buf;
 

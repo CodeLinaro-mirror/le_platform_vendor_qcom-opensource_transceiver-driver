@@ -221,8 +221,13 @@ static u8 sff8472_get_state(struct qsfp *qsfp)
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flag, sizeof(irq_flag));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read IRQ status flag. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
         /* Preserve the current state */
         return qsfp->state;
+    } else {
+        /* When read is successful disable polling */
+        qsfp->need_poll = false;
     }
 
     /* EEPROM not yet read so wont have details about feature

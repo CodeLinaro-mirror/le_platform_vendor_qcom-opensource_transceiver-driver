@@ -891,6 +891,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     module_debugfs_exit(qsfp);
+    qsfp->sim &= QSFP_F_SIM_REMOVE;
 #endif
 
     module_sysfs_exit(qsfp);
@@ -899,6 +900,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->module_power_mW = 0;
     qsfp->module_power_class = 0;
     qsfp->features = 0;
+    qsfp->state = 0;
     qsfp->spec_ops = NULL;
     qsfp->need_poll = false;
 
@@ -1188,7 +1190,7 @@ static void qsfp_sm_main(struct qsfp *qsfp, u32 event)
     }
 }
 
-static void qsfp_sm_event(struct qsfp *qsfp, u32 event)
+void qsfp_sm_event(struct qsfp *qsfp, u32 event)
 {
     mutex_lock(&qsfp->sm_mutex);
 
@@ -1377,6 +1379,17 @@ static void qsfp_poll(struct work_struct *work)
 void qsfp_irq(struct qsfp *qsfp)
 {
     unsigned long delay;
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    /* Added check as interrupt still can come in simulated case
+     * it should be ignored
+     */
+    if ((qsfp->sim & QSFP_F_SIM_REMOVE) ||
+        (qsfp->sim & QSFP_F_SIM_FAR_END)) {
+        TRX_LOG_INFO(qsfp, "Transceiver in simulation state. IRQ ignored");
+        return;
+    }
+#endif
 
     if (qsfp_set_spec_ops(qsfp) < 0) {
         /* To make sure event wont get missed */
