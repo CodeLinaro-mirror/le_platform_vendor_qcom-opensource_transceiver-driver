@@ -309,6 +309,8 @@ static struct fpc *fpc_alloc(struct device *dev)
      */
     fpc->i2c_address = FPC_DEFAULT_I2C_ADDRESS >> 1;
 
+    fpc->debugfs_dir = NULL;
+
     return fpc;
 }
 
