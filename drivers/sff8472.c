@@ -373,18 +373,6 @@ unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
     return msecs_to_jiffies(100);
 }
 
-int sff8472_create_debugfs_files(struct qsfp *qsfp) {
-    int ret;
-
-    ret = module_debugfs_init(qsfp);
-    if (ret != 0)
-    {
-        TRX_LOG_ERR(qsfp, "qsfp module_spec_info debugfs dir fail");
-    }
-    /* Need to implement debugfs support for SFF-8472 */
-    return 0;
-}
-
 struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_probe = sff8472_mod_probe,
     .disable_redundant_irq = sff8472_disable_redundant_irq,

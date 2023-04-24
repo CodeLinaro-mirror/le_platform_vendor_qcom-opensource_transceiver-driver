@@ -297,6 +297,46 @@ const char *mod_link_codes_to_str(unsigned short mod_link_codes)
     }
 }
 
+char* calc_external_calib_temperature(struct qsfp* qsfp,
+                               int16_t tempc, char* str)
+{
+    int ret = 0;
+    int16_t temp_ad = 0;
+    int32_t temp_calib = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_temp_diag temp_ext_cal = {0};
+
+    /* Convert tempc info to cpu byte order */
+    temp_ad = be16_to_cpu(tempc & 0XFFFF);
+
+    ret = qsfp_read(qsfp, SFF8472_TEMP_EXT, &temp_ext_cal,
+                        sizeof(temp_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,75,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    slope = be16_to_cpu(temp_ext_cal.cal_t_slope);
+    offset = be16_to_cpu(temp_ext_cal.cal_t_offset);
+
+    temp_calib = (temp_ad * slope) + offset;
+
+    /* (temp_calib * 1000) to get the three digit precision
+       while converting it to celsius. */
+    temp_calib = temp_calib * 1000;
+
+    /* Convert the temp_calib to degrees Celsius by dividing it by 256. */
+    temp_calib = temp_calib/256;
+
+    /* To avoid printing of the minus(-) symbol in decimal places.
+       Multiply temp with -1 for negative values. */
+    scnprintf(str,75,"Temperature: %d.%03d °C",temp_calib/1000,
+                    (temp_calib < 0 ? (temp_calib * -1) : temp_calib)%1000);
+    return str;
+}
+
 char* calc_common_temperature(int16_t tempc, char* str)
 {
     int16_t temp_in = 0;
@@ -319,6 +359,38 @@ char* calc_common_temperature(int16_t tempc, char* str)
     return str;
 }
 
+char* calc_external_calib_svoltage(struct qsfp* qsfp, u16 sv_ad, char* str)
+{
+    u16 supply_voltage_ad = 0;
+    u32 supply_voltage_t = 0;
+    int ret = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_vcc_diag vcc_ext_cal = {0};
+
+    ret = qsfp_read(qsfp, SFF8472_VCC_EXT, &vcc_ext_cal,
+                        sizeof(vcc_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,75,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    /* convert sv_ad info to cpu byte order */
+    supply_voltage_ad = be16_to_cpu(sv_ad & 0XFFFF);
+
+    slope = be16_to_cpu(vcc_ext_cal.cal_v_slope);
+    offset = be16_to_cpu(vcc_ext_cal.cal_v_offset);
+
+    supply_voltage_t = (supply_voltage_ad * slope) + offset;
+
+    /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
+    scnprintf(str,75,"Supply Voltage: %d.%03d V",
+         supply_voltage_t/10000, supply_voltage_t%10000);
+
+    return str;
+}
+
 char* calc_common_svoltage(u16 svolt, char* str)
 {
     u16 supply_voltage_t = 0;
@@ -329,6 +401,64 @@ char* calc_common_svoltage(u16 svolt, char* str)
     /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
     scnprintf(str,75,"Supply Voltage: %d.%03d V",
          supply_voltage_t/10000, supply_voltage_t%10000);
+
+    return str;
+}
+
+char* calc_external_calib_txi(struct qsfp* qsfp, u16 txi_ad, char* str)
+{
+    u32 txi_t = 0;
+    int ret = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_txi_diag txi_ext_cal = {0};
+
+    ret = qsfp_read(qsfp, SFF8472_TXI_EXT, &txi_ext_cal,
+                                   sizeof(txi_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,500,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    slope = be16_to_cpu(txi_ext_cal.cal_txi_slope);
+    offset = be16_to_cpu(txi_ext_cal.cal_txi_offset);
+
+    txi_t = (txi_ad * slope) + offset;
+
+    /* txi_t in  Micro Amp */
+    txi_t = txi_t * 2;
+
+    scnprintf(str,500,"Tx Bias Current Lane1: %d.%03d"
+                        " mA",txi_t/1000, txi_t%1000);
+
+    return str;
+}
+
+char* calc_external_calib_txpwr(struct qsfp* qsfp, u16 txpwr_ad, char* str)
+{
+    u32 txpwr_t = 0;
+    int ret = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_txpwr_diag txpwr_ext_cal = {0};
+
+    ret = qsfp_read(qsfp, SFF8472_TXPWR_EXT, &txpwr_ext_cal,
+                                     sizeof(txpwr_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,500,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    slope = be16_to_cpu(txpwr_ext_cal.cal_txpwr_slope);
+    offset = be16_to_cpu(txpwr_ext_cal.cal_txpwr_offset);
+
+    txpwr_t = (txpwr_ad * slope) + offset;
+
+    /* tx power in milliWatts (txpwr_t * 0.1 μW/ 1000) */
+    scnprintf(str,500,"Tx Power Lane1: %d.%03d mW",
+                     txpwr_t/10000, txpwr_t%10000);
 
     return str;
 }
@@ -551,6 +681,11 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
+                      sff8472_mod_revision_to_str(qsfp->module_revision));
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
@@ -573,6 +708,7 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char vendor_data[75] ={};
 
@@ -583,6 +719,13 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        seq_printf(s, "{0x%X} %s\n",sff8472_id->base.connector,
+            mod_connector_to_str(sff8472_id->base.connector,sff8472_id->base.vendor_name,
+                                     vendor_data));
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
@@ -610,6 +753,7 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the module is attached before processing  */
@@ -619,6 +763,22 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        seq_printf(s, "vendor name: %.*s\n",
+                      (int)sizeof(sff8472_id->base.vendor_name),
+                      sff8472_id->base.vendor_name);
+        seq_printf(s, "vendor pn: %.*s\n",
+                      (int)sizeof(sff8472_id->base.vendor_pn),
+                      sff8472_id->base.vendor_pn);
+        seq_printf(s, "vendor rev: %.*s\n",
+                      (int)sizeof(sff8472_id->base.vendor_rev),
+                      sff8472_id->base.vendor_rev);
+        seq_printf(s, "vendor sn: %.*s\n",
+                      (int)sizeof(sff8472_id->ext.vendor_sn),
+                      sff8472_id->ext.vendor_sn);
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
@@ -665,6 +825,7 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
     char temperature_data[75] = {0};
     int16_t tempc = 0;
@@ -677,6 +838,40 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 96-97 */
+            ret = qsfp_read(qsfp, SFF8472_TEMP, &tempc,
+                                    sizeof(tempc));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                seq_printf(s, "%s\n", calc_common_temperature(tempc,
+                                                 temperature_data));
+            }
+            else /* SFP supported External calibration */
+            {
+                seq_printf(s, "%s\n", calc_external_calib_temperature(qsfp,
+                                                 tempc, temperature_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX temperature measurement not supported  on "
+                                        "non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 22-23 */
@@ -733,6 +928,7 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+	struct sfp_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
     char voltage_data[75] = {};
     u16 supply_voltage_t = 0;
@@ -745,6 +941,40 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 98-99 */
+            ret = qsfp_read(qsfp, SFF8472_VCC, &supply_voltage_t,
+                                   sizeof(supply_voltage_t));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                seq_printf(s, "%s\n", calc_common_svoltage(supply_voltage_t,
+                                                             voltage_data));
+            }
+            else /* SFP supported External calibration */
+            {
+                seq_printf(s, "%s\n", calc_external_calib_svoltage(qsfp,
+                                       supply_voltage_t, voltage_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX supply voltage measurement not supported on"
+                                        " non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 26-27 */
@@ -801,12 +1031,14 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char rx_power_data[500] ={};
     u16 rx_power_t[4] = {};
     u8  rx_power[8] = {0};
     u16 cmis_rx_power_t[8] = {0};
     u8  cmis_rx_power[16] = {0};
+    u8 sfp_rx_power[2] = {0};
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -816,6 +1048,47 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 104-105 */
+            ret = qsfp_read(qsfp, SFF8472_RX_POWER, sfp_rx_power,
+                                           sizeof(sfp_rx_power));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                rx_power_t[0] = (( sfp_rx_power[0] << 8) | sfp_rx_power[1]);
+                /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
+                scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW",
+                          rx_power_t[0]/10000,rx_power_t[0]%10000);
+                seq_printf(s, "%s\n", rx_power_data);
+            }
+            else /* SFP supported External calibration */
+            {
+                /* The procedure to calculate Rx power in the case of
+                 * external calibration was not clear, and what Rx_PWR_ADe4-1
+                 * signifies was not clear. We need to revisit this later.
+                 */
+                seq_printf(s, "TRX optical rx power measurement not"
+                              " supported for external calibration type.\n");
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX optical rx power measurement not supported  on "
+                                             "non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 34-41 */
@@ -910,6 +1183,7 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char tx_bias_current_data[500] = {};
     u32 tx_bias_current_t[4] = {};
@@ -917,6 +1191,7 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
     u8 tx_bias[8] = {0};
     u8 cmis_tx_bias[16] = {0};
     u32 cmis_tx_bias_current_t[8] = {0};
+    u8 sfp_tx_bias[2] = {0};
     u8 cmis_tx_bias_multiplier = 1;
     int ret;
 
@@ -927,6 +1202,49 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 100-101 */
+            ret = qsfp_read(qsfp, SFF8472_TX_BIAS, sfp_tx_bias,
+                                      sizeof(sfp_tx_bias));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            tx_bias_current = (( sfp_tx_bias[0] << 8) | sfp_tx_bias[1]);
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                /* tx_bias_current in  Micro Amp */
+                tx_bias_current_t[0] = tx_bias_current * 2;
+
+                scnprintf(tx_bias_current_data,500,"Tx Bias Current"
+                                               " Lane1: %d.%03d mA",
+                                          tx_bias_current_t[0]/1000,
+                                         tx_bias_current_t[0]%1000);
+                seq_printf(s, "%s\n", tx_bias_current_data);
+            }
+            else /* SFP supported External calibration */
+            {
+              seq_printf(s, "%s\n",calc_external_calib_txi(qsfp,
+                                                tx_bias_current,
+                                         tx_bias_current_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX tx bias current measurement not supported on "
+                                           "non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 42-49 */
@@ -1083,10 +1401,12 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char tx_power_data[500] = {0};
     u16 tx_power_t[4] = {0};
     u8  tx_power[8] = {0};
+    u8  sfp_tx_power[2] = {0};
     u8 diagmon;
     u8  cmis_tx_power[16] = {0};
     u16 cmis_tx_power_t[8] = {0};
@@ -1099,6 +1419,45 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 102-103 */
+            ret = qsfp_read(qsfp, SFF8472_TX_POWER, sfp_tx_power,
+                                       sizeof(sfp_tx_power));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            tx_power_t[0] = ((sfp_tx_power[0] << 8) | sfp_tx_power[1]);
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
+                scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW",
+                        tx_power_t[0]/10000,tx_power_t[0]%10000);
+                seq_printf(s, "%s\n", tx_power_data);
+            }
+            else /* SFP supported External calibration */
+            {
+                seq_printf(s, "%s\n",calc_external_calib_txpwr(qsfp,
+                                                      tx_power_t[0],
+                                                    tx_power_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "Transmitter power measurement not supported on"
+                                       " non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;

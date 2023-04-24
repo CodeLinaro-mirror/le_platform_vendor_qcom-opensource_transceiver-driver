@@ -40,6 +40,7 @@ void module_debugfs_exit(struct qsfp *qsfp);
 int module_debugfs_init(struct qsfp *qsfp);
 inline void spec_info_print(struct seq_file *s, u8 spec_id);
 extern void fpc_reset_qsfp(const struct qsfp *qsfp);
+const char *sff8472_mod_revision_to_str(u8 mod_rev_value);
 
 #endif
 

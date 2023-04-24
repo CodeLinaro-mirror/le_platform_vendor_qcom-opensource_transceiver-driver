@@ -6,7 +6,8 @@ endif
 
 obj-m += fpc_qsfp.o
 fpc_qsfp-y += fpc.o qsfp.o sff8636.o sff8472.o transceiver_debugfs.o \
-              fpc_led.o cmis.o sff8636_debugfs.o cmis_debugfs.o trx_sysfs.o
+              fpc_led.o cmis.o sff8636_debugfs.o cmis_debugfs.o trx_sysfs.o \
+              sff8472_debugfs.o
 
 ccflags-y := -I$(KERNEL_SRC)/include
 ccflags-y += -I$(KERNEL_SRC)/drivers/net/phy
