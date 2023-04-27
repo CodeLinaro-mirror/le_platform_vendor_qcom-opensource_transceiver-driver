@@ -1452,8 +1452,6 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->i2c_block_size = 16;
     qsfp->need_poll = false;
 
-    qsfp->debugfs_dir = NULL;
-    qsfp->module_debugfs_dir = NULL;
     return qsfp;
 }
 
