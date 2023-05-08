@@ -82,9 +82,9 @@ static int sfp_debug_enhopts_show(struct seq_file *s, void *data)
                      " flags implemented for all monitored quantities.\n"):
            seq_printf(s, "BIT[7]: Optional Alarm/warning flags are not "
                                                       "implemented.\n");
-        id->ext.enhopts&BIT(6)?seq_printf(s, "BIT[6]: Optional soft TX_DISABLE "
-            "control and monitoring is implemented.\n"):seq_printf(s, "BIT[6]: "
-            "Optional soft TX_DISABLE control and monitoring are not "
+        id->ext.enhopts&BIT(6)?seq_printf(s, "BIT[6]: Optional soft TX_DISABLE"
+            " control and monitoring is implemented.\n"):seq_printf(s,
+            "BIT[6]: Optional soft TX_DISABLE control and monitoring are not "
             "implemented.\n");
         id->ext.enhopts&BIT(5)?seq_printf(s, "BIT[5]: Optional soft TX_FAULT "
             "monitoring is implemented.\n"):seq_printf(s, "BIT[5]: Optional "
@@ -140,9 +140,9 @@ static int sfp_debug_diagmon_show(struct seq_file *s, void *data)
             "means the reported DDM values are A/D counts which must be "
             "converted to real world units.\n"):seq_printf(s, "BIT[4]: "
             "External calibration is not set.\n");
-        id->ext.diagmon&BIT(3)?seq_printf(s, "BIT[3]: Received power measurement"
-            " type is average power.\n"):seq_printf(s, "BIT[3]: Received power "
-            "measurement type is OMA.\n");
+        id->ext.diagmon&BIT(3)?seq_printf(s, "BIT[3]: Received power "
+            "measurement type is average power.\n"):seq_printf(s,
+            "BIT[3]: Received power measurement type is OMA.\n");
         id->ext.diagmon&BIT(2)?seq_printf(s, "BIT[2]: Address change sequence "
             "required.\n"):seq_printf(s, "BIT[2]: Address change sequence is "
             "not required.\n");

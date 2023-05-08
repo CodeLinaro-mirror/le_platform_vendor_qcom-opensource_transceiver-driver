@@ -31,6 +31,7 @@ enum {
     SFF8636_FREE_SIDE_PROP              = QSFP_ADDR(0, 0, 110),
     SFF8636_CHANNEL_INFO                = QSFP_ADDR(0, 0, 113),
     SFF8636_ID                          = QSFP_ADDR(0, 0, 128),
+    SFF8636_DDM_TH                      = QSFP_ADDR(0, 3, 128),
 };
 
 enum {
@@ -244,5 +245,31 @@ struct sff8636_irq_flags {
     u8 reserved_3[4];
     u8 vendor_specific2[3];
 } __packed;
+
+struct sff8636_ddm_thresholds {
+    u16 temp_high_alarm;
+    __be16 temp_low_alarm;
+    u16 temp_high_warn;
+    __be16 temp_low_warn;
+    u8  res_1[8];
+    u16 volt_high_alarm;
+    u16 volt_low_alarm;
+    u16 volt_high_warn;
+    u16 volt_low_warn;
+    u8  res_2[8];
+    u8  vendor_specific[16];
+    u16 rxpwr_high_alarm;
+    u16 rxpwr_low_alarm;
+    u16 rxpwr_high_warn;
+    u16 rxpwr_low_warn;
+    u16 bias_high_alarm;
+    u16 bias_low_alarm;
+    u16 bias_high_warn;
+    u16 bias_low_warn;
+    u16 txpwr_high_alarm;
+    u16 txpwr_low_alarm;
+    u16 txpwr_high_warn;
+    u16 txpwr_low_warn;
+}__packed;
 
 #endif

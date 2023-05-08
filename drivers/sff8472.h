@@ -10,6 +10,7 @@ enum {
     SFF8472_ID                   = QSFP_ADDR(0, 0,   0),
 
     /* Device 1 registers */
+    SFF8472_DDM_TH               = QSFP_ADDR(1, 0, 0),
     SFF8472_TEMP                 = QSFP_ADDR(1, 0, 96),
     SFF8472_VCC                  = QSFP_ADDR(1, 0, 98),
     SFF8472_TX_BIAS              = QSFP_ADDR(1, 0, 100),
@@ -49,6 +50,37 @@ struct sff8472_txi_diag {
     u16 cal_txi_offset;
 }__packed;
 
+struct sff8472_ddm_thresholds {
+    u16 temp_high_alarm;
+    __be16 temp_low_alarm;
+    u16 temp_high_warn;
+    __be16 temp_low_warn;
+    u16 volt_high_alarm;
+    u16 volt_low_alarm;
+    u16 volt_high_warn;
+    u16 volt_low_warn;
+    u16 bias_high_alarm;
+    u16 bias_low_alarm;
+    u16 bias_high_warn;
+    u16 bias_low_warn;
+    u16 txpwr_high_alarm;
+    u16 txpwr_low_alarm;
+    u16 txpwr_high_warn;
+    u16 txpwr_low_warn;
+    u16 rxpwr_high_alarm;
+    u16 rxpwr_low_alarm;
+    u16 rxpwr_high_warn;
+    u16 rxpwr_low_warn;
+    u16 laser_temp_high_alarm;
+    u16 laser_temp_low_alarm;
+    u16 laser_temp_high_warn;
+    u16 laser_temp_low_warn;
+    u16 tec_cur_high_alarm;
+    u16 tec_cur_low_alarm;
+    u16 tec_cur_high_warn;
+    u16 tec_cur_low_warn;
+}__packed;
+
 #define SFP_OPTIONS_HIGH_POWER_LEVEL4 (BIT(14))
 #define SFF8472_HIGH_POWER (BIT(0))
 #define SFF8472_TX_DISABLE (BIT(6))
@@ -60,5 +92,6 @@ struct sff8472_txi_diag {
 #define SFF8472_DIAGMON_EXT_CAL  (BIT(4))
 #define SFF8472_DIAGMON_INT_CAL  (BIT(5))
 #define SFF8472_DIAGMON_DDM      (BIT(6))
+#define SFF8472_ENHOPTS_ALARMWARN (BIT(7))
 
 #endif

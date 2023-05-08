@@ -321,7 +321,8 @@ char* calc_external_calib_temperature(struct qsfp* qsfp,
     slope = be16_to_cpu(temp_ext_cal.cal_t_slope);
     offset = be16_to_cpu(temp_ext_cal.cal_t_offset);
 
-    temp_calib = (temp_ad * slope) + offset;
+    temp_calib = (temp_ad * slope) / 256;
+    temp_calib = temp_calib + offset;
 
     /* (temp_calib * 1000) to get the three digit precision
        while converting it to celsius. */
@@ -382,7 +383,8 @@ char* calc_external_calib_svoltage(struct qsfp* qsfp, u16 sv_ad, char* str)
     slope = be16_to_cpu(vcc_ext_cal.cal_v_slope);
     offset = be16_to_cpu(vcc_ext_cal.cal_v_offset);
 
-    supply_voltage_t = (supply_voltage_ad * slope) + offset;
+    supply_voltage_t = (supply_voltage_ad * slope) / 256;
+    supply_voltage_t = supply_voltage_t + offset;
 
     /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
     scnprintf(str,75,"Supply Voltage: %d.%03d V",
@@ -424,7 +426,8 @@ char* calc_external_calib_txi(struct qsfp* qsfp, u16 txi_ad, char* str)
     slope = be16_to_cpu(txi_ext_cal.cal_txi_slope);
     offset = be16_to_cpu(txi_ext_cal.cal_txi_offset);
 
-    txi_t = (txi_ad * slope) + offset;
+    txi_t = (txi_ad * slope) / 256;
+    txi_t = txi_t + offset;
 
     /* txi_t in  Micro Amp */
     txi_t = txi_t * 2;
@@ -454,7 +457,8 @@ char* calc_external_calib_txpwr(struct qsfp* qsfp, u16 txpwr_ad, char* str)
     slope = be16_to_cpu(txpwr_ext_cal.cal_txpwr_slope);
     offset = be16_to_cpu(txpwr_ext_cal.cal_txpwr_offset);
 
-    txpwr_t = (txpwr_ad * slope) + offset;
+    txpwr_t = (txpwr_ad * slope) / 256;
+    txpwr_t = txpwr_t + offset;
 
     /* tx power in milliWatts (txpwr_t * 0.1 μW/ 1000) */
     scnprintf(str,500,"Tx Power Lane1: %d.%03d mW",
@@ -1551,6 +1555,433 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_power);
 
+static long trx_calibrate_temp(__be16 tmp_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(tmp_val);
+    if (value >= 0x8000)
+        value -= 0x10000;
+
+    value = DIV_ROUND_CLOSEST(value , 256);
+
+    return value;
+}
+
+static long trx_calibrate_vcc(__be16 vcc_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(vcc_val);
+    value = DIV_ROUND_CLOSEST(value, 10);
+
+    return value;
+}
+
+static long trx_calibrate_power(__be16 power_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(power_val);
+    value = DIV_ROUND_CLOSEST(value, 10);
+
+    return value;
+}
+
+static long trx_calibrate_txbias(__be16 bias_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(bias_val);
+    value = DIV_ROUND_CLOSEST(value, 500);
+
+    return value;
+}
+
+static long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_const)
+{
+    long temp_val = 0;
+    int16_t temp_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    temp_ad = be16_to_cpu(tmp_val & 0XFFFF);
+    slope = be16_to_cpu(temp_const->cal_t_slope);
+    offset = be16_to_cpu(temp_const->cal_t_offset);
+
+    temp_val = DIV_ROUND_CLOSEST(temp_ad * slope, 256) + offset;
+
+    if(temp_val >= 0x8000)
+        temp_val -= 0x10000;
+
+    /* Need to confirm this value */
+    temp_val = DIV_ROUND_CLOSEST(temp_val, 256);
+    return temp_val;
+}
+
+static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
+{
+    long vcc_val = 0;
+    int16_t vcc_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    vcc_ad = be16_to_cpu(svcc_val & 0XFFFF);
+    slope = be16_to_cpu(vcc_const->cal_v_slope);
+    offset = be16_to_cpu(vcc_const->cal_v_slope);
+
+    vcc_val = DIV_ROUND_CLOSEST(vcc_ad * slope, 256) + offset;
+
+    /* Need to confirm this value */
+    vcc_val = DIV_ROUND_CLOSEST(vcc_val, 10);
+    return vcc_val;
+}
+
+static long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr_const)
+{
+    long txpwr_val = 0;
+    int16_t txpwr_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    txpwr_ad = be16_to_cpu(txpwr_val & 0XFFFF);
+    slope = be16_to_cpu(txpwr_const->cal_txpwr_slope);
+    offset = be16_to_cpu(txpwr_const->cal_txpwr_offset);
+
+    txpwr_val = DIV_ROUND_CLOSEST(txpwr_ad * slope, 256) + offset;
+
+    /* Need to confirm this value */
+    txpwr_val = DIV_ROUND_CLOSEST(txpwr_val, 10);
+    return txpwr_val;
+}
+
+static long trx_ext_ddm_txbias(__be16 tx_val, struct sff8472_txi_diag* txi_const)
+{
+    long txi_val = 0;
+    int16_t txi_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    txi_ad = be16_to_cpu(tx_val & 0XFFFF);
+    slope = be16_to_cpu(txi_const->cal_txi_slope);
+    offset = be16_to_cpu(txi_const->cal_txi_offset);
+
+    txi_val = DIV_ROUND_CLOSEST(txi_ad * slope, 256) + offset;
+
+    /* Need to confirm this value */
+    txi_val = DIV_ROUND_CLOSEST(txi_val, 500);
+    return txi_val;
+}
+
+static int calc_external_calib_ddm(struct seq_file *s,
+                 struct sff8472_ddm_thresholds* ddm_limits)
+{
+    struct qsfp *qsfp = s->private;
+    struct sff8472_temp_diag temp_ext_cal = {0};
+    struct sff8472_vcc_diag vcc_ext_cal = {0};
+    struct sff8472_txi_diag txi_ext_cal = {0};
+    struct sff8472_txpwr_diag txpwr_ext_cal = {0};
+    int ret = 0;
+
+    ret = qsfp_read(qsfp, SFF8472_TEMP_EXT, &temp_ext_cal,
+                        sizeof(temp_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for temperature external calibration"
+                                                " constants: %d\n\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "************ temperature threshold limits ****"
+                                                    "********\n");
+    seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+                "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+            trx_ext_temp_ddm(ddm_limits->temp_high_alarm, &temp_ext_cal),
+            trx_ext_temp_ddm(ddm_limits->temp_low_alarm, &temp_ext_cal),
+            trx_ext_temp_ddm(ddm_limits->temp_high_warn, &temp_ext_cal),
+            trx_ext_temp_ddm(ddm_limits->temp_low_warn, &temp_ext_cal));
+
+    ret = qsfp_read(qsfp, SFF8472_VCC_EXT, &vcc_ext_cal,
+                                   sizeof(vcc_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for supply voltage external"
+                          " calibration constants: %d\n\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "********** supply voltage threshold limits ****"
+                                                       "*******\n");
+    seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+               "volt_high_warn : %d mV \nvolt_low_warn  : %d mV \n\n",
+              trx_ext_vcc_ddm(ddm_limits->volt_high_alarm, &vcc_ext_cal),
+               trx_ext_vcc_ddm(ddm_limits->volt_low_alarm, &vcc_ext_cal),
+               trx_ext_vcc_ddm(ddm_limits->volt_high_warn, &vcc_ext_cal),
+               trx_ext_vcc_ddm(ddm_limits->volt_low_warn, &vcc_ext_cal));
+
+    ret = qsfp_read(qsfp, SFF8472_TXPWR_EXT, &txpwr_ext_cal,
+                                     sizeof(txpwr_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for tx power external calibration"
+                                             " constants: %d\n\n", ret);
+        return 0;
+    }
+
+   seq_printf(s, "************* tx power threshold limits ********"
+                                                       "******\n");
+   seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm : %d µW \n"
+                "txpwr_high_warn : %d µW \ntxpwr_low_warn: %d µW \n\n",
+               trx_ext_ddm_power(ddm_limits->txpwr_high_alarm, &txpwr_ext_cal),
+                trx_ext_ddm_power(ddm_limits->txpwr_low_alarm, &txpwr_ext_cal),
+                trx_ext_ddm_power(ddm_limits->txpwr_high_warn, &txpwr_ext_cal),
+                trx_ext_ddm_power(ddm_limits->txpwr_low_warn, &txpwr_ext_cal));
+
+    ret = qsfp_read(qsfp, SFF8472_TXI_EXT, &txi_ext_cal,
+                                   sizeof(txi_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for tx bias current of external"
+                               " calibration constants: %d\n\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "************** tx bias threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+               "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                 trx_ext_ddm_txbias(ddm_limits->bias_high_alarm, &txi_ext_cal),
+                  trx_ext_ddm_txbias(ddm_limits->bias_low_alarm, &txi_ext_cal),
+                  trx_ext_ddm_txbias(ddm_limits->bias_high_warn, &txi_ext_cal),
+                  trx_ext_ddm_txbias(ddm_limits->bias_low_warn, &txi_ext_cal));
+
+    return 0;
+}
+
+static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
+                                                         void *data)
+{
+    struct qsfp *qsfp = s->private;
+    struct sfp_eeprom_id *sff8472_id;
+
+    u8 *spec_id = (u8*)&qsfp->id;
+    struct sff8472_ddm_thresholds ddm_limits = {0};
+    struct sff8636_ddm_thresholds sff8636_ddm_limits = {0};
+    struct cmis_thresholds cmis_ddm_limits = {0};
+    int ret = 0;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+
+        if(!(sff8472_id->ext.enhopts & SFF8472_ENHOPTS_ALARMWARN))
+        {
+            seq_printf(s, "TRX does not support alarm and warning "
+                                              "threshold limits\n");
+            return 0;
+        }
+
+        /* Address A2h, Bytes 0-39 */
+        ret = qsfp_read(qsfp, SFF8472_DDM_TH, &ddm_limits,
+                                     sizeof(ddm_limits));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_EXT_CAL)
+        {
+            return calc_external_calib_ddm(s,
+                                   &ddm_limits);
+        }
+        else /* SFP supported Internal calibration */
+        {
+            seq_printf(s, "************ temperature threshold limits ****"
+                                                            "********\n");
+            seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+                   "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+                               trx_calibrate_temp(ddm_limits.temp_high_alarm),
+                                trx_calibrate_temp(ddm_limits.temp_low_alarm),
+                                trx_calibrate_temp(ddm_limits.temp_high_warn),
+                                trx_calibrate_temp(ddm_limits.temp_low_warn));
+
+
+            seq_printf(s, "********** supply voltage threshold limits ****"
+                                                              "*******\n");
+            seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+                       "volt_high_warn : %d mV \nvolt_low_warn  : %d mV \n\n",
+                                trx_calibrate_vcc(ddm_limits.volt_high_alarm),
+                                 trx_calibrate_vcc(ddm_limits.volt_low_alarm),
+                                 trx_calibrate_vcc(ddm_limits.volt_high_warn),
+                                 trx_calibrate_vcc(ddm_limits.volt_low_warn));
+
+            seq_printf(s, "************* tx power threshold limits ********"
+                                                                "******\n");
+            seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm :"
+                          " %d µW \ntxpwr_high_warn : %d µW \n"
+                          "txpwr_low_warn  : %d µW \n\n",
+                            trx_calibrate_power(ddm_limits.txpwr_high_alarm),
+                             trx_calibrate_power(ddm_limits.txpwr_low_alarm),
+                             trx_calibrate_power(ddm_limits.txpwr_high_warn),
+                             trx_calibrate_power(ddm_limits.txpwr_low_warn));
+
+            seq_printf(s, "************* rx power threshold limits ********"
+                                                                "******\n");
+            seq_printf(s, "rxpwr_high_alarm: %d µW \nrxpwr_low_alarm :"
+                          " %d µW \nrxpwr_high_warn : %d µW \n"
+                          "rxpwr_low_warn  : %d µW \n\n",
+                            trx_calibrate_power(ddm_limits.rxpwr_high_alarm),
+                             trx_calibrate_power(ddm_limits.rxpwr_low_alarm),
+                             trx_calibrate_power(ddm_limits.rxpwr_high_warn),
+                             trx_calibrate_power(ddm_limits.rxpwr_low_warn));
+
+            seq_printf(s, "************** tx bias threshold limits ********"
+                                                                "******\n");
+            seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+                       "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                             trx_calibrate_txbias(ddm_limits.bias_high_alarm),
+                              trx_calibrate_txbias(ddm_limits.bias_low_alarm),
+                              trx_calibrate_txbias(ddm_limits.bias_high_warn),
+                              trx_calibrate_txbias(ddm_limits.bias_low_warn));
+        }
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX does not support alarm and warning "
+                                              "threshold limits\n");
+            return 0;
+        }
+
+        /* Page 03h Bytes 128-199 */
+        ret = qsfp_read(qsfp, SFF8636_DDM_TH, &sff8636_ddm_limits,
+                                     sizeof(sff8636_ddm_limits));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        seq_printf(s, "************ temperature threshold limits ****"
+                                                         "********\n");
+        seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+                "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+                      trx_calibrate_temp(sff8636_ddm_limits.temp_high_alarm),
+                       trx_calibrate_temp(sff8636_ddm_limits.temp_low_alarm),
+                       trx_calibrate_temp(sff8636_ddm_limits.temp_high_warn),
+                       trx_calibrate_temp(sff8636_ddm_limits.temp_low_warn));
+
+        seq_printf(s, "********** supply voltage threshold limits ****"
+                                                          "*******\n");
+        seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+                      "volt_high_warn : %d mV \nvolt_low_warn  : %d mV \n\n",
+                         trx_calibrate_vcc(sff8636_ddm_limits.volt_high_alarm),
+                          trx_calibrate_vcc(sff8636_ddm_limits.volt_low_alarm),
+                          trx_calibrate_vcc(sff8636_ddm_limits.volt_high_warn),
+                          trx_calibrate_vcc(sff8636_ddm_limits.volt_low_warn));
+
+        seq_printf(s, "************* tx power threshold limits ********"
+                                                            "******\n");
+        seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm : %d µW \n"
+                    "txpwr_high_warn : %d µW \ntxpwr_low_warn  : %d µW \n\n",
+                      trx_calibrate_power(sff8636_ddm_limits.txpwr_high_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.txpwr_low_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.txpwr_high_warn),
+                       trx_calibrate_power(sff8636_ddm_limits.txpwr_low_warn));
+
+        seq_printf(s, "************* rx power threshold limits ********"
+                                                            "******\n");
+        seq_printf(s, "rxpwr_high_alarm: %d µW \nrxpwr_low_alarm : %d µW \n"
+                    "rxpwr_high_warn : %d µW \nrxpwr_low_warn  : %d µW \n\n",
+                      trx_calibrate_power(sff8636_ddm_limits.rxpwr_high_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.rxpwr_low_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.rxpwr_high_warn),
+                       trx_calibrate_power(sff8636_ddm_limits.rxpwr_low_warn));
+
+        seq_printf(s, "************** tx bias threshold limits ********"
+                                                            "******\n");
+        seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+                    "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                      trx_calibrate_txbias(sff8636_ddm_limits.bias_high_alarm),
+                       trx_calibrate_txbias(sff8636_ddm_limits.bias_low_alarm),
+                       trx_calibrate_txbias(sff8636_ddm_limits.bias_high_warn),
+                       trx_calibrate_txbias(sff8636_ddm_limits.bias_low_warn));
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        /* Page 00h, Byte-2 Bit-7 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX does not support alarm and warning "
+                                              "threshold limits\n");
+            return 0;
+        }
+
+        /* Page 02h Bytes 128-199 */
+        ret = qsfp_read(qsfp, CMIS_DDM_TH, &cmis_ddm_limits,
+                                   sizeof(cmis_ddm_limits));
+        if (ret < 0) {
+        seq_printf(s, "QSFP read error: %d\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "************ temperature threshold limits ****"
+                                                    "********\n");
+    seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+           "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+                   trx_calibrate_temp(cmis_ddm_limits.temp_high_alarm),
+                    trx_calibrate_temp(cmis_ddm_limits.temp_low_alarm),
+                    trx_calibrate_temp(cmis_ddm_limits.temp_high_warn),
+                    trx_calibrate_temp(cmis_ddm_limits.temp_low_warn));
+
+    seq_printf(s, "********** supply voltage threshold limits ****"
+                                                      "*******\n");
+    seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+                "volt_high_warn : %d mV \nvolt_low_warn	: %d mV \n\n",
+                   trx_calibrate_vcc(cmis_ddm_limits.volt_high_alarm),
+                    trx_calibrate_vcc(cmis_ddm_limits.volt_low_alarm),
+                    trx_calibrate_vcc(cmis_ddm_limits.volt_high_warn),
+                    trx_calibrate_vcc(cmis_ddm_limits.volt_low_warn));
+
+    seq_printf(s, "************* tx power threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm : %d µW \n"
+                "txpwr_high_warn : %d µW \ntxpwr_low_warn  : %d µW \n\n",
+                   trx_calibrate_power(cmis_ddm_limits.txpwr_high_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.txpwr_low_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.txpwr_high_warn),
+                    trx_calibrate_power(cmis_ddm_limits.txpwr_low_warn));
+
+    seq_printf(s, "************* rx power threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "rxpwr_high_alarm: %d µW \nrxpwr_low_alarm : %d µW \n"
+                "rxpwr_high_warn : %d µW \nrxpwr_low_warn  : %d µW \n\n",
+                   trx_calibrate_power(cmis_ddm_limits.rxpwr_high_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.rxpwr_low_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.rxpwr_high_warn),
+                    trx_calibrate_power(cmis_ddm_limits.rxpwr_low_warn));
+
+    seq_printf(s, "************** tx bias threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+                "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                 trx_calibrate_txbias(cmis_ddm_limits.bias_high_alarm),
+                  trx_calibrate_txbias(cmis_ddm_limits.bias_low_alarm),
+                  trx_calibrate_txbias(cmis_ddm_limits.bias_high_warn),
+                  trx_calibrate_txbias(cmis_ddm_limits.bias_low_warn));
+       break;
+    default:
+        spec_info_print(s, *spec_id);
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_ddm_thresholds);
+
 int create_common_debugfs_files(struct qsfp *qsfp)
 {
     struct dentry *file = NULL;
@@ -1618,6 +2049,14 @@ int create_common_debugfs_files(struct qsfp *qsfp)
                         qsfp, &qsfp_debug_device_tx_power_fops);
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp tx_power debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
+        goto failed_module_dir;
+    }
+
+    file = debugfs_create_file("ddm_thresholds", 0600, qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_device_ddm_thresholds_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp ddm_thresholds debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
         goto failed_module_dir;
     }
