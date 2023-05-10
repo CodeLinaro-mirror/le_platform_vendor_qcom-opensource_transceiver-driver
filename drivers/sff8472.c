@@ -290,9 +290,41 @@ static u8 sff8472_get_connector_type(const struct qsfp *qsfp)
 static int sff8472_get_lane_speed(const struct qsfp *qsfp,
                                   trx_lane_speed* lane_speed)
 {
-    *lane_speed = TRX_LANE_SPEED_10G;
-    TRX_LOG_INFO(qsfp, "Lane speed: 0x%X ", *lane_speed);
+    phy_interface_t sfp_interface = PHY_INTERFACE_MODE_NA;
+    __ETHTOOL_DECLARE_LINK_MODE_MASK(sfp_supported) = { 0, };
 
+    *lane_speed = TRX_LANE_SPEED_UNKNOWN;
+
+    sfp_parse_support(qsfp->sfp_bus, &qsfp->id.sff8472, sfp_supported);
+
+    sfp_interface = sfp_select_interface(qsfp->sfp_bus, sfp_supported);
+
+    if(sfp_interface == PHY_INTERFACE_MODE_25GBASER)
+    {
+       *lane_speed = TRX_LANE_SPEED_25G;
+    }
+    else if(sfp_interface == PHY_INTERFACE_MODE_10GBASER)
+    {
+        *lane_speed = TRX_LANE_SPEED_10G;
+    }
+    else if((sfp_interface == PHY_INTERFACE_MODE_5GBASER) ||
+            (sfp_interface == PHY_INTERFACE_MODE_2500BASEX) ||
+            (sfp_interface == PHY_INTERFACE_MODE_SGMII) ||
+            (sfp_interface == PHY_INTERFACE_MODE_1000BASEX) ||
+            (sfp_interface == PHY_INTERFACE_MODE_100BASEX))
+    {
+        TRX_LOG_INFO(qsfp, " Unsupported SFP interface: 0x%x\n",
+                                                 sfp_interface);
+        return -EINVAL;
+    }
+    else
+    {
+        TRX_LOG_INFO(qsfp, " Unable to get the lane speed.\n");
+        return -EINVAL;
+    }
+
+    TRX_LOG_INFO(qsfp, " SFP interface: 0x%x Lane speed: 0x%X\n",
+                                     sfp_interface, *lane_speed);
     return 0;
 }
 
