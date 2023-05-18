@@ -7,8 +7,6 @@
 #include "transceiver_debugfs.h"
 #include "trx_sysfs.h"
 
-struct fpc *fpc_global[FPC_MAX_INSTANCES];
-
 const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     /* FPC_LED_MODE_SELECT */
     {0x1A , 0x3A , 0x5A , 0x7A},
@@ -253,6 +251,10 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
     int ret;
     u8 buf;
 
+    /* Allow FPC402 HW to be properly configured by an internal POR time
+     * of maximum 60 msec, so that it will respond to i2c transfer.*/
+    mdelay(FPC_INTERNAL_TPOR);
+
     buf = i2c_address;
     ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
@@ -281,10 +283,6 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
 static void fpc_cleanup(void *data)
 {
     struct fpc *fpc = data;
-
-    if (fpc->instance_num < FPC_MAX_INSTANCES) {
-        fpc_global[fpc->instance_num] = NULL;
-    }
 
     kfree(fpc);
 }
@@ -394,28 +392,6 @@ static int fpc_probe(struct platform_device *pdev)
         return -EINVAL;
     }
 
-    ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
-    if (ret < 0) {
-        TRX_LOG_INFO(fpc, "Fail to get instance-num attribute. ret %d", ret);
-        return ret;
-    }
-
-    if ((fpc_instance_no & 0xFF) >= FPC_MAX_INSTANCES) {
-        TRX_LOG_INFO(fpc, "Invalid instance-num attribute");
-        return -EINVAL;
-    }
-    fpc->instance_num = fpc_instance_no & 0xFF;
-
-    /* Not applicable for 1st FPC402 constroller */
-    if (fpc->instance_num > 0)  {
-        /* Check previous FPC402 instance is NULL */
-        if (!fpc_global[fpc->instance_num-1]) {
-            TRX_LOG_INFO(fpc, "Defer as previous FPC402 instance %u not yet "
-                              "initilised", fpc->instance_num);
-            return -EPROBE_DEFER;
-        }
-    }
-
     ret = device_property_read_u32(fpc->dev, "i2c-address", &i2c_address);
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Fail to get i2c-address attribute. ret %d", ret);
@@ -447,6 +423,20 @@ static int fpc_probe(struct platform_device *pdev)
         TRX_LOG_INFO(fpc, "Not able to configure i2c address. ret %d", ret);
         return -EPROBE_DEFER;
     }
+
+    ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to get instance-num attribute. ret %d", ret);
+        return ret;
+    }
+
+    if ((fpc_instance_no & 0xFF) >= FPC_MAX_INSTANCES) {
+        TRX_LOG_ERR(fpc, "Invalid instance-num attribute");
+        return -EINVAL;
+    }
+    fpc->instance_num = fpc_instance_no & 0xFF;
+
+    TRX_LOG_INFO(fpc, "fpc instance number %u", fpc->instance_num);
 
     ret = fpc_reset(fpc);
     if (ret < 0) {
@@ -495,13 +485,6 @@ static int fpc_probe(struct platform_device *pdev)
 
     /* set driver data once everything is successful */
     platform_set_drvdata(pdev, fpc);
-
-    if (fpc_global[fpc->instance_num] == NULL) {
-        fpc_global[fpc->instance_num] = fpc;
-    } else {
-        TRX_LOG_ERR(fpc, "Instance-num %u already exists", fpc->instance_num);
-        return -EINVAL;
-    }
 
     TRX_LOG_INFO(fpc, "Success");
 
