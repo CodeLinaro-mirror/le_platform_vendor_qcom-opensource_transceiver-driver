@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "fpc_led.h"
@@ -71,11 +71,6 @@ int transceiver_led_off(const struct qsfp *qsfp, u8 led_num)
     if ((led_num == 0) || (led_num > 3)) {
         TRX_LOG_ERR(qsfp, "Invalid LED number input data: %u\n", led_num);
         return ERROR_INVALID_LED_NUM_INPUT;
-    }
-
-    if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        TRX_LOG_WARN(qsfp, "QSFP module is not attached\n");
-        return ERROR_QSFP_MODULE_PRESENCE;
     }
 
     ret = fpc_read(qsfp->fpc,
@@ -364,14 +359,12 @@ int led_calculate_pwm_value(struct qsfp *qsfp, u8* pwm_reg, bool pwm_mode)
                  (id->base.e10g_base_lr == 0x1)  ||
                  (id->base.e10g_base_sr == 0x1)) {
             max_data_speed = 10;
-        }
-        else if ((id->base.e40g_base_cr4 == 0x1) ||
+        } else if ((id->base.e40g_base_cr4 == 0x1) ||
               (id->base.e40g_base_sr4 == 0x1) ||
               (id->base.e40g_base_lr4 == 0x1) ||
               (id->base.e40g_active == 0x1)) {
             max_data_speed = 40;
-        }
-        else {
+        } else {
             max_data_speed = 400;
         }
         break;

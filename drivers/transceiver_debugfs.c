@@ -3,11 +3,12 @@
  * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include "transceiver_debugfs.h"
+#include "lane.h"
 
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
-struct dentry *transceiver_debugfs_dir;
+struct dentry *transceiver_debugfs_dir  = NULL;
 
 const char *mod_identifier_to_str(u8 spec_id)
 {
@@ -297,6 +298,47 @@ const char *mod_link_codes_to_str(unsigned short mod_link_codes)
     }
 }
 
+char* calc_external_calib_temperature(struct qsfp* qsfp,
+                               int16_t tempc, char* str)
+{
+    int ret = 0;
+    int16_t temp_ad = 0;
+    int32_t temp_calib = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_temp_diag temp_ext_cal = {0};
+
+    /* Convert tempc info to cpu byte order */
+    temp_ad = be16_to_cpu(tempc & 0XFFFF);
+
+    ret = qsfp_read(qsfp, SFF8472_TEMP_EXT, &temp_ext_cal,
+                        sizeof(temp_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,75,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    slope = be16_to_cpu(temp_ext_cal.cal_t_slope);
+    offset = be16_to_cpu(temp_ext_cal.cal_t_offset);
+
+    temp_calib = (temp_ad * slope) / 256;
+    temp_calib = temp_calib + offset;
+
+    /* (temp_calib * 1000) to get the three digit precision
+       while converting it to celsius. */
+    temp_calib = temp_calib * 1000;
+
+    /* Convert the temp_calib to degrees Celsius by dividing it by 256. */
+    temp_calib = temp_calib/256;
+
+    /* To avoid printing of the minus(-) symbol in decimal places.
+       Multiply temp with -1 for negative values. */
+    scnprintf(str,75,"Temperature: %d.%03d °C",temp_calib/1000,
+                    (temp_calib < 0 ? (temp_calib * -1) : temp_calib)%1000);
+    return str;
+}
+
 char* calc_common_temperature(int16_t tempc, char* str)
 {
     int16_t temp_in = 0;
@@ -319,6 +361,39 @@ char* calc_common_temperature(int16_t tempc, char* str)
     return str;
 }
 
+char* calc_external_calib_svoltage(struct qsfp* qsfp, u16 sv_ad, char* str)
+{
+    u16 supply_voltage_ad = 0;
+    u32 supply_voltage_t = 0;
+    int ret = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_vcc_diag vcc_ext_cal = {0};
+
+    ret = qsfp_read(qsfp, SFF8472_VCC_EXT, &vcc_ext_cal,
+                        sizeof(vcc_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,75,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    /* convert sv_ad info to cpu byte order */
+    supply_voltage_ad = be16_to_cpu(sv_ad & 0XFFFF);
+
+    slope = be16_to_cpu(vcc_ext_cal.cal_v_slope);
+    offset = be16_to_cpu(vcc_ext_cal.cal_v_offset);
+
+    supply_voltage_t = (supply_voltage_ad * slope) / 256;
+    supply_voltage_t = supply_voltage_t + offset;
+
+    /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
+    scnprintf(str,75,"Supply Voltage: %d.%03d V",
+         supply_voltage_t/10000, supply_voltage_t%10000);
+
+    return str;
+}
+
 char* calc_common_svoltage(u16 svolt, char* str)
 {
     u16 supply_voltage_t = 0;
@@ -329,6 +404,66 @@ char* calc_common_svoltage(u16 svolt, char* str)
     /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
     scnprintf(str,75,"Supply Voltage: %d.%03d V",
          supply_voltage_t/10000, supply_voltage_t%10000);
+
+    return str;
+}
+
+char* calc_external_calib_txi(struct qsfp* qsfp, u16 txi_ad, char* str)
+{
+    u32 txi_t = 0;
+    int ret = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_txi_diag txi_ext_cal = {0};
+
+    ret = qsfp_read(qsfp, SFF8472_TXI_EXT, &txi_ext_cal,
+                                   sizeof(txi_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,500,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    slope = be16_to_cpu(txi_ext_cal.cal_txi_slope);
+    offset = be16_to_cpu(txi_ext_cal.cal_txi_offset);
+
+    txi_t = (txi_ad * slope) / 256;
+    txi_t = txi_t + offset;
+
+    /* txi_t in  Micro Amp */
+    txi_t = txi_t * 2;
+
+    scnprintf(str,500,"Tx Bias Current Lane1: %d.%03d"
+                        " mA",txi_t/1000, txi_t%1000);
+
+    return str;
+}
+
+char* calc_external_calib_txpwr(struct qsfp* qsfp, u16 txpwr_ad, char* str)
+{
+    u32 txpwr_t = 0;
+    int ret = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    struct sff8472_txpwr_diag txpwr_ext_cal = {0};
+
+    ret = qsfp_read(qsfp, SFF8472_TXPWR_EXT, &txpwr_ext_cal,
+                                     sizeof(txpwr_ext_cal));
+    if (ret < 0) {
+        scnprintf(str,500,"QSFP read error: %d", ret);
+        return str;
+    }
+
+    slope = be16_to_cpu(txpwr_ext_cal.cal_txpwr_slope);
+    offset = be16_to_cpu(txpwr_ext_cal.cal_txpwr_offset);
+
+    txpwr_t = (txpwr_ad * slope) / 256;
+    txpwr_t = txpwr_t + offset;
+
+    /* tx power in milliWatts (txpwr_t * 0.1 μW/ 1000) */
+    scnprintf(str,500,"Tx Power Lane1: %d.%03d mW",
+                     txpwr_t/10000, txpwr_t%10000);
 
     return str;
 }
@@ -349,21 +484,24 @@ inline void spec_info_print(struct seq_file *s, u8 spec_id)
 void transceiver_debugfs_init(void)
 {
     transceiver_debugfs_dir = debugfs_create_dir("transceiver_module", NULL);
-    if (IS_ERR(transceiver_debugfs_dir)) {
+    if (!transceiver_debugfs_dir || IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR_NODEV("debugfs_create_dir fail, error (%ld)",
                         PTR_ERR(transceiver_debugfs_dir));
+       transceiver_debugfs_dir = NULL;
        return;
     }
 }
 
 void transceiver_debugfs_exit(void)
 {
-    if (IS_ERR(transceiver_debugfs_dir)) {
+    if (!transceiver_debugfs_dir || IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR_NODEV("debugfs_create_dir fail, error (%ld)",
                         PTR_ERR(transceiver_debugfs_dir));
+        transceiver_debugfs_dir = NULL;
         return;
     }
     debugfs_remove_recursive(transceiver_debugfs_dir);
+    transceiver_debugfs_dir = NULL;
 }
 
 static int fpc_debug_i2c_address_show(struct seq_file *s, void *data)
@@ -387,12 +525,12 @@ DEFINE_SHOW_ATTRIBUTE(fpc_debug_i2c_adapter);
 
 void fpc_debugfs_init(struct fpc *fpc)
 {
-    struct dentry *file;
+    struct dentry *file = NULL;
     char fpc_devname[20] = {};
     char fpc_devsubname[10] = {};
     strlcpy(fpc_devname,dev_name(fpc->dev),sizeof(fpc_devname));
 
-    if (IS_ERR(transceiver_debugfs_dir)) {
+    if (!transceiver_debugfs_dir || IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR(fpc, "transceiver debugfs_create_dir fail, error %ld",
                        PTR_ERR(transceiver_debugfs_dir));
         return;
@@ -409,9 +547,10 @@ void fpc_debugfs_init(struct fpc *fpc)
 
     fpc->debugfs_dir = debugfs_create_dir(fpc_devsubname,
                              transceiver_debugfs_dir);
-    if (IS_ERR(fpc->debugfs_dir)) {
+    if (!fpc->debugfs_dir || IS_ERR(fpc->debugfs_dir)) {
         TRX_LOG_ERR(fpc, "fpc debugfs_create_dir fail, error %ld",
                        PTR_ERR(fpc->debugfs_dir));
+        fpc->debugfs_dir = NULL;
         return;
     }
 
@@ -421,6 +560,7 @@ void fpc_debugfs_init(struct fpc *fpc)
         TRX_LOG_ERR(fpc, "fpc i2c address debugfs_create_file fail,"
                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(fpc->debugfs_dir);
+        fpc->debugfs_dir = NULL;
         return;
     }
 
@@ -430,46 +570,86 @@ void fpc_debugfs_init(struct fpc *fpc)
         TRX_LOG_ERR(fpc, "fpc i2c adapter debugfs_create_file fail,"
                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(fpc->debugfs_dir);
+        fpc->debugfs_dir = NULL;
     }
 }
 
 void fpc_debugfs_exit(struct fpc *fpc)
 {
+    if(!fpc->debugfs_dir || !transceiver_debugfs_dir)
+    {
+        TRX_LOG_ERR(fpc, "FPC debugfs create dir fail\n");
+        fpc->debugfs_dir = NULL;
+        return;
+    }
+
     if (IS_ERR(fpc->debugfs_dir) || IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR(fpc, "debugfs_create_dir fail, error (%ld %ld)",
                        PTR_ERR(transceiver_debugfs_dir),
                        PTR_ERR(fpc->debugfs_dir));
+        fpc->debugfs_dir = NULL;
         return;
     }
     debugfs_remove_recursive(fpc->debugfs_dir);
+    fpc->debugfs_dir = NULL;
 }
 
 static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
 {
+    u8 i;
     struct qsfp *qsfp = s->private;
+    struct lane *lanei;
 
-    seq_printf(s, "Port number: %u\n", qsfp->port_num);
-    seq_printf(s, "Module state: %s\n",
-                  mod_state_to_str(qsfp->sm_mod_state));
+    /* Locking necessary to make sure all states fetched once */
+    mutex_lock(&qsfp->sm_mutex);
 
-    seq_printf(s, "Device state: %s\n",
-                  dev_state_to_str(qsfp->sm_dev_state));
-    seq_printf(s, "Main state: %s\n",
-                  sm_state_to_str(qsfp->sm_state));
+    seq_printf(s, "State description: [Module state , Upstream Device state  ,"
+                  " Link state]\n");
+    seq_printf(s, "Transceiver port-%u State: [%s  %s  %s]\n", qsfp->port_num,
+    mod_state_to_str(qsfp->sm_mod_state), dev_state_to_str(qsfp->sm_dev_state),
+    link_state_to_str(qsfp->sm_link_state));
 
-    seq_printf(s, "Module probe attempts: %d %d\n",
-                  R_PROBE_RETRY_INIT - qsfp->sm_mod_tries_init,
-                  R_PROBE_RETRY_SLOW - qsfp->sm_mod_tries);
-    seq_printf(s, "Fault recovery remaining retries: %d\n",
-                  qsfp->sm_fault_retries);
-    seq_printf(s, "Module present: %d\n", !!(qsfp->state & QSFP_F_PRESENT));
-    seq_printf(s, "LOS: %d\n", !!(qsfp->state & QSFP_F_LOS));
-    seq_printf(s, "TX Fault: %d\n", !!(qsfp->state & QSFP_F_TX_FAULT));
-    seq_printf(s, "TX Disable: %d\n", !!(qsfp->state & QSFP_F_TX_DISABLE));
-    seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
-    seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_LOS ? "LOS":"",
-               qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
-               qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+    if (qsfp->status & QSFP_F_PRESENT) {
+        seq_printf(s, "Module present: Yes\n");
+        seq_printf(s, "Module probe attempts: %d\n",
+                   PROBE_RETRY - qsfp->sm_mod_tries);
+        seq_printf(s, "LOS: %d\n", !!(qsfp->status & QSFP_F_LOS));
+        seq_printf(s, "TX Fault: %d\n", !!(qsfp->status & QSFP_F_TX_FAULT));
+        seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
+        seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_LOS ? "LOS":"",
+                   qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
+                   qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+    } else {
+        seq_printf(s, "Module present: No\n");
+    }
+
+    for (i = 0 ; i < qsfp->num_lanes; i++) {
+        lanei = qsfp->lane[i];
+
+        seq_printf(s, "\nLane%u State: [%s  %s  %s]\n",  i,
+                   mod_state_to_str(lanei->sm_mod_state),
+                   dev_state_to_str(lanei->sm_dev_state),
+                   link_state_to_str(lanei->sm_link_state));
+
+        if (lanei->status & QSFP_F_PRESENT) {
+            seq_printf(s, "Lane present: Yes\n");
+            seq_printf(s, "LOS: %d\n", !!(lanei->status & QSFP_F_LOS));
+            seq_printf(s, "TX Fault: %d\n", !!(lanei->status & QSFP_F_TX_FAULT));
+            seq_printf(s, "TX Disable: %d\n", !!(lanei->status & QSFP_F_TX_DISABLE));
+        } else {
+            seq_printf(s, "Lane present: No\n");
+        }
+    }
+
+    if (qsfp->sim & QSFP_F_SIM_REMOVE) {
+        seq_printf(s, "\nSimulation Remove: Yes\n");
+    }
+
+    if (qsfp->sim & QSFP_F_SIM_FAR_END) {
+        seq_printf(s, "\nSimulation Far end: Yes\n");
+    }
+
+    mutex_unlock(&qsfp->sm_mutex);
 
     return 0;
 }
@@ -528,6 +708,11 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
+                      sff8472_mod_revision_to_str(qsfp->module_revision));
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         seq_printf(s, "{0x%X} %s\n",qsfp->module_revision,
@@ -550,6 +735,7 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char vendor_data[75] ={};
 
@@ -560,6 +746,13 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        seq_printf(s, "{0x%X} %s\n",sff8472_id->base.connector,
+            mod_connector_to_str(sff8472_id->base.connector,sff8472_id->base.vendor_name,
+                                     vendor_data));
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
@@ -587,6 +780,7 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the module is attached before processing  */
@@ -596,6 +790,22 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        seq_printf(s, "vendor name: %.*s\n",
+                      (int)sizeof(sff8472_id->base.vendor_name),
+                      sff8472_id->base.vendor_name);
+        seq_printf(s, "vendor pn: %.*s\n",
+                      (int)sizeof(sff8472_id->base.vendor_pn),
+                      sff8472_id->base.vendor_pn);
+        seq_printf(s, "vendor rev: %.*s\n",
+                      (int)sizeof(sff8472_id->base.vendor_rev),
+                      sff8472_id->base.vendor_rev);
+        seq_printf(s, "vendor sn: %.*s\n",
+                      (int)sizeof(sff8472_id->ext.vendor_sn),
+                      sff8472_id->ext.vendor_sn);
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
@@ -642,6 +852,7 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
     char temperature_data[75] = {0};
     int16_t tempc = 0;
@@ -654,6 +865,40 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 96-97 */
+            ret = qsfp_read(qsfp, SFF8472_TEMP, &tempc,
+                                    sizeof(tempc));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                seq_printf(s, "%s\n", calc_common_temperature(tempc,
+                                                 temperature_data));
+            }
+            else /* SFP supported External calibration */
+            {
+                seq_printf(s, "%s\n", calc_external_calib_temperature(qsfp,
+                                                 tempc, temperature_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX temperature measurement not supported  on "
+                                        "non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 22-23 */
@@ -710,6 +955,7 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+	struct sfp_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
     char voltage_data[75] = {};
     u16 supply_voltage_t = 0;
@@ -722,6 +968,40 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 98-99 */
+            ret = qsfp_read(qsfp, SFF8472_VCC, &supply_voltage_t,
+                                   sizeof(supply_voltage_t));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                seq_printf(s, "%s\n", calc_common_svoltage(supply_voltage_t,
+                                                             voltage_data));
+            }
+            else /* SFP supported External calibration */
+            {
+                seq_printf(s, "%s\n", calc_external_calib_svoltage(qsfp,
+                                       supply_voltage_t, voltage_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX supply voltage measurement not supported on"
+                                        " non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 26-27 */
@@ -778,12 +1058,14 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char rx_power_data[500] ={};
     u16 rx_power_t[4] = {};
     u8  rx_power[8] = {0};
     u16 cmis_rx_power_t[8] = {0};
     u8  cmis_rx_power[16] = {0};
+    u8 sfp_rx_power[2] = {0};
     int ret;
 
     /* Ensure that the device is attached before processing  */
@@ -793,6 +1075,47 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 104-105 */
+            ret = qsfp_read(qsfp, SFF8472_RX_POWER, sfp_rx_power,
+                                           sizeof(sfp_rx_power));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                rx_power_t[0] = (( sfp_rx_power[0] << 8) | sfp_rx_power[1]);
+                /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
+                scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW",
+                          rx_power_t[0]/10000,rx_power_t[0]%10000);
+                seq_printf(s, "%s\n", rx_power_data);
+            }
+            else /* SFP supported External calibration */
+            {
+                /* The procedure to calculate Rx power in the case of
+                 * external calibration was not clear, and what Rx_PWR_ADe4-1
+                 * signifies was not clear. We need to revisit this later.
+                 */
+                seq_printf(s, "TRX optical rx power measurement not"
+                              " supported for external calibration type.\n");
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX optical rx power measurement not supported  on "
+                                             "non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 34-41 */
@@ -887,6 +1210,7 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char tx_bias_current_data[500] = {};
     u32 tx_bias_current_t[4] = {};
@@ -894,6 +1218,7 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
     u8 tx_bias[8] = {0};
     u8 cmis_tx_bias[16] = {0};
     u32 cmis_tx_bias_current_t[8] = {0};
+    u8 sfp_tx_bias[2] = {0};
     u8 cmis_tx_bias_multiplier = 1;
     int ret;
 
@@ -904,6 +1229,49 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 100-101 */
+            ret = qsfp_read(qsfp, SFF8472_TX_BIAS, sfp_tx_bias,
+                                      sizeof(sfp_tx_bias));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            tx_bias_current = (( sfp_tx_bias[0] << 8) | sfp_tx_bias[1]);
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                /* tx_bias_current in  Micro Amp */
+                tx_bias_current_t[0] = tx_bias_current * 2;
+
+                scnprintf(tx_bias_current_data,500,"Tx Bias Current"
+                                               " Lane1: %d.%03d mA",
+                                          tx_bias_current_t[0]/1000,
+                                         tx_bias_current_t[0]%1000);
+                seq_printf(s, "%s\n", tx_bias_current_data);
+            }
+            else /* SFP supported External calibration */
+            {
+              seq_printf(s, "%s\n",calc_external_calib_txi(qsfp,
+                                                tx_bias_current,
+                                         tx_bias_current_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "TRX tx bias current measurement not supported on "
+                                           "non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         /* Page 00h Bytes 42-49 */
@@ -1060,10 +1428,12 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
     struct qsfp *qsfp = s->private;
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
     char tx_power_data[500] = {0};
     u16 tx_power_t[4] = {0};
     u8  tx_power[8] = {0};
+    u8  sfp_tx_power[2] = {0};
     u8 diagmon;
     u8  cmis_tx_power[16] = {0};
     u16 cmis_tx_power_t[8] = {0};
@@ -1076,6 +1446,45 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
     }
 
     switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 102-103 */
+            ret = qsfp_read(qsfp, SFF8472_TX_POWER, sfp_tx_power,
+                                       sizeof(sfp_tx_power));
+            if (ret < 0) {
+                seq_printf(s, "QSFP read error: %d\n", ret);
+                return 0;
+            }
+
+            tx_power_t[0] = ((sfp_tx_power[0] << 8) | sfp_tx_power[1]);
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
+                scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW",
+                        tx_power_t[0]/10000,tx_power_t[0]%10000);
+                seq_printf(s, "%s\n", tx_power_data);
+            }
+            else /* SFP supported External calibration */
+            {
+                seq_printf(s, "%s\n",calc_external_calib_txpwr(qsfp,
+                                                      tx_power_t[0],
+                                                    tx_power_data));
+            }
+        }
+        else
+        {
+            seq_printf(s, "Transmitter power measurement not supported on"
+                                       " non-DDM transceiver devices.\n");
+        }
+        break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
@@ -1169,9 +1578,436 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_power);
 
+static long trx_calibrate_temp(__be16 tmp_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(tmp_val);
+    if (value >= 0x8000)
+        value -= 0x10000;
+
+    value = DIV_ROUND_CLOSEST(value , 256);
+
+    return value;
+}
+
+static long trx_calibrate_vcc(__be16 vcc_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(vcc_val);
+    value = DIV_ROUND_CLOSEST(value, 10);
+
+    return value;
+}
+
+static long trx_calibrate_power(__be16 power_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(power_val);
+    value = DIV_ROUND_CLOSEST(value, 10);
+
+    return value;
+}
+
+static long trx_calibrate_txbias(__be16 bias_val)
+{
+    long value = 0;
+
+    value = be16_to_cpu(bias_val);
+    value = DIV_ROUND_CLOSEST(value, 500);
+
+    return value;
+}
+
+static long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_const)
+{
+    long temp_val = 0;
+    int16_t temp_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    temp_ad = be16_to_cpu(tmp_val & 0XFFFF);
+    slope = be16_to_cpu(temp_const->cal_t_slope);
+    offset = be16_to_cpu(temp_const->cal_t_offset);
+
+    temp_val = DIV_ROUND_CLOSEST(temp_ad * slope, 256) + offset;
+
+    if(temp_val >= 0x8000)
+        temp_val -= 0x10000;
+
+    /* Need to confirm this value */
+    temp_val = DIV_ROUND_CLOSEST(temp_val, 256);
+    return temp_val;
+}
+
+static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
+{
+    long vcc_val = 0;
+    int16_t vcc_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    vcc_ad = be16_to_cpu(svcc_val & 0XFFFF);
+    slope = be16_to_cpu(vcc_const->cal_v_slope);
+    offset = be16_to_cpu(vcc_const->cal_v_offset);
+
+    vcc_val = DIV_ROUND_CLOSEST(vcc_ad * slope, 256) + offset;
+
+    /* Need to confirm this value */
+    vcc_val = DIV_ROUND_CLOSEST(vcc_val, 10);
+    return vcc_val;
+}
+
+static long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr_const)
+{
+    long txpwr_val = 0;
+    int16_t txpwr_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    txpwr_ad = be16_to_cpu(txpwr_val & 0XFFFF);
+    slope = be16_to_cpu(txpwr_const->cal_txpwr_slope);
+    offset = be16_to_cpu(txpwr_const->cal_txpwr_offset);
+
+    txpwr_val = DIV_ROUND_CLOSEST(txpwr_ad * slope, 256) + offset;
+
+    /* Need to confirm this value */
+    txpwr_val = DIV_ROUND_CLOSEST(txpwr_val, 10);
+    return txpwr_val;
+}
+
+static long trx_ext_ddm_txbias(__be16 tx_val, struct sff8472_txi_diag* txi_const)
+{
+    long txi_val = 0;
+    int16_t txi_ad = 0;
+    u16 slope = 0;
+    int16_t offset = 0;
+
+    txi_ad = be16_to_cpu(tx_val & 0XFFFF);
+    slope = be16_to_cpu(txi_const->cal_txi_slope);
+    offset = be16_to_cpu(txi_const->cal_txi_offset);
+
+    txi_val = DIV_ROUND_CLOSEST(txi_ad * slope, 256) + offset;
+
+    /* Need to confirm this value */
+    txi_val = DIV_ROUND_CLOSEST(txi_val, 500);
+    return txi_val;
+}
+
+static int calc_external_calib_ddm(struct seq_file *s,
+                 struct sff8472_ddm_thresholds* ddm_limits)
+{
+    struct qsfp *qsfp = s->private;
+    struct sff8472_temp_diag temp_ext_cal = {0};
+    struct sff8472_vcc_diag vcc_ext_cal = {0};
+    struct sff8472_txi_diag txi_ext_cal = {0};
+    struct sff8472_txpwr_diag txpwr_ext_cal = {0};
+    int ret = 0;
+
+    ret = qsfp_read(qsfp, SFF8472_TEMP_EXT, &temp_ext_cal,
+                        sizeof(temp_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for temperature external calibration"
+                                                " constants: %d\n\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "************ temperature threshold limits ****"
+                                                    "********\n");
+    seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+                "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+            trx_ext_temp_ddm(ddm_limits->temp_high_alarm, &temp_ext_cal),
+            trx_ext_temp_ddm(ddm_limits->temp_low_alarm, &temp_ext_cal),
+            trx_ext_temp_ddm(ddm_limits->temp_high_warn, &temp_ext_cal),
+            trx_ext_temp_ddm(ddm_limits->temp_low_warn, &temp_ext_cal));
+
+    ret = qsfp_read(qsfp, SFF8472_VCC_EXT, &vcc_ext_cal,
+                                   sizeof(vcc_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for supply voltage external"
+                          " calibration constants: %d\n\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "********** supply voltage threshold limits ****"
+                                                       "*******\n");
+    seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+               "volt_high_warn : %d mV \nvolt_low_warn  : %d mV \n\n",
+              trx_ext_vcc_ddm(ddm_limits->volt_high_alarm, &vcc_ext_cal),
+               trx_ext_vcc_ddm(ddm_limits->volt_low_alarm, &vcc_ext_cal),
+               trx_ext_vcc_ddm(ddm_limits->volt_high_warn, &vcc_ext_cal),
+               trx_ext_vcc_ddm(ddm_limits->volt_low_warn, &vcc_ext_cal));
+
+    ret = qsfp_read(qsfp, SFF8472_TXPWR_EXT, &txpwr_ext_cal,
+                                     sizeof(txpwr_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for tx power external calibration"
+                                             " constants: %d\n\n", ret);
+        return 0;
+    }
+
+   seq_printf(s, "************* tx power threshold limits ********"
+                                                       "******\n");
+   seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm : %d µW \n"
+                "txpwr_high_warn : %d µW \ntxpwr_low_warn: %d µW \n\n",
+               trx_ext_ddm_power(ddm_limits->txpwr_high_alarm, &txpwr_ext_cal),
+                trx_ext_ddm_power(ddm_limits->txpwr_low_alarm, &txpwr_ext_cal),
+                trx_ext_ddm_power(ddm_limits->txpwr_high_warn, &txpwr_ext_cal),
+                trx_ext_ddm_power(ddm_limits->txpwr_low_warn, &txpwr_ext_cal));
+
+    ret = qsfp_read(qsfp, SFF8472_TXI_EXT, &txi_ext_cal,
+                                   sizeof(txi_ext_cal));
+    if (ret < 0) {
+        seq_printf(s,"QSFP read error for tx bias current of external"
+                               " calibration constants: %d\n\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "************** tx bias threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+               "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                 trx_ext_ddm_txbias(ddm_limits->bias_high_alarm, &txi_ext_cal),
+                  trx_ext_ddm_txbias(ddm_limits->bias_low_alarm, &txi_ext_cal),
+                  trx_ext_ddm_txbias(ddm_limits->bias_high_warn, &txi_ext_cal),
+                  trx_ext_ddm_txbias(ddm_limits->bias_low_warn, &txi_ext_cal));
+
+    return 0;
+}
+
+static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
+                                                         void *data)
+{
+    struct qsfp *qsfp = s->private;
+    struct sfp_eeprom_id *sff8472_id;
+
+    u8 *spec_id = (u8*)&qsfp->id;
+    struct sff8472_ddm_thresholds ddm_limits = {0};
+    struct sff8636_ddm_thresholds sff8636_ddm_limits = {0};
+    struct cmis_thresholds cmis_ddm_limits = {0};
+    int ret = 0;
+
+    /* Ensure that the device is attached before processing  */
+    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
+        seq_printf(s, "QSFP module is not attached\n");
+        return 0;
+    }
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+
+        if(!(sff8472_id->ext.enhopts & SFF8472_ENHOPTS_ALARMWARN))
+        {
+            seq_printf(s, "TRX does not support alarm and warning "
+                                              "threshold limits\n");
+            return 0;
+        }
+
+        /* Address A2h, Bytes 0-39 */
+        ret = qsfp_read(qsfp, SFF8472_DDM_TH, &ddm_limits,
+                                     sizeof(ddm_limits));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_EXT_CAL)
+        {
+            return calc_external_calib_ddm(s,
+                                   &ddm_limits);
+        }
+        else /* SFP supported Internal calibration */
+        {
+            seq_printf(s, "************ temperature threshold limits ****"
+                                                            "********\n");
+            seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+                   "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+                               trx_calibrate_temp(ddm_limits.temp_high_alarm),
+                                trx_calibrate_temp(ddm_limits.temp_low_alarm),
+                                trx_calibrate_temp(ddm_limits.temp_high_warn),
+                                trx_calibrate_temp(ddm_limits.temp_low_warn));
+
+
+            seq_printf(s, "********** supply voltage threshold limits ****"
+                                                              "*******\n");
+            seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+                       "volt_high_warn : %d mV \nvolt_low_warn  : %d mV \n\n",
+                                trx_calibrate_vcc(ddm_limits.volt_high_alarm),
+                                 trx_calibrate_vcc(ddm_limits.volt_low_alarm),
+                                 trx_calibrate_vcc(ddm_limits.volt_high_warn),
+                                 trx_calibrate_vcc(ddm_limits.volt_low_warn));
+
+            seq_printf(s, "************* tx power threshold limits ********"
+                                                                "******\n");
+            seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm :"
+                          " %d µW \ntxpwr_high_warn : %d µW \n"
+                          "txpwr_low_warn  : %d µW \n\n",
+                            trx_calibrate_power(ddm_limits.txpwr_high_alarm),
+                             trx_calibrate_power(ddm_limits.txpwr_low_alarm),
+                             trx_calibrate_power(ddm_limits.txpwr_high_warn),
+                             trx_calibrate_power(ddm_limits.txpwr_low_warn));
+
+            seq_printf(s, "************* rx power threshold limits ********"
+                                                                "******\n");
+            seq_printf(s, "rxpwr_high_alarm: %d µW \nrxpwr_low_alarm :"
+                          " %d µW \nrxpwr_high_warn : %d µW \n"
+                          "rxpwr_low_warn  : %d µW \n\n",
+                            trx_calibrate_power(ddm_limits.rxpwr_high_alarm),
+                             trx_calibrate_power(ddm_limits.rxpwr_low_alarm),
+                             trx_calibrate_power(ddm_limits.rxpwr_high_warn),
+                             trx_calibrate_power(ddm_limits.rxpwr_low_warn));
+
+            seq_printf(s, "************** tx bias threshold limits ********"
+                                                                "******\n");
+            seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+                       "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                             trx_calibrate_txbias(ddm_limits.bias_high_alarm),
+                              trx_calibrate_txbias(ddm_limits.bias_low_alarm),
+                              trx_calibrate_txbias(ddm_limits.bias_high_warn),
+                              trx_calibrate_txbias(ddm_limits.bias_low_warn));
+        }
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX does not support alarm and warning "
+                                              "threshold limits\n");
+            return 0;
+        }
+
+        /* Page 03h Bytes 128-199 */
+        ret = qsfp_read(qsfp, SFF8636_DDM_TH, &sff8636_ddm_limits,
+                                     sizeof(sff8636_ddm_limits));
+        if (ret < 0) {
+            seq_printf(s, "QSFP read error: %d\n", ret);
+            return 0;
+        }
+
+        seq_printf(s, "************ temperature threshold limits ****"
+                                                         "********\n");
+        seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+                "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+                      trx_calibrate_temp(sff8636_ddm_limits.temp_high_alarm),
+                       trx_calibrate_temp(sff8636_ddm_limits.temp_low_alarm),
+                       trx_calibrate_temp(sff8636_ddm_limits.temp_high_warn),
+                       trx_calibrate_temp(sff8636_ddm_limits.temp_low_warn));
+
+        seq_printf(s, "********** supply voltage threshold limits ****"
+                                                          "*******\n");
+        seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+                      "volt_high_warn : %d mV \nvolt_low_warn  : %d mV \n\n",
+                         trx_calibrate_vcc(sff8636_ddm_limits.volt_high_alarm),
+                          trx_calibrate_vcc(sff8636_ddm_limits.volt_low_alarm),
+                          trx_calibrate_vcc(sff8636_ddm_limits.volt_high_warn),
+                          trx_calibrate_vcc(sff8636_ddm_limits.volt_low_warn));
+
+        seq_printf(s, "************* tx power threshold limits ********"
+                                                            "******\n");
+        seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm : %d µW \n"
+                    "txpwr_high_warn : %d µW \ntxpwr_low_warn  : %d µW \n\n",
+                      trx_calibrate_power(sff8636_ddm_limits.txpwr_high_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.txpwr_low_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.txpwr_high_warn),
+                       trx_calibrate_power(sff8636_ddm_limits.txpwr_low_warn));
+
+        seq_printf(s, "************* rx power threshold limits ********"
+                                                            "******\n");
+        seq_printf(s, "rxpwr_high_alarm: %d µW \nrxpwr_low_alarm : %d µW \n"
+                    "rxpwr_high_warn : %d µW \nrxpwr_low_warn  : %d µW \n\n",
+                      trx_calibrate_power(sff8636_ddm_limits.rxpwr_high_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.rxpwr_low_alarm),
+                       trx_calibrate_power(sff8636_ddm_limits.rxpwr_high_warn),
+                       trx_calibrate_power(sff8636_ddm_limits.rxpwr_low_warn));
+
+        seq_printf(s, "************** tx bias threshold limits ********"
+                                                            "******\n");
+        seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+                    "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                      trx_calibrate_txbias(sff8636_ddm_limits.bias_high_alarm),
+                       trx_calibrate_txbias(sff8636_ddm_limits.bias_low_alarm),
+                       trx_calibrate_txbias(sff8636_ddm_limits.bias_high_warn),
+                       trx_calibrate_txbias(sff8636_ddm_limits.bias_low_warn));
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        /* Page 00h, Byte-2 Bit-7 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            seq_printf(s, "TRX does not support alarm and warning "
+                                              "threshold limits\n");
+            return 0;
+        }
+
+        /* Page 02h Bytes 128-199 */
+        ret = qsfp_read(qsfp, CMIS_DDM_TH, &cmis_ddm_limits,
+                                   sizeof(cmis_ddm_limits));
+        if (ret < 0) {
+        seq_printf(s, "QSFP read error: %d\n", ret);
+        return 0;
+    }
+
+    seq_printf(s, "************ temperature threshold limits ****"
+                                                    "********\n");
+    seq_printf(s, "temp_high_alarm: %d °C \ntemp_low_alarm : %d °C "
+           "\ntemp_high_warn : %d °C \ntemp_low_warn  : %d °C \n\n",
+                   trx_calibrate_temp(cmis_ddm_limits.temp_high_alarm),
+                    trx_calibrate_temp(cmis_ddm_limits.temp_low_alarm),
+                    trx_calibrate_temp(cmis_ddm_limits.temp_high_warn),
+                    trx_calibrate_temp(cmis_ddm_limits.temp_low_warn));
+
+    seq_printf(s, "********** supply voltage threshold limits ****"
+                                                      "*******\n");
+    seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
+                "volt_high_warn : %d mV \nvolt_low_warn	: %d mV \n\n",
+                   trx_calibrate_vcc(cmis_ddm_limits.volt_high_alarm),
+                    trx_calibrate_vcc(cmis_ddm_limits.volt_low_alarm),
+                    trx_calibrate_vcc(cmis_ddm_limits.volt_high_warn),
+                    trx_calibrate_vcc(cmis_ddm_limits.volt_low_warn));
+
+    seq_printf(s, "************* tx power threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "txpwr_high_alarm: %d µW \ntxpwr_low_alarm : %d µW \n"
+                "txpwr_high_warn : %d µW \ntxpwr_low_warn  : %d µW \n\n",
+                   trx_calibrate_power(cmis_ddm_limits.txpwr_high_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.txpwr_low_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.txpwr_high_warn),
+                    trx_calibrate_power(cmis_ddm_limits.txpwr_low_warn));
+
+    seq_printf(s, "************* rx power threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "rxpwr_high_alarm: %d µW \nrxpwr_low_alarm : %d µW \n"
+                "rxpwr_high_warn : %d µW \nrxpwr_low_warn  : %d µW \n\n",
+                   trx_calibrate_power(cmis_ddm_limits.rxpwr_high_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.rxpwr_low_alarm),
+                    trx_calibrate_power(cmis_ddm_limits.rxpwr_high_warn),
+                    trx_calibrate_power(cmis_ddm_limits.rxpwr_low_warn));
+
+    seq_printf(s, "************** tx bias threshold limits ********"
+                                                        "******\n");
+    seq_printf(s, "bias_high_alarm: %d mA \nbias_low_alarm : %d mA \n"
+                "bias_high_warn : %d mA \nbias_low_warn  : %d mA \n\n",
+                 trx_calibrate_txbias(cmis_ddm_limits.bias_high_alarm),
+                  trx_calibrate_txbias(cmis_ddm_limits.bias_low_alarm),
+                  trx_calibrate_txbias(cmis_ddm_limits.bias_high_warn),
+                  trx_calibrate_txbias(cmis_ddm_limits.bias_low_warn));
+       break;
+    default:
+        spec_info_print(s, *spec_id);
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_ddm_thresholds);
+
 int create_common_debugfs_files(struct qsfp *qsfp)
 {
-    struct dentry *file;
+    struct dentry *file = NULL;
 
     file = debugfs_create_file("module_revision", 0600,
                                    qsfp->module_debugfs_dir,
@@ -1179,8 +2015,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp module_revision debugfs_create_file fail,"
                         "error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;
      }
 
     file = debugfs_create_file("connector", 0600, qsfp->module_debugfs_dir,
@@ -1188,8 +2023,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp phys_ext_id debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;
     }
 
     file = debugfs_create_file("vendor_info", 0600, qsfp->module_debugfs_dir,
@@ -1197,8 +2031,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp vendor_info debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return -1;
+        goto failed_module_dir;
     }
 
     file = debugfs_create_file("temperature", 0600, qsfp->module_debugfs_dir,
@@ -1206,8 +2039,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp temperature debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;
     }
 
     file = debugfs_create_file("supply_voltage", 0600,
@@ -1216,8 +2048,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp supply_voltage debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;
     }
 
     file = debugfs_create_file("rx_power", 0600, qsfp->module_debugfs_dir,
@@ -1225,8 +2056,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp rx_power debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;;
     }
 
     file = debugfs_create_file("tx_bias_current", 0600,
@@ -1235,8 +2065,7 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp tx_bias debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;
     }
 
     file = debugfs_create_file("tx_power", 0600, qsfp->module_debugfs_dir,
@@ -1244,15 +2073,34 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp tx_power debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->module_debugfs_dir);
-        return -1;
+        goto failed_module_dir;
+    }
+
+    file = debugfs_create_file("ddm_thresholds", 0600, qsfp->module_debugfs_dir,
+                        qsfp, &qsfp_debug_device_ddm_thresholds_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp ddm_thresholds debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
+        goto failed_module_dir;
     }
 
     return 0;
+
+failed_module_dir:
+    debugfs_remove_recursive(qsfp->module_debugfs_dir);
+    qsfp->module_debugfs_dir = NULL;
+    return -1;
 }
 
 int module_debugfs_init(struct qsfp *qsfp)
 {
+    if(!qsfp->debugfs_dir || !qsfp->fpc->debugfs_dir ||
+       !transceiver_debugfs_dir) {
+        TRX_LOG_ERR(qsfp, "Module debugfs parent dir failed\n");
+        qsfp->module_debugfs_dir = NULL;
+        return -1;
+    }
+
     if (IS_ERR(qsfp->debugfs_dir) || IS_ERR(qsfp->fpc->debugfs_dir) ||
         IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, "
@@ -1260,22 +2108,37 @@ int module_debugfs_init(struct qsfp *qsfp)
                         PTR_ERR(transceiver_debugfs_dir),
                         PTR_ERR(qsfp->fpc->debugfs_dir),
                         PTR_ERR(qsfp->debugfs_dir));
-        return -1;
-    }
-    qsfp->module_debugfs_dir = debugfs_create_dir("module_spec_info",
-                                                  qsfp->debugfs_dir);
-    if (IS_ERR(qsfp->module_debugfs_dir)) {
-        TRX_LOG_ERR(qsfp, "qsfp module_spec_info debugfs_create_dir"
-                        "fail, error %ld",
-                        PTR_ERR(qsfp->module_debugfs_dir));
+        qsfp->module_debugfs_dir = NULL;
         return -1;
     }
 
+    qsfp->module_debugfs_dir = debugfs_create_dir("module_spec_info",
+                                                  qsfp->debugfs_dir);
+    if (!qsfp->module_debugfs_dir || IS_ERR(qsfp->module_debugfs_dir)) {
+        TRX_LOG_ERR(qsfp, "qsfp module_spec_info debugfs_create_dir"
+                        "fail, error %ld",
+                        PTR_ERR(qsfp->module_debugfs_dir));
+        qsfp->module_debugfs_dir = NULL;
+        return -1;
+    }
     return 0;
 }
 
 void module_debugfs_exit(struct qsfp *qsfp)
 {
+    if (!qsfp->fpc) {
+        TRX_LOG_ERR(qsfp, "fpc is NULL");
+        return;
+    }
+
+    if(!qsfp->module_debugfs_dir || !qsfp->debugfs_dir ||
+       !qsfp->fpc->debugfs_dir || !transceiver_debugfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "Module debugfs create dir failed\n");
+        qsfp->module_debugfs_dir = NULL;
+        return;
+    }
+
     if (IS_ERR(qsfp->module_debugfs_dir) || IS_ERR(qsfp->debugfs_dir) ||
         IS_ERR(qsfp->fpc->debugfs_dir) ||
         IS_ERR(transceiver_debugfs_dir)) {
@@ -1285,23 +2148,319 @@ void module_debugfs_exit(struct qsfp *qsfp)
                         PTR_ERR(qsfp->fpc->debugfs_dir),
                         PTR_ERR(qsfp->debugfs_dir),
                         PTR_ERR(qsfp->module_debugfs_dir));
+        qsfp->module_debugfs_dir = NULL;
         return;
     }
     else
+    {
         debugfs_remove_recursive(qsfp->module_debugfs_dir);
+        qsfp->module_debugfs_dir = NULL;
+        TRX_LOG_INFO(qsfp, "Removed module debugfs dir\n");
+    }
 }
+
+static ssize_t qsfp_simulation_read(struct file *file, char __user *ubuf,
+                                    size_t count, loff_t *ppos)
+{
+    struct qsfp *qsfp = file->f_inode->i_private;
+    char buf[SIM_READ_BUF_MAX] = "";
+
+    scnprintf(buf, SIM_READ_BUF_MAX, "Simulation Remove: %s\nSimulation Far "
+    "end: %s\n\nFollowing keywords should be used for simulation operations"
+    "\nInsert module:  %sRemove module:  %sInsert far end:  %sRemove far end:"
+    "  %sTX Fault:  %sTX Fault Recovery:  %sClear all simulation:  %s\n",
+    (qsfp->sim & QSFP_F_SIM_REMOVE) ? "Yes" : "No",
+    (qsfp->sim & QSFP_F_SIM_FAR_END) ? "Yes" : "No", SIM_INSERT, SIM_REMOVE,
+    SIM_FAR_END_INSERT, SIM_FAR_END_REMOVE, SIM_TX_FAULT, SIM_TX_FAULT_RECOVER,
+    SIM_CLEAR);
+
+    return simple_read_from_buffer(ubuf, count, ppos, buf, strlen(buf));;
+}
+
+static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
+                                     size_t count, loff_t *ppos)
+{
+    u8 i;
+    ssize_t ret;
+    int ret1;
+    char request[SIM_REQ_MAX] = {0};
+    struct qsfp *qsfp = file->f_inode->i_private;
+    struct lane *lanei;
+
+    ret = simple_write_to_buffer(request, SIM_REQ_MAX - 1, ppos, buf, count);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "simple_write_to_buffer fails. ret %d", ret);
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_INSERT, sizeof(SIM_INSERT))) {
+        /* Check whether Transceiver module state present or not */
+        if (qsfp->status & QSFP_F_PRESENT) {
+            TRX_LOG_ERR(qsfp, "Simulated insert rejected as module already"
+                              " present");
+            return ret;
+        }
+
+        /* Check whether Transceiver module physically present or not */
+        ret1 = fpc_is_module_present(qsfp);
+        if (ret1 < 0) {
+            TRX_LOG_ERR(qsfp, "fpc_is_module_present failed. ret %d", ret1);
+            return ret;
+        } else if (ret1 != QSFP_PRESENT) {
+            TRX_LOG_ERR(qsfp, "Simulated insert rejected as module physically"
+                              " not present in the port");
+            return ret;
+        }
+
+        qsfp->sim &= (~QSFP_F_SIM_REMOVE);
+        qsfp_module_insert_irq(qsfp);
+
+        fpc_reset_qsfp(qsfp);
+
+        TRX_LOG_INFO(qsfp, "-------------- SIMULATED INSERT --------------");
+
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_REMOVE, sizeof(SIM_REMOVE))) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
+            TRX_LOG_ERR(qsfp, "Simulated remove rejected as module not present");
+            return ret;
+        }
+
+        qsfp->sim |= QSFP_F_SIM_REMOVE;
+        qsfp_module_remove_irq(qsfp);
+
+        TRX_LOG_INFO(qsfp, "-------------- SIMULATED REMOVE --------------");
+
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_FAR_END_INSERT, sizeof(SIM_FAR_END_INSERT))) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
+            TRX_LOG_ERR(qsfp, "Simulated far_end_insert rejected as"
+                              " module not present");
+            return ret;
+        }
+
+        if (!(qsfp->status & QSFP_F_LOS)) {
+            TRX_LOG_ERR(qsfp, "Simulated far_end_insert rejected as far end "
+                              "already connected");
+            return ret;
+        }
+
+        qsfp->need_poll = false;
+        cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
+        qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status &= (~QSFP_F_LOS);
+                lane_sm_event(lanei, QSFP_E_LOS_RECOVERY);
+            }
+        }
+
+        qsfp->status &= (~QSFP_F_LOS);
+        qsfp_sm_event(qsfp, QSFP_E_LOS_RECOVERY);
+
+        TRX_LOG_INFO(qsfp, "---------- SIMULATED INSERT FAR END ----------");
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
+
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_FAR_END_REMOVE, sizeof(SIM_FAR_END_REMOVE))) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
+            TRX_LOG_ERR(qsfp, "Simulated far_end_remove rejected as"
+                              " module not present");
+            return ret;
+        }
+
+        if (qsfp->status & QSFP_F_LOS) {
+            TRX_LOG_ERR(qsfp, "Simulated far_end_remove rejected as far end "
+                              "not connected");
+            return ret;
+        }
+
+        qsfp->need_poll = false;
+        cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
+        qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status |= QSFP_F_LOS;
+                lane_sm_event(lanei, QSFP_E_LOS);
+            }
+        }
+
+        qsfp->status |= QSFP_F_LOS;
+        qsfp_sm_event(qsfp, QSFP_E_LOS);
+
+        TRX_LOG_INFO(qsfp, "----------- SIMULATED REMOVE FAR END -----------");
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
+
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT))) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
+            TRX_LOG_ERR(qsfp, "Simulated tx_fault rejected as"
+                              " module not present");
+            return ret;
+        }
+
+        if (qsfp->status & QSFP_F_TX_FAULT) {
+            TRX_LOG_ERR(qsfp, "Simulated tx_fault rejected as module already "
+                              "in tx fault state");
+            return ret;
+        }
+
+        qsfp->need_poll = false;
+        cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
+        qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status |= QSFP_F_TX_FAULT;
+                lane_sm_event(lanei, QSFP_E_TX_FAULT);
+            }
+        }
+
+        qsfp->status |= QSFP_F_TX_FAULT;
+        qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
+
+        TRX_LOG_INFO(qsfp, "----------- SIMULATED TX FAULT -----------");
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
+
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_TX_FAULT_RECOVER, sizeof(SIM_TX_FAULT_RECOVER))) {
+        if (!(qsfp->status & QSFP_F_PRESENT)) {
+            TRX_LOG_ERR(qsfp, "Simulated tx_fault_recover rejected as"
+                              " module not present");
+            return ret;
+        }
+
+        if (!(qsfp->status & QSFP_F_TX_FAULT)) {
+            TRX_LOG_ERR(qsfp, "Simulated tx_fault_recover rejected as module "
+                              "not in tx fault state");
+            return ret;
+        }
+
+        qsfp->need_poll = false;
+        cancel_delayed_work_sync(&qsfp->poll);
+
+        rtnl_lock();
+        mutex_lock(&qsfp->sm_mutex);
+
+        qsfp->lanes_state = 0;
+        qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+        for (i = 0 ; i < qsfp->num_lanes ; i++) {
+            lanei = qsfp->lane[i];
+            if (lanei) {
+                lanei->status &= (~QSFP_F_TX_FAULT);
+                lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
+            }
+        }
+
+        TRX_LOG_INFO(qsfp, "--------- SIMULATED TX FAULT RECOVERY ---------");
+
+        qsfp->status &= (~QSFP_F_TX_FAULT);
+        qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
+
+        mutex_unlock(&qsfp->sm_mutex);
+        rtnl_unlock();
+
+        return ret;
+    }
+
+    if (!strncmp(request, SIM_CLEAR, sizeof(SIM_CLEAR))) {
+        if (qsfp->sim & QSFP_F_SIM_REMOVE) {
+
+            qsfp->sim &= (~QSFP_F_SIM_REMOVE);
+            qsfp_module_insert_irq(qsfp);
+
+            fpc_reset_qsfp(qsfp);
+
+            TRX_LOG_INFO(qsfp, "-------------- SIMULATED INSERT "
+                               "--------------");
+        }
+
+        if (qsfp->sim & QSFP_F_SIM_FAR_END) {
+            /* start polling to see actual hardware state which clears any
+             * simulated LOS and TX fault
+             */
+            qsfp->need_poll = true;
+            /* qsfp_check_state will mark whether poll needed or not */
+            qsfp_check_state(qsfp);
+            if (qsfp->need_poll) {
+                /* Poll once per second */
+                mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
+            }
+
+            qsfp->sim &= (~QSFP_F_SIM_FAR_END);
+        }
+
+        TRX_LOG_INFO(qsfp, "--------------- SIMULATION CLEAR ---------------");
+
+        return ret;
+    }
+
+    TRX_LOG_ERR(qsfp, "Invalid input '%s'", request);
+
+    return -EINVAL;
+}
+
+static const struct file_operations qsfp_debug_qsfp_simulation_fops = {
+    .read = qsfp_simulation_read,
+    .write = qsfp_simulation_write,
+};
 
 void qsfp_debugfs_init(struct qsfp *qsfp)
 {
-    struct dentry *file;
+    struct dentry *file = NULL;
     char qsfp_devname[20] = {};
     char qsfp_devsubname[10] = {};
     strlcpy(qsfp_devname,dev_name(qsfp->dev),sizeof(qsfp_devname));
+
+    if(!qsfp->fpc->debugfs_dir || !transceiver_debugfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "Trx debugfs create dir fail\n");
+        qsfp->debugfs_dir = NULL;
+        return;
+    }
 
     if (IS_ERR(qsfp->fpc->debugfs_dir) || IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, error (%ld %ld)",
                         PTR_ERR(transceiver_debugfs_dir),
                         PTR_ERR(qsfp->fpc->debugfs_dir));
+        qsfp->debugfs_dir = NULL;
         return;
     }
 
@@ -1317,9 +2476,10 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
 
     qsfp->debugfs_dir = debugfs_create_dir(qsfp_devsubname,
                          qsfp->fpc->debugfs_dir);
-    if (IS_ERR(qsfp->debugfs_dir)) {
+    if (!qsfp->debugfs_dir || IS_ERR(qsfp->debugfs_dir)) {
         TRX_LOG_ERR(qsfp, "qsfp debugfs_create_dir fail, error %ld",
                         PTR_ERR(qsfp->debugfs_dir));
+        qsfp->debugfs_dir = NULL;
         return;
     }
 
@@ -1328,8 +2488,7 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp state_info debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
+        goto failed_trx_debugfs_dir;
     }
 
     file = debugfs_create_file("i2c_address_info", 0600, qsfp->debugfs_dir,
@@ -1337,8 +2496,7 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp i2c_address_info debugfs_create_file "
                         "fail, error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
+        goto failed_trx_debugfs_dir;
     }
 
     file = debugfs_create_file("port_num_info", 0600, qsfp->debugfs_dir, qsfp,
@@ -1346,8 +2504,7 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp port_num_info debugfs_create_file fail,"
                         "error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
-        return;
+        goto failed_trx_debugfs_dir;
     }
 
     file = debugfs_create_file("module_identifier", 0600, qsfp->debugfs_dir,
@@ -1355,23 +2512,55 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp module_identifier debugfs_create_file"
                         " fail, error %ld", PTR_ERR(file));
-        debugfs_remove_recursive(qsfp->debugfs_dir);
+        goto failed_trx_debugfs_dir;
     }
+
+    file = debugfs_create_file("simulation", 0600, qsfp->debugfs_dir, qsfp,
+                               &qsfp_debug_qsfp_simulation_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp simulation debugfs_create_file fail,"
+                        " error %ld", PTR_ERR(file));
+        goto failed_trx_debugfs_dir;
+    }
+
     return;
+
+failed_trx_debugfs_dir:
+    debugfs_remove_recursive(qsfp->debugfs_dir);
+    qsfp->debugfs_dir = NULL;
 
 }
 
 void qsfp_debugfs_exit(struct qsfp *qsfp)
 {
+    if (!qsfp->fpc) {
+        TRX_LOG_ERR(qsfp, "fpc is NULL");
+        return;
+    }
+
+    if(!qsfp->debugfs_dir || !qsfp->fpc->debugfs_dir ||
+       !transceiver_debugfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "Trx debugfs create dir fail\n");
+        qsfp->debugfs_dir = NULL;
+        return;
+    }
+
     if (IS_ERR(qsfp->debugfs_dir) || IS_ERR(qsfp->fpc->debugfs_dir) ||
         IS_ERR(transceiver_debugfs_dir)) {
         TRX_LOG_ERR(qsfp, "debugfs_create_dir fail, error (%ld %ld %ld)",
                         PTR_ERR(transceiver_debugfs_dir),
                         PTR_ERR(qsfp->fpc->debugfs_dir),
                         PTR_ERR(qsfp->debugfs_dir));
+        qsfp->debugfs_dir = NULL;
         return;
     }
-    debugfs_remove_recursive(qsfp->debugfs_dir);
+    else
+    {
+        debugfs_remove_recursive(qsfp->debugfs_dir);
+        qsfp->debugfs_dir = NULL;
+        TRX_LOG_INFO(qsfp, "Removed Trx debugfs dir\n");
+    }
 }
 #else
 void transceiver_debugfs_init(void)

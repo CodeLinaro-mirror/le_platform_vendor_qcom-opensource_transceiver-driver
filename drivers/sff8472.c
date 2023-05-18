@@ -3,17 +3,21 @@
  *
  */
 #include "qsfp.h"
+#include "lane.h"
 #include "transceiver_debugfs.h"
 
-
-static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
+static int sff8472_mod_probe(struct qsfp *qsfp)
 {
     /* QSFP module inserted - read I2C data */
     struct qsfp_eeprom_id id = {0};
     u8 check;
     int ret;
 
+    /* As there is no field in EEPROM to tell whether flat mem or not
+     * so assume it flat mem
+     */
     qsfp->module_flat_mem = 1;
+    qsfp->module_revision = id.sff8472.ext.sff8472_compliance;
 
     ret = qsfp_read(qsfp, SFF8472_ID, &id, sizeof(id.sff8472));
     if (ret < 0) {
@@ -25,7 +29,7 @@ static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
     check = qsfp_check(&id.sff8472.base, sizeof(id.sff8472.base) - 1);
     if (check != id.sff8472.base.cc_base) {
         TRX_LOG_ERR(qsfp, "EEPROM base structure checksum failure: "
-                  "0x%02x != 0x%02x", check, id.sff8472.base.cc_base);
+                    "0x%02x != 0x%02x", check, id.sff8472.base.cc_base);
         return -EINVAL;
     }
 
@@ -33,26 +37,17 @@ static int sff8472_mod_probe(struct qsfp *qsfp, bool report)
     check = qsfp_check(&id.sff8472.ext, sizeof(id.sff8472.ext) - 1);
     if (check != id.sff8472.ext.cc_ext) {
         TRX_LOG_ERR(qsfp, "EEPROM extended structure checksum failure: "
-                  "0x%02x != 0x%02x", check, id.sff8472.ext.cc_ext);
+                    "0x%02x != 0x%02x", check, id.sff8472.ext.cc_ext);
         return -EINVAL;
     }
 
     if (id.sff8472.base.phys_ext_id != SFP_PHYS_EXT_ID_SFP) {
         TRX_LOG_ERR(qsfp, "Extended id 0x%X didnot match",
-                        id.sff8472.base.phys_ext_id);
+                          id.sff8472.base.phys_ext_id);
         return -E_UNSUPPORTED_SPEC;
     }
 
     qsfp->id = id;
-
-    /* In case of sff8472 module version never be zero */
-    qsfp->module_revision = id.sff8472.ext.sff8472_compliance;
-
-    /* check state as there is no initial interrupt coming for sff8472 in case
-     * transceiver inserted during bootup and also needed in case interrupt
-     * called before EEPROM read
-     */
-    mod_delayed_work(system_wq, &qsfp->poll, 0);
 
     return 0;
 }
@@ -112,7 +107,9 @@ static int sff8472_module_parse_power(struct qsfp *qsfp)
 
 static void sff8472_disable_redundant_irq(const struct qsfp *qsfp)
 {
-
+    /* sff8472 doesnot support disabling any interrupts and there are
+     * no redundant interrupts as well to disable them
+     */
 }
 
 static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
@@ -127,6 +124,13 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     TRX_LOG_INFO(qsfp, "");
 
+    /* As power class 1 is the highest we can not push module for
+     * further high power class
+     */
+    if (qsfp->module_power_class == 1) {
+        return 0;
+    }
+
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read extended module control."
@@ -139,7 +143,7 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to write extended module control."
-                        " ret %d", ret);
+                          " ret %d", ret);
         return ret;
     }
 
@@ -153,10 +157,17 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     TRX_LOG_INFO(qsfp, "");
 
+    /* As power class 1 is the highest we can not push module for
+     * further high power class
+     */
+    if (qsfp->module_power_class == 1) {
+        return 0;
+    }
+
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read extended module control."
-                        " ret %d", ret);
+                          " ret %d", ret);
         return ret;
     }
 
@@ -165,7 +176,7 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to write extended module control."
-                        " ret %d", ret);
+                          " ret %d", ret);
         return ret;
     }
 
@@ -194,44 +205,47 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
     TRX_LOG_INFO(qsfp, "date %s", date);
 
     TRX_LOG_INFO(qsfp, "vendor name %.*s",
-                           (int)sizeof(id->base.vendor_name),
-                           id->base.vendor_name);
+                       (int)sizeof(id->base.vendor_name),
+                       id->base.vendor_name);
     TRX_LOG_INFO(qsfp, "vendor pn %.*s",
-                           (int)sizeof(id->base.vendor_pn),
-                           id->base.vendor_pn);
+                       (int)sizeof(id->base.vendor_pn),
+                       id->base.vendor_pn);
 
     TRX_LOG_INFO(qsfp, "opt 0x%X enhopts 0x%X sff8472_compliance "
     "0x%X", id->ext.options, id->ext.enhopts,
     id->ext.sff8472_compliance);
 
     TRX_LOG_INFO(qsfp, "vendor sn %.*s",
-                           (int)sizeof(id->ext.vendor_sn),
-                           id->ext.vendor_sn);
+                       (int)sizeof(id->ext.vendor_sn),
+                       id->ext.vendor_sn);
 }
 
-static u8 sff8472_get_state(struct qsfp *qsfp)
+static u32 sff8472_get_state(struct qsfp *qsfp)
 {
     int ret;
-    u8 state = 0;
+    u32 state = 0;
     u8 irq_flag = 0;
     const __be16 los_inverted = cpu_to_be16(SFP_OPTIONS_LOS_INVERTED);
     const __be16 los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
     __be16 los_options;
 
+    /* Neither LOS or TX Fault is supported */
+    if (!((qsfp->features & QSFP_F_LOS) ||
+          (qsfp->features & QSFP_F_TX_FAULT))) {
+        qsfp->need_poll = false;
+        return qsfp->lanes_state;
+    }
+
     ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flag, sizeof(irq_flag));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read IRQ status flag. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
         /* Preserve the current state */
-        return qsfp->state;
-    }
-
-    /* EEPROM not yet read so wont have details about feature
-     * and LOS polarity
-     * poll not necessary as it is handled in mod probe
-     */
-    if (qsfp->module_revision == 0) {
-        TRX_LOG_INFO(qsfp, "EEPROM not yet read");
-        return qsfp->state;
+        return qsfp->lanes_state;
+    } else {
+        /* When read is successful disable polling */
+        qsfp->need_poll = false;
     }
 
     TRX_LOG_INFO(qsfp, "IRQ status flag: 0x%X", irq_flag);
@@ -241,12 +255,12 @@ static u8 sff8472_get_state(struct qsfp *qsfp)
     if (qsfp->features & QSFP_F_LOS) {
         if (los_options == los_normal) {
             if (irq_flag & SFF8472_LOS) {
-                state |= QSFP_F_LOS;
+                state |= (1 << QSFP_LOS_SHIFT);
                 TRX_LOG_INFO(qsfp, "LOS set");
             }
         } else if (los_options == los_inverted) {
             if (!(irq_flag & SFF8472_LOS)) {
-                state |= QSFP_F_LOS;
+                state |= (1 << QSFP_LOS_SHIFT);
                 TRX_LOG_INFO(qsfp, "LOS set (inverted)");
             }
         } else {
@@ -255,7 +269,7 @@ static u8 sff8472_get_state(struct qsfp *qsfp)
     }
 
     if ((qsfp->features & QSFP_F_TX_FAULT) && (irq_flag & SFF8472_TX_FAULT)) {
-        state |= QSFP_F_TX_FAULT;
+        state |= (1 << QSFP_TX_FAULT_SHIFT);
         TRX_LOG_INFO(qsfp, "TX Fault set");
     }
 
@@ -285,9 +299,47 @@ static u8 sff8472_get_connector_type(const struct qsfp *qsfp)
 static int sff8472_get_lane_speed(const struct qsfp *qsfp,
                                   trx_lane_speed* lane_speed)
 {
-    *lane_speed = TRX_LANE_SPEED_10G;
-    TRX_LOG_INFO(qsfp, "Lane speed: 0x%X ", *lane_speed);
+    phy_interface_t sfp_interface = PHY_INTERFACE_MODE_NA;
+    __ETHTOOL_DECLARE_LINK_MODE_MASK(sfp_supported) = { 0, };
 
+    *lane_speed = TRX_LANE_SPEED_UNKNOWN;
+
+    if (qsfp->lane[0]) {
+        TRX_LOG_INFO(qsfp, "Unable to get the lane\n");
+        return -EINVAL;
+    }
+
+    sfp_parse_support(qsfp->lane[0]->sfp_bus, &qsfp->id.sff8472,
+                      sfp_supported);
+
+    sfp_interface = sfp_select_interface(qsfp->lane[0]->sfp_bus, sfp_supported);
+
+    if(sfp_interface == PHY_INTERFACE_MODE_25GBASER)
+    {
+       *lane_speed = TRX_LANE_SPEED_25G;
+    }
+    else if(sfp_interface == PHY_INTERFACE_MODE_10GBASER)
+    {
+        *lane_speed = TRX_LANE_SPEED_10G;
+    }
+    else if((sfp_interface == PHY_INTERFACE_MODE_5GBASER) ||
+            (sfp_interface == PHY_INTERFACE_MODE_2500BASEX) ||
+            (sfp_interface == PHY_INTERFACE_MODE_SGMII) ||
+            (sfp_interface == PHY_INTERFACE_MODE_1000BASEX) ||
+            (sfp_interface == PHY_INTERFACE_MODE_100BASEX))
+    {
+        TRX_LOG_INFO(qsfp, " Unsupported SFP interface: 0x%x\n",
+                                                 sfp_interface);
+        return -EINVAL;
+    }
+    else
+    {
+        TRX_LOG_INFO(qsfp, " Unable to get the lane speed.\n");
+        return -EINVAL;
+    }
+
+    TRX_LOG_INFO(qsfp, " SFP interface: 0x%x Lane speed: 0x%X\n",
+                                     sfp_interface, *lane_speed);
     return 0;
 }
 
@@ -302,6 +354,7 @@ static u8 sff8472_get_transceiver_type(const struct qsfp *qsfp)
 static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
                                       trx_lane_cfg* laneinfo)
 {
+    /* Only one lane supported by sfp */
     *laneinfo = 0x1;
 
     TRX_LOG_INFO(qsfp, "Lane info: 0x%X", *laneinfo);
@@ -317,30 +370,36 @@ static int sff8472_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
-static void sff8472_tx_enable(const struct qsfp *qsfp)
+static int sff8472_lane_tx_enable(const struct lane *lane)
 {
     int ret;
     u8 ctrl = 0;
 
-    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
-                    sizeof(ctrl));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read control register. ret %d", ret);
-        return;
+    if (lane->lane_num != 0) {
+        TRX_LOG_ERR(lane, "Lane %u not supported", lane->lane_num);
+        return -EINVAL;
     }
 
-    TRX_LOG_INFO(qsfp, "Ctrl: 0x%X", ctrl);
+    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+                    sizeof(ctrl));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "Failed to read control register. ret %d", ret);
+        return ret;
+    }
+
+    TRX_LOG_INFO(lane, "Ctrl: 0x%X", ctrl);
     ctrl &= (~SFF8472_TX_DISABLE);
 
-    ret = qsfp_write(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_write(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write control register. ret %d", ret);
+        TRX_LOG_ERR(lane, "Failed to write control register. ret %d", ret);
     }
 
+    return ret;
 }
 
-static void sff8472_tx_disable(const struct qsfp *qsfp)
+static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
 {
     int ret;
     u8 ctrl = 0;
@@ -349,7 +408,7 @@ static void sff8472_tx_disable(const struct qsfp *qsfp)
                     sizeof(ctrl));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read control register. ret %d", ret);
-        return;
+        return ret;
     }
 
     TRX_LOG_INFO(qsfp, "Ctrl: 0x%X", ctrl);
@@ -361,6 +420,17 @@ static void sff8472_tx_disable(const struct qsfp *qsfp)
         TRX_LOG_ERR(qsfp, "Failed to write control register. ret %d", ret);
     }
 
+    return ret;
+}
+
+static int sff8472_lane_tx_disable(const struct lane *lane)
+{
+    if (lane->lane_num == 0) {
+        return sff8472_mod_tx_disable(lane->qsfp);
+    } else {
+        TRX_LOG_ERR(lane, "Lane %u not supported for SFP", lane->lane_num);
+        return -EINVAL;
+    }
 }
 
 unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
@@ -368,24 +438,13 @@ unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
     return msecs_to_jiffies(100);
 }
 
-int sff8472_create_debugfs_files(struct qsfp *qsfp) {
-    int ret;
-
-    ret = module_debugfs_init(qsfp);
-    if (ret != 0)
-    {
-        TRX_LOG_ERR(qsfp, "qsfp module_spec_info debugfs dir fail");
-    }
-    /* Need to implement debugfs support for SFF-8472 */
-    return 0;
-}
-
-struct qsfp_spec_ops sff8472_spec_ops = {
+const struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_probe = sff8472_mod_probe,
     .disable_redundant_irq = sff8472_disable_redundant_irq,
     .get_state = sff8472_get_state,
-    .tx_enable = sff8472_tx_enable,
-    .tx_disable = sff8472_tx_disable,
+    .mod_tx_disable = sff8472_mod_tx_disable,
+    .lane_tx_enable = sff8472_lane_tx_enable,
+    .lane_tx_disable = sff8472_lane_tx_disable,
     .check_features_impl = sff8472_check_feature_impl,
     .module_parse_power = sff8472_module_parse_power,
     .handle_max_power_exceed = sff8472_handle_max_power_exceed,

@@ -269,6 +269,7 @@ struct cmis_bank0_page11 {
     u8 tx_output_status;
 
     u8 dp_state_changed;
+    /* byte 86 */
     u8 tx_failure;
     u8 tx_los;
     u8 tx_cdr_lol;
@@ -284,6 +285,7 @@ struct cmis_bank0_page11 {
     u8 tx_bias_high_warn;
     u8 tx_bias_low_warn;
 
+    /* byte 98 */
     u8 rx_los;
     u8 rx_cdr_lol;
     u8 rx_power_high_alarm;
@@ -292,6 +294,45 @@ struct cmis_bank0_page11 {
     u8 rx_power_low_warn;
     u8 rx_output_status_changed;
 } __packed;
+
+struct cmis_thresholds {
+    u16 temp_high_alarm;
+    __be16 temp_low_alarm;
+    u16 temp_high_warn;
+    __be16 temp_low_warn;
+    u16 volt_high_alarm;
+    u16 volt_low_alarm;
+    u16 volt_high_warn;
+    u16 volt_low_warn;
+    u16 aux1_high_alarm;
+    u16 aux1_low_alarm;
+    u16 aux1_high_warn;
+    u16 aux1_low_warn;
+    u16 aux2_high_alarm;
+    u16 aux2_low_alarm;
+    u16 aux2_high_warn;
+    u16 aux2_low_warn;
+    u16 aux3_high_alarm;
+    u16 aux3_low_alarm;
+    u16 aux3_high_warn;
+    u16 aux3_low_warn;
+    u16 custom_high_alarm;
+    u16 custom_low_alarm;
+    u16 custom_high_warn;
+    u16 custom_low_warn;
+    u16 rxpwr_high_alarm;
+    u16 rxpwr_low_alarm;
+    u16 rxpwr_high_warn;
+    u16 rxpwr_low_warn;
+    u16 bias_high_alarm;
+    u16 bias_low_alarm;
+    u16 bias_high_warn;
+    u16 bias_low_warn;
+    u16 txpwr_high_alarm;
+    u16 txpwr_low_alarm;
+    u16 txpwr_high_warn;
+    u16 txpwr_low_warn;
+}__packed;
 
 enum {
     CMIS_MOD_CFG                     = QSFP_ADDR(0, 0x0,   2),
@@ -310,6 +351,7 @@ enum {
     CMIS_INACTIVE_FIRMWARE           = QSFP_ADDR(0, 0x1, 128),
     CMIS_ID_EXT                      = QSFP_ADDR(0, 0x1, 130),
 
+    CMIS_DDM_TH                      = QSFP_ADDR(0, 0x02, 128),
     CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
     CMIS_PAGE10_MASKS                = QSFP_ADDR(0, 0x10, 213),
     CMIS_TX_FAILURE_MASK             = QSFP_ADDR(0, 0x10, 214),

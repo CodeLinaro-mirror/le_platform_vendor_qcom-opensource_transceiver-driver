@@ -10,11 +10,15 @@
 #include "fpc.h"
 #include "qsfp.h"
 
-extern const char *mod_state_to_str(unsigned short mod_state);
-extern const char *dev_state_to_str(unsigned short dev_state);
-extern const char *sm_state_to_str(unsigned short sm_state);
+extern const char *mod_state_to_str(u8 mod_state);
+extern const char *dev_state_to_str(u8 dev_state);
+extern const char *link_state_to_str(u8 sm_state);
 extern char* calc_common_temperature(int16_t tempc, char* str);
+extern char* calc_external_calib_temperature(struct qsfp*,int16_t, char*);
+extern char* calc_external_calib_svoltage(struct qsfp*, u16, char*);
 char* calc_common_svoltage(u16 svolt, char* str);
+extern char* calc_external_calib_txi(struct qsfp*, u16, char*);
+extern char* calc_external_calib_txpwr(struct qsfp*, u16, char*);
 int qsfp_sysfs_init(struct qsfp *qsfp);
 int qsfp_sysfs_exit(struct qsfp *qsfp);
 int module_sysfs_init(struct qsfp *qsfp);

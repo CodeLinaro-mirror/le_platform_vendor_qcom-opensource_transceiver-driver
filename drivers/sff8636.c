@@ -4,10 +4,11 @@
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7
  */
+#include "qsfp.h"
+#include "lane.h"
 #include "transceiver_debugfs.h"
 
-
-static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
+static int sff8636_mod_probe(struct qsfp *qsfp)
 {
     /* QSFP module inserted - read I2C data */
     struct sff8636_id_stat id_stat = {0};
@@ -17,13 +18,12 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_read(qsfp, 0, &id_stat, sizeof(id_stat));
     if (ret < 0) {
-        if (report)
-            TRX_LOG_ERR(qsfp, "Failed to read EEPROM: %d", ret);
-        return -EAGAIN;
+        TRX_LOG_ERR(qsfp, "Failed to read EEPROM: %d", ret);
+        return ret;
     }
 
     TRX_LOG_INFO(qsfp, "id_stat id 0x%X rev 0x%X flat_mem 0x%X",
-               id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem);
+                 id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem);
 
     /* Early setup - we need to know if this module has a page register */
     qsfp->module_flat_mem = id_stat.flat_mem;
@@ -31,14 +31,13 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
 
     ret = qsfp_read(qsfp, SFF8636_ID, &id, sizeof(id.sff8636));
     if (ret < 0) {
-        if (report)
-            TRX_LOG_ERR(qsfp, "Failed to read EEPROM: %d", ret);
-        return -EAGAIN;
+        TRX_LOG_ERR(qsfp, "Failed to read EEPROM: %d", ret);
+        return ret;
     }
 
     if (id.sff8636.base.phys_id != id_stat.phys_id) {
         TRX_LOG_ERR(qsfp, "QSFP phys_id mismatch: 0x%02x != 0x%02x",
-                  id_stat.phys_id, id.sff8636.base.phys_id);
+                    id_stat.phys_id, id.sff8636.base.phys_id);
         return -EINVAL;
     }
 
@@ -46,7 +45,7 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
     check = qsfp_check(&id.sff8636.base, sizeof(id.sff8636.base) - 1);
     if (check != id.sff8636.base.cc_base) {
         TRX_LOG_ERR(qsfp, "EEPROM base structure checksum failure: "
-                  "0x%02x != 0x%02x", check, id.sff8636.base.cc_base);
+                    "0x%02x != 0x%02x", check, id.sff8636.base.cc_base);
         return -EINVAL;
     }
 
@@ -54,7 +53,7 @@ static int sff8636_mod_probe(struct qsfp *qsfp, bool report)
     check = qsfp_check(&id.sff8636.ext, sizeof(id.sff8636.ext) - 1);
     if (check != id.sff8636.ext.cc_ext) {
         TRX_LOG_ERR(qsfp, "EEPROM extended structure checksum failure: "
-                  "0x%02x != 0x%02x", check, id.sff8636.ext.cc_ext);
+                    "0x%02x != 0x%02x", check, id.sff8636.ext.cc_ext);
         memset(&id.sff8636.ext, 0, sizeof(id.sff8636.ext));
         return -EINVAL;
     }
@@ -107,16 +106,18 @@ static int sff8636_module_parse_power(struct qsfp *qsfp)
 
         ret = qsfp_read(qsfp, SFF8636_CLS8_MAX_POWER, &pwr,
                         sizeof(pwr));
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
 
         power_class = 8;
         power_mW = pwr * 100;
     } else {
-        if (qsfp->id.sff8636.base.phys_id == SFF8024_ID_QSFP_8438)
+        if (qsfp->id.sff8636.base.phys_id == SFF8024_ID_QSFP_8438) {
             mask = 0xc0;
-        else
+        } else {
             mask = 0xc3;
+        }
 
         switch (qsfp->id.sff8636.base.phys_ext_id & mask) {
         default:
@@ -169,17 +170,23 @@ static void sff8636_disable_redundant_irq(const struct qsfp *qsfp)
                  0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     u8 buf2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
+    /* In case of DAC where memory is flat interrupt is not supported */
+    if (qsfp->module_flat_mem) {
+        return;
+    }
+
     ret = qsfp_write(qsfp, SFF8636_INTERRUPT_MASK,
                      buf1, sizeof(buf1));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts. ret %d", ret);
+    }
 
     ret = qsfp_write(qsfp, SFF8636_CHANNEL_INTERRUPT_MASK,
                      buf2, sizeof(buf2));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant channel interrupts."
-                        " ret %d", ret);
-
+                          " ret %d", ret);
+    }
 }
 
 static int sff8636_handle_max_power_exceed(const struct qsfp *qsfp)
@@ -193,11 +200,12 @@ static int sff8636_mod_high_power(const struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_HIGH;
 
-    /* As power class 1 is the lowest we can not push module for
+    /* As power class 1 is the highest we can not push module for
      * further high power class
      */
-    if (qsfp->module_power_class == 1)
+    if (qsfp->module_power_class == 1) {
         return 0;
+    }
 
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
@@ -206,11 +214,12 @@ static int sff8636_mod_low_power(const struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_LOW;
 
-    /* As power class 1 is the lowest we can not push module for
+    /* As power class 1 is the highest we can not push module for
      * further low power class
      */
-    if (qsfp->module_power_class == 1)
+    if (qsfp->module_power_class == 1) {
         return 0;
+    }
 
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
@@ -284,23 +293,23 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     id->base.length[1], id->base.length[0]);
 
     TRX_LOG_INFO(qsfp, "device_tech 0x%X",
-                           id->base.device_tech);
+                       id->base.device_tech);
 
     TRX_LOG_INFO(qsfp, "vendor name %.*s",
-                           (int)sizeof(id->base.vendor_name),
-                           id->base.vendor_name);
+                       (int)sizeof(id->base.vendor_name),
+                       id->base.vendor_name);
 
     TRX_LOG_INFO(qsfp, "ext_module 0x%X",
-                           id->base.ext_module);
+                       id->base.ext_module);
 
     TRX_LOG_INFO(qsfp, "vendor_oui[]: 0x%X 0x%X 0x%X",
     id->base.vendor_oui[2], id->base.vendor_oui[1], id->base.vendor_oui[0]);
 
     TRX_LOG_INFO(qsfp, "vendor pn %.*s",
-               (int)sizeof(id->base.vendor_pn), id->base.vendor_pn);
+                 (int)sizeof(id->base.vendor_pn), id->base.vendor_pn);
 
     TRX_LOG_INFO(qsfp, "vendor rev %.*s",
-               (int)sizeof(id->base.vendor_rev), id->base.vendor_rev);
+                 (int)sizeof(id->base.vendor_rev), id->base.vendor_rev);
 
     TRX_LOG_INFO(qsfp, "wavelength 0x%X   wavelength_tolerance 0x%X   "
     "max_case_temp 0x%X   cc_base 0x%X", id->base.wavelength,
@@ -308,7 +317,7 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     id->base.cc_base);
 
     TRX_LOG_INFO(qsfp, "link_codes 0x%X",
-                           id->ext.link_codes);
+                       id->ext.link_codes);
 
     TRX_LOG_INFO(qsfp, "lpmode_gpio 0x%X  intl_gpio 0x%X "
     "tx_adap_eq_freeze 0x%X  tx_eq_auto_adap 0x%X  tx_eq_prg 0x%X  "
@@ -332,7 +341,7 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     id->ext.page20_21);
 
     TRX_LOG_INFO(qsfp, "vendor sn %.*s",
-               (int)sizeof(id->ext.vendor_sn), id->ext.vendor_sn);
+                 (int)sizeof(id->ext.vendor_sn), id->ext.vendor_sn);
 
     date[0] = id->ext.datecode[4];
     date[1] = id->ext.datecode[5];
@@ -351,15 +360,15 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
 
 }
 
-static u8 sff8636_get_state(struct qsfp *qsfp)
+static u32 sff8636_get_state(struct qsfp *qsfp)
 {
     int ret;
-    u8 state = 0;
-    bool poll = false;
+    u32 state = 0;
     struct sff8636_irq_flags irq_flags = {0};
+    bool poll = false;
 
     if (qsfp->need_poll) {
-        /* In case of poll just read LOS TX Fault s*/
+        /* In case of poll just poll LOS/TX_FAULT 2 bytes */
         ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags, 2);
     } else {
         ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags,
@@ -368,44 +377,31 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
 
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
+        /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
         /* Preserve the current state */
-        return qsfp->state;
+        return qsfp->lanes_state;
     }
 
-    if (irq_flags.los_rx) {
-        /* Dont report LOS even if one lane works fine
-         * consider only RX lanes
-         */
-        if (irq_flags.los_rx == 0xF) {
-            state |= QSFP_F_LOS;
-        } else if (!qsfp->need_poll) {
-            TRX_LOG_INFO(qsfp, "There is LOS on few lanes which is not"
-                       " reported 0x%X", irq_flags.los_rx);
-        }
-        /* In case RX LOS we have to enable poll */
+    if (irq_flags.rx_los) {
+        state |= (irq_flags.rx_los << QSFP_LOS_SHIFT);
+        /* In case LOS we have to enable polling of irq status */
         poll = true;
     }
 
     if (irq_flags.tx_fault) {
-        /* Dont report TX Fault even if one lane works fine
-         * Nibble represent TX Fault for 4 TX lanes
-         */
-        if (irq_flags.tx_fault == 0xF) {
-            state |= QSFP_F_TX_FAULT;
-        } else if (!qsfp->need_poll) {
-            TRX_LOG_INFO(qsfp, "There is TX Fault on few lanes which "
-                       "is not reported 0x%X", irq_flags.tx_fault);
-        }
-        /* In case TX Fault we have to enable poll */
+        /* Nibble represent TX Fault for 4 TX lanes */
+        state |= (irq_flags.tx_fault << QSFP_TX_FAULT_SHIFT);
+        /* In case TX Fault we have to enable polling of irq status */
         poll = true;
     }
 
     if (!qsfp->need_poll) {
-        TRX_LOG_INFO(qsfp, "IRQ status dump: LOS RX 0x%X LOS TX 0x%X TX Fault"
-        " 0x%X eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC 0x%X Vendor"
-        " 0x%X RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X TX34_bias 0x%X "
-        "TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X",
-        irq_flags.los_rx, irq_flags.los_tx, irq_flags.tx_fault,
+        TRX_LOG_INFO(qsfp, "IRQ status dump: RX_LOS 0x%X TX_LOS 0x%X "
+        "TX Fault 0x%X eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC "
+        "0x%X Vendor 0x%X RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X "
+        "TX34_bias 0x%X TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X\n",
+        irq_flags.rx_los, irq_flags.tx_los, irq_flags.tx_fault,
         irq_flags.tx_adap_eq_fault, irq_flags.lol, irq_flags.init_complete,
         irq_flags.tc_ready, irq_flags.temp_alarm, irq_flags.volt_alarm,
         irq_flags.vendor_specific1, irq_flags.rx12_pow_alarm,
@@ -420,51 +416,92 @@ static u8 sff8636_get_state(struct qsfp *qsfp)
     return state;
 }
 
-static void sff8636_tx_disable(const struct qsfp *qsfp)
+static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
 {
-    u8 status;
+    u8 status = 0;
     int ret;
 
     status = 0xF;
 
     ret = qsfp_write(qsfp, SFF8636_TX_DISABLE, &status,
                      sizeof(status));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
+    }
 
+    return ret;
 }
 
-static void sff8636_tx_enable(const struct qsfp *qsfp)
+static int sff8636_lane_tx_enable(const struct lane *lane)
 {
-    u8 status;
+    u8 status = 0;
     int ret;
 
-    status = 0;
+    TRX_LOG_INFO(lane, "");
 
-    ret = qsfp_write(qsfp, SFF8636_TX_DISABLE, &status,
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status,
                      sizeof(status));
-    if (ret < 0)
-        TRX_LOG_ERR(qsfp, "TX enable failed. ret %d", ret);
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
+        return ret;
+    }
 
+    if (!((status >> lane->lane_num) & 1)) {
+        TRX_LOG_INFO(lane, "TX already enabled");
+        return 0;
+    }
+
+    status &= (~(1 << lane->lane_num));
+
+    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "Failed. ret %d", ret);
+    }
+
+    return ret;
+}
+
+static int sff8636_lane_tx_disable(const struct lane *lane)
+{
+    u8 status = 0;
+    int ret;
+
+    TRX_LOG_INFO(lane, "");
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
+        return ret;
+    }
+
+    if ((status >> lane->lane_num) & 1) {
+        TRX_LOG_INFO(lane, "TX already disabled");
+        return 0;
+    }
+
+    status |= (1 << lane->lane_num);
+
+    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status,
+                     sizeof(status));
+    if (ret < 0) {
+        TRX_LOG_ERR(lane, "TX enable failed. ret %d", ret);
+    }
+
+    return ret;
 }
 
 static int sff8636_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
 {
-    switch (qsfp->id.sff8636.base.phys_id) {
-    case ETH_MODULE_SFF_8636:
+    if (qsfp->id.sff8636.base.phys_ext_id >= SFF8636_REV_8636_1_3) {
+        TRX_LOG_INFO(qsfp, "SFF_8636");
         modinfo->type = ETH_MODULE_SFF_8636;
         modinfo->eeprom_len = ETH_MODULE_SFF_8636_LEN;
-        break;
-
-    case ETH_MODULE_SFF_8436:
+    } else {
+        TRX_LOG_INFO(qsfp, "SFF_8436");
         modinfo->type = ETH_MODULE_SFF_8436;
         modinfo->eeprom_len = ETH_MODULE_SFF_8436_LEN;
-        break;
-
-    default:
-        modinfo->type = 0;
-        modinfo->eeprom_len = 0;
-        break;
     }
 
     return 0;
@@ -522,6 +559,11 @@ const char *sff8636_mod_encoding_to_str(u8 mod_encoding)
     case 0x09 ... 0xFF:
         return "Reserved need to be update in future";
     }
+}
+
+static u8 sff8636_get_connector_type(const struct qsfp *qsfp)
+{
+    return qsfp->id.sff8636.base.connector;
 }
 
 /*
@@ -598,11 +640,6 @@ static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
 
 }
 
-u8 sff8636_get_connector_type(const struct qsfp *qsfp)
-{
-    return qsfp->id.sff8636.base.connector;
-}
-
 /*
  * Function to get the lane supported speed using linkcodes page 00h, byte 192,
  * or ethernet compliance codes page 00h, byte 131.
@@ -615,19 +652,16 @@ static int sff8636_get_lane_speed(const struct qsfp *qsfp,
     /* Check ethernet compliance codes page 00h byte 131 */
     if (id->base.ecom_extended == 0x1) {
         *lane_speed = sff8024_link_codes_to_speed(id->ext.link_codes);
-    }
-    else if ((id->base.e10g_base_lrm == 0x1) ||
+    } else if ((id->base.e10g_base_lrm == 0x1) ||
              (id->base.e10g_base_lr == 0x1)  ||
              (id->base.e10g_base_sr == 0x1)) {
          *lane_speed = TRX_LANE_SPEED_2_5G;
-    }
-    else if ((id->base.e40g_base_cr4 == 0x1) ||
+    } else if ((id->base.e40g_base_cr4 == 0x1) ||
           (id->base.e40g_base_sr4 == 0x1) ||
           (id->base.e40g_base_lr4 == 0x1) ||
           (id->base.e40g_active == 0x1)) {
         *lane_speed = TRX_LANE_SPEED_10G;
-    }
-    else {
+    } else {
      *lane_speed = TRX_LANE_SPEED_UNKNOWN;
     }
 
@@ -657,7 +691,7 @@ static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
                      sizeof(channel));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Channel register read failed. ret %d", ret);
-        return -EINVAL;
+        return ret;
     }
 
     *laneinfo = ~channel;
@@ -718,15 +752,20 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
 
 unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
 {
-    return 0;
+    /* Delay added as we are getting interrupt for LOS recovery but within 30ms
+     * we are getting LOS so it is false LOS recovery event. To avoid false
+     * event we are processing interrupt after 40ms
+     */
+    return msecs_to_jiffies(40);
 }
 
-struct qsfp_spec_ops sff8636_spec_ops = {
+const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
     .get_state = sff8636_get_state,
-    .tx_enable = sff8636_tx_enable,
-    .tx_disable = sff8636_tx_disable,
+    .mod_tx_disable = sff8636_mod_tx_disable,
+    .lane_tx_enable = sff8636_lane_tx_enable,
+    .lane_tx_disable = sff8636_lane_tx_disable,
     .check_features_impl = sff8636_check_feature_impl,
     .module_parse_power = sff8636_module_parse_power,
     .handle_max_power_exceed = sff8636_handle_max_power_exceed,

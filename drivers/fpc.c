@@ -4,8 +4,11 @@
  */
 #include "fpc.h"
 #include "qsfp.h"
+#include "lane.h"
 #include "transceiver_debugfs.h"
 #include "trx_sysfs.h"
+
+struct fpc *fpc_global[FPC_MAX_INSTANCES];
 
 const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     /* FPC_LED_MODE_SELECT */
@@ -19,6 +22,7 @@ const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
 const struct of_device_id fpc_qsfp_of_match[] = {
     { .compatible = FPC_COMPATIBLE },
     { .compatible = QSFP_COMPATIBLE },
+    { .compatible = LANE_COMPATIBLE },
     { },
 };
 MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
@@ -32,21 +36,30 @@ void *trx_ipc_log_buf = NULL;
 int fpc_read(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[2];
-    u8 bus_addr = fpc->i2c_address;
+    u8 bus_addr;
     int ret;
 
+    if (!fpc) {
+        TRX_LOG_ERR_NODEV("fpc is NULL");
+        return -EINVAL;
+    }
+
+    bus_addr = fpc->i2c_address;
+
     msgs[0].addr = bus_addr;
-    msgs[0].flags = 0;
+    msgs[0].flags = 0;    // write
     msgs[0].len = 1;
     msgs[0].buf = &dev_addr;
+
     msgs[1].addr = bus_addr;
     msgs[1].flags = I2C_M_RD;
     msgs[1].len = len;
     msgs[1].buf = buf;
 
     ret = i2c_transfer(fpc->i2c, msgs, ARRAY_SIZE(msgs));
-    if (ret < 0)
+    if (ret < 0) {
         return ret;
+    }
 
     return ret == ARRAY_SIZE(msgs) ? 0 : -EIO;
 }
@@ -58,15 +71,23 @@ int fpc_read(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
 int fpc_write(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[1];
-    u8 bus_addr = fpc->i2c_address;
+    u8 bus_addr;
     int ret;
+
+    if (!fpc) {
+        TRX_LOG_ERR_NODEV("fpc is NULL");
+        return -EINVAL;
+    }
+
+    bus_addr = fpc->i2c_address;
 
     msgs[0].addr = bus_addr;
     msgs[0].flags = 0;
     msgs[0].len = 1 + len;
     msgs[0].buf = kmalloc(1 + len, GFP_KERNEL);
-    if (!msgs[0].buf)
+    if (!msgs[0].buf) {
         return -ENOMEM;
+    }
 
     msgs[0].buf[0] = dev_addr;
     memcpy(&msgs[0].buf[1], buf, len);
@@ -75,8 +96,9 @@ int fpc_write(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
 
     kfree(msgs[0].buf);
 
-    if (ret < 0)
+    if (ret < 0) {
         return ret;
+    }
 
     return ret == ARRAY_SIZE(msgs) ? 0 : -EIO;
 }
@@ -112,8 +134,9 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
     int ret;
     u8 buf = 0;
 
-    if (!qsfp)
+    if (!qsfp) {
         return 0;
+    }
 
     ret = fpc_read(qsfp->fpc,
           FPC_PORT_REG[FPC_INPUT_PIN_INTERRUPT_STATUS][qsfp->port_num],
@@ -160,14 +183,15 @@ void fpc_enable_i2c_stuck_interrupt(const struct fpc *fpc)
 
     ret = fpc_write(fpc, FPC_I2C_SCL_STUCK_INTERRUPT_REGISTER, &buf,
                     sizeof(buf));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_WARN(fpc, "Failed to enable SCL stuck interrupt. ret %d", ret);
+    }
 
     ret = fpc_write(fpc, FPC_I2C_SDA_STUCK_INTERRUPT_REGISTER, &buf,
                     sizeof(buf));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_WARN(fpc, "Failed to enable SDA stuck interrupt. ret %d", ret);
-
+    }
 }
 
 /*
@@ -251,10 +275,6 @@ static int fpc_configure_i2c_address(struct fpc *fpc, u8 i2c_address)
     int ret;
     u8 buf;
 
-    /* Allow FPC402 HW to be properly configured by an internal POR time
-     * of maximum 60 msec, so that it will respond to i2c transfer.*/
-    mdelay(FPC_INTERNAL_TPOR);
-
     buf = i2c_address;
     ret = fpc_write(fpc, FPC_I2C_DEVICE_ID_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
@@ -284,6 +304,12 @@ static void fpc_cleanup(void *data)
 {
     struct fpc *fpc = data;
 
+    TRX_LOG_INFO(fpc, "");
+
+    if (fpc->instance_num < FPC_MAX_INSTANCES) {
+        fpc_global[fpc->instance_num] = NULL;
+    }
+
     kfree(fpc);
 }
 
@@ -293,8 +319,9 @@ static struct fpc *fpc_alloc(struct device *dev)
     int i;
 
     fpc = kzalloc(sizeof(*fpc), GFP_KERNEL);
-    if (!fpc)
+    if (!fpc) {
         return ERR_PTR(-ENOMEM);
+    }
 
     fpc->dev = dev;
 
@@ -308,6 +335,8 @@ static struct fpc *fpc_alloc(struct device *dev)
      * it need right shift by one position.
      */
     fpc->i2c_address = FPC_DEFAULT_I2C_ADDRESS >> 1;
+
+    fpc->debugfs_dir = NULL;
 
     return fpc;
 }
@@ -328,8 +357,9 @@ static int fpc_reset(const struct fpc *fpc)
 
     buf = 0;
     ret = fpc_write(fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_ERR(fpc, "Fail to revert port reset sequence. ret %d", ret);
+    }
 
     return ret;
 }
@@ -356,8 +386,37 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
 
     buf = FPC_OUT_A_DISABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
-    if (ret < 0)
+    if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
+    }
+}
+
+/* Reset particular QSFP port using reset gpio line */
+void fpc_reset_qsfp(const struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf;
+    struct fpc *fpc = qsfp->fpc;
+
+    buf = (1 << qsfp->port_num) ^ 0xF;
+    ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to write Reset sequence. ret %d", ret);
+        return;
+    }
+
+    buf = 1 << qsfp->port_num;
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to enable Reset gpio. ret %d", ret);
+        return;
+    }
+
+    buf = (1 << qsfp->port_num) ^ 0xF;
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
+    }
 }
 
 /*
@@ -392,6 +451,28 @@ static int fpc_probe(struct platform_device *pdev)
         return -EINVAL;
     }
 
+    ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
+    if (ret < 0) {
+        TRX_LOG_INFO(fpc, "Fail to get instance-num attribute. ret %d", ret);
+        return ret;
+    }
+
+    if ((fpc_instance_no & 0xFF) >= FPC_MAX_INSTANCES) {
+        TRX_LOG_INFO(fpc, "Invalid instance-num attribute");
+        return -EINVAL;
+    }
+    fpc->instance_num = fpc_instance_no & 0xFF;
+
+    /* Not applicable for 1st FPC402 constroller */
+    if (fpc->instance_num > 0)  {
+        /* Check previous FPC402 instance is NULL */
+        if (!fpc_global[fpc->instance_num-1]) {
+            TRX_LOG_INFO(fpc, "Defer as previous FPC402 instance %u not yet "
+                              "initilised", fpc->instance_num);
+            return -EPROBE_DEFER;
+        }
+    }
+
     ret = device_property_read_u32(fpc->dev, "i2c-address", &i2c_address);
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Fail to get i2c-address attribute. ret %d", ret);
@@ -423,20 +504,6 @@ static int fpc_probe(struct platform_device *pdev)
         TRX_LOG_INFO(fpc, "Not able to configure i2c address. ret %d", ret);
         return -EPROBE_DEFER;
     }
-
-    ret = device_property_read_u32(fpc->dev, "instance-num", &fpc_instance_no);
-    if (ret < 0) {
-        TRX_LOG_ERR(fpc, "Fail to get instance-num attribute. ret %d", ret);
-        return ret;
-    }
-
-    if ((fpc_instance_no & 0xFF) >= FPC_MAX_INSTANCES) {
-        TRX_LOG_ERR(fpc, "Invalid instance-num attribute");
-        return -EINVAL;
-    }
-    fpc->instance_num = fpc_instance_no & 0xFF;
-
-    TRX_LOG_INFO(fpc, "fpc instance number %u", fpc->instance_num);
 
     ret = fpc_reset(fpc);
     if (ret < 0) {
@@ -486,6 +553,13 @@ static int fpc_probe(struct platform_device *pdev)
     /* set driver data once everything is successful */
     platform_set_drvdata(pdev, fpc);
 
+    if (fpc_global[fpc->instance_num] == NULL) {
+        fpc_global[fpc->instance_num] = fpc;
+    } else {
+        TRX_LOG_ERR(fpc, "Instance-num %u already exists", fpc->instance_num);
+        return -EINVAL;
+    }
+
     TRX_LOG_INFO(fpc, "Success");
 
     return 0;
@@ -494,7 +568,7 @@ static int fpc_probe(struct platform_device *pdev)
 /*
  * Checks whether platform device is for FPC
  */
-static bool is_fpc_device(const struct platform_device *pdev)
+static u8 get_node_type(const struct platform_device *pdev)
 {
     struct device_node *node = pdev->dev.of_node;
     const struct of_device_id *id;
@@ -510,28 +584,59 @@ static bool is_fpc_device(const struct platform_device *pdev)
         return -EINVAL;
     }
 
-    if (strcmp(id->compatible, FPC_COMPATIBLE))
-        return false;
-    else
-        return true;
+    if (!strcmp(id->compatible, FPC_COMPATIBLE)) {
+        return FPC402;
+    } else if (!strcmp(id->compatible, QSFP_COMPATIBLE)) {
+        return QSFP_PORT;
+    } else if (!strcmp(id->compatible, LANE_COMPATIBLE)) {
+        return QSFP_LANE;
+    } else {
+        TRX_LOG_ERR(&pdev, "%s no match", id->compatible);
+        return QSFP_NONE;
+    }
 }
 
 /*
  * Unified probe function gets called when device tree node matches with
  * table fpc_qsfp_of_match for either FPC or QSFP
  */
-static int fpc_qsfp_probe(struct platform_device *pdev)
+static int fpc_qsfp_lane_probe(struct platform_device *pdev)
 {
-    if (is_fpc_device(pdev)) {
+    u8 node_type;
+
+    node_type = get_node_type(pdev);
+
+    switch (node_type) {
+    case FPC402:
         return fpc_probe(pdev);
-    } else {
+    case QSFP_PORT:
         return qsfp_probe(pdev);
+    case QSFP_LANE:
+        return lane_probe(pdev);
+    default:
+       return -EINVAL;
     }
 }
 
 static int fpc_remove(struct platform_device *pdev)
 {
     struct fpc *fpc = platform_get_drvdata(pdev);
+    struct qsfp *qsfpi;
+    u8 i;
+
+    TRX_LOG_INFO(fpc, "");
+
+    /* Free the interrupt to stop further interrupts */
+    devm_free_irq(fpc->dev, fpc->gpio_irq, fpc);
+
+    for (i = 0 ; i < FPC_MAX_PORTS ; i++) {
+        qsfpi = fpc->qsfp[i];
+        if (qsfpi) {
+            mutex_lock(&qsfpi->sm_mutex);
+            qsfpi->fpc = NULL;
+            mutex_unlock(&qsfpi->sm_mutex);
+        }
+    }
 
     fpc_reset(fpc);
 
@@ -542,35 +647,25 @@ static int fpc_remove(struct platform_device *pdev)
 
 static int fpc_qsfp_remove(struct platform_device *pdev)
 {
-    if (is_fpc_device(pdev)) {
+    u8 node_type;
+
+    node_type = get_node_type(pdev);
+
+    switch (node_type) {
+    case FPC402:
         return fpc_remove(pdev);
-    } else {
+    case QSFP_PORT:
         return qsfp_remove(pdev);
-    }
-}
-
-static void fpc_shutdown(struct platform_device *pdev)
-{
-    struct fpc *fpc = platform_get_drvdata(pdev);
-
-    if (fpc->gpio_irq)
-        devm_free_irq(fpc->dev, fpc->gpio_irq, fpc);
-
-}
-
-static void fpc_qsfp_shutdown(struct platform_device *pdev)
-{
-    if (is_fpc_device(pdev)) {
-        fpc_shutdown(pdev);
-    } else {
-        qsfp_shutdown(pdev);
+    case QSFP_LANE:
+        return lane_remove(pdev);
+    default:
+        return -EINVAL;
     }
 }
 
 static struct platform_driver fpc_qsfp_driver = {
-    .probe = fpc_qsfp_probe,
+    .probe = fpc_qsfp_lane_probe,
     .remove = fpc_qsfp_remove,
-    .shutdown = fpc_qsfp_shutdown,
     .driver = {
         .name = DRV_NAME,
         .of_match_table = fpc_qsfp_of_match,
