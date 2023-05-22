@@ -454,8 +454,6 @@ int lane_probe(struct platform_device *pdev)
         return PTR_ERR(lane);
     }
 
-    platform_set_drvdata(pdev, lane);
-
     ret = devm_add_action(lane->dev, lane_cleanup, lane);
     if (ret < 0) {
         TRX_LOG_ERR(lane, "devm_add_action failed. ret %d", ret);
@@ -468,6 +466,10 @@ int lane_probe(struct platform_device *pdev)
         TRX_LOG_ERR(lane, "Node match id not found");
         return -EINVAL;
     }
+
+    platform_set_drvdata(pdev, lane);
+
+    TRX_LOG_INFO(lane, "Success");
 
     return 0;
 }
@@ -487,7 +489,9 @@ int lane_remove(struct platform_device *pdev)
         lane_sm_event(lane, QSFP_E_REMOVE);
         rtnl_unlock();
 
-        sfp_unregister_socket(lane->sfp_bus);
+        if (lane->sfp_bus) {
+            sfp_unregister_socket(lane->sfp_bus);
+        }
 
         return 0;
     }
@@ -502,7 +506,9 @@ int lane_remove(struct platform_device *pdev)
     mutex_unlock(&qsfp->sm_mutex);
     rtnl_unlock();
 
-    sfp_unregister_socket(lane->sfp_bus);
+    if (lane->sfp_bus) {
+        sfp_unregister_socket(lane->sfp_bus);
+    }
 
     return 0;
 }
