@@ -13,15 +13,15 @@
 #endif
 
 #define SIM_REQ_MAX (40)
-#define SIM_READ_BUF_MAX (400)
+#define SIM_READ_BUF_MAX (500)
 
 #define SIM_INSERT "insert\n"
 #define SIM_REMOVE "remove\n"
-#define SIM_FAR_END_INSERT "far_end_insert\n"
-#define SIM_FAR_END_REMOVE "far_end_remove\n"
+#define SIM_LOS "los\n"
+#define SIM_LOS_RECOVERY "los_recovery\n"
 #define SIM_TX_FAULT "tx_fault\n"
-#define SIM_TX_FAULT_RECOVER "tx_fault_recover\n"
-#define SIM_CLEAR "clear_all_simulation\n"
+#define SIM_TX_FAULT_RECOVERY "tx_fault_recovery\n"
+#define SIM_CLEAR "clear\n"
 
 void transceiver_debugfs_init(void);
 void transceiver_debugfs_exit(void);
@@ -40,5 +40,6 @@ inline void spec_info_print(struct seq_file *s, u8 spec_id);
 extern void fpc_reset_qsfp(const struct qsfp *qsfp);
 const char *sff8472_mod_revision_to_str(u8 mod_rev_value);
 
+extern void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp);
 #endif
 

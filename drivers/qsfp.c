@@ -1035,7 +1035,7 @@ static void qsfp_sm_link_check_txf_los(struct qsfp *qsfp)
     }
 }
 
-static void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp)
+void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp)
 {
     u8 i;
     bool los = false;
@@ -1057,9 +1057,13 @@ static void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp)
             qsfp->status &= (~QSFP_F_LOS);
             qsfp->status &= (~QSFP_F_TX_FAULT);
             return;
-        } else if (lanei->status & QSFP_F_LOS) {
+        }
+
+        if (lanei->status & QSFP_F_LOS) {
             los = true;
-        } else if (lanei->status & QSFP_F_TX_FAULT) {
+        }
+
+        if (lanei->status & QSFP_F_TX_FAULT) {
             tx_fault = true;
         }
     }
