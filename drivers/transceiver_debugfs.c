@@ -2528,6 +2528,12 @@ static int qsfp_sim_lane_request(struct qsfp *qsfp, char *request)
         return -1;
     }
 
+    /* Added to remove static analysis error */
+    if ((start >= MAX_LANES) || (end >= MAX_LANES)) {
+        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
+        return -1;
+    }
+
     if ((start >= qsfp->num_lanes) || (end >= qsfp->num_lanes) ||
         (start > end)) {
         TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
