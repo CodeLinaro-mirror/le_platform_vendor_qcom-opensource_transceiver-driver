@@ -141,17 +141,8 @@ static void lane_sm_mod_insert(struct lane *lane)
     ret = sfp_module_insert(lane->sfp_bus,
                            (const struct sfp_eeprom_id*)&lane->qsfp->id);
     if (ret < 0) {
-        u8 *spec_id;
-        spec_id = (u8*)&lane->qsfp->id;
-        if (*spec_id == SFF8024_ID_SFP) {
-            TRX_LOG_ERR(lane, "sfp_module_insert upstream ops failed. ret %d",
-                              ret);
-            lane_sm_mod_next(lane, QSFP_MOD_ERROR);
-            return;
-        } else {
-            TRX_LOG_INFO(lane, "Ignore sfp_module_insert upstream"
-                               " ops error. ret %d", ret);
-        }
+        TRX_LOG_INFO(lane, "Ignore sfp_module_insert upstream"
+                           " ops error. ret %d", ret);
     } else {
         TRX_LOG_INFO(lane, "sfp_module_insert upstream ops successful");
     }
