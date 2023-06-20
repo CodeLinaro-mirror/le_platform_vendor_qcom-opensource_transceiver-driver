@@ -141,17 +141,8 @@ static void lane_sm_mod_insert(struct lane *lane)
     ret = sfp_module_insert(lane->sfp_bus,
                            (const struct sfp_eeprom_id*)&lane->qsfp->id);
     if (ret < 0) {
-        u8 *spec_id;
-        spec_id = (u8*)&lane->qsfp->id;
-        if (*spec_id == SFF8024_ID_SFP) {
-            TRX_LOG_ERR(lane, "sfp_module_insert upstream ops failed. ret %d",
-                              ret);
-            lane_sm_mod_next(lane, QSFP_MOD_ERROR);
-            return;
-        } else {
-            TRX_LOG_INFO(lane, "Ignore sfp_module_insert upstream"
-                               " ops error. ret %d", ret);
-        }
+        TRX_LOG_INFO(lane, "Ignore sfp_module_insert upstream"
+                           " ops error. ret %d", ret);
     } else {
         TRX_LOG_INFO(lane, "sfp_module_insert upstream ops successful");
     }
@@ -454,8 +445,6 @@ int lane_probe(struct platform_device *pdev)
         return PTR_ERR(lane);
     }
 
-    platform_set_drvdata(pdev, lane);
-
     ret = devm_add_action(lane->dev, lane_cleanup, lane);
     if (ret < 0) {
         TRX_LOG_ERR(lane, "devm_add_action failed. ret %d", ret);
@@ -468,6 +457,10 @@ int lane_probe(struct platform_device *pdev)
         TRX_LOG_ERR(lane, "Node match id not found");
         return -EINVAL;
     }
+
+    platform_set_drvdata(pdev, lane);
+
+    TRX_LOG_INFO(lane, "Success");
 
     return 0;
 }
@@ -487,7 +480,9 @@ int lane_remove(struct platform_device *pdev)
         lane_sm_event(lane, QSFP_E_REMOVE);
         rtnl_unlock();
 
-        sfp_unregister_socket(lane->sfp_bus);
+        if (lane->sfp_bus) {
+            sfp_unregister_socket(lane->sfp_bus);
+        }
 
         return 0;
     }
@@ -502,7 +497,9 @@ int lane_remove(struct platform_device *pdev)
     mutex_unlock(&qsfp->sm_mutex);
     rtnl_unlock();
 
-    sfp_unregister_socket(lane->sfp_bus);
+    if (lane->sfp_bus) {
+        sfp_unregister_socket(lane->sfp_bus);
+    }
 
     return 0;
 }

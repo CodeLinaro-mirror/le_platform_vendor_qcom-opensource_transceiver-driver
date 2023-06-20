@@ -2167,274 +2167,439 @@ static ssize_t qsfp_simulation_read(struct file *file, char __user *ubuf,
 
     scnprintf(buf, SIM_READ_BUF_MAX, "Simulation Remove: %s\nSimulation Far "
     "end: %s\n\nFollowing keywords should be used for simulation operations"
-    "\nInsert module:  %sRemove module:  %sInsert far end:  %sRemove far end:"
-    "  %sTX Fault:  %sTX Fault Recovery:  %sClear all simulation:  %s\n",
-    (qsfp->sim & QSFP_F_SIM_REMOVE) ? "Yes" : "No",
+    "\nInsert module:  %sRemove module:  %sLOS:  %sLOS Recovery:  %sTX Fault:"
+    "  %sTX Fault Recovery:  %sClear all simulation:  %s\nFor Lane level far "
+    "end simulations (LOS,LOS Recovery,TX Fault,TX Fault Recovery)\nMention "
+    "lane range after request.\nex: los-0-3 (los-start-end) for LOS on lane0 "
+    "to lane3.\n\n", (qsfp->sim & QSFP_F_SIM_REMOVE) ? "Yes" : "No",
     (qsfp->sim & QSFP_F_SIM_FAR_END) ? "Yes" : "No", SIM_INSERT, SIM_REMOVE,
-    SIM_FAR_END_INSERT, SIM_FAR_END_REMOVE, SIM_TX_FAULT, SIM_TX_FAULT_RECOVER,
-    SIM_CLEAR);
+    SIM_LOS, SIM_LOS_RECOVERY, SIM_TX_FAULT, SIM_TX_FAULT_RECOVERY, SIM_CLEAR);
 
     return simple_read_from_buffer(ubuf, count, ppos, buf, strlen(buf));;
 }
 
-static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
-                                     size_t count, loff_t *ppos)
+static void qsfp_sim_insert(struct qsfp *qsfp)
 {
-    u8 i;
-    ssize_t ret;
-    int ret1;
-    char request[SIM_REQ_MAX] = {0};
-    struct qsfp *qsfp = file->f_inode->i_private;
-    struct lane *lanei;
+    int ret;
 
-    ret = simple_write_to_buffer(request, SIM_REQ_MAX - 1, ppos, buf, count);
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "simple_write_to_buffer fails. ret %d", ret);
-        return ret;
+    /* Check whether Transceiver module state present or not */
+    if (qsfp->status & QSFP_F_PRESENT) {
+        TRX_LOG_ERR(qsfp, "Simulated insert rejected as module "
+                          "already present");
+        return;
     }
 
-    if (!strncmp(request, SIM_INSERT, sizeof(SIM_INSERT))) {
-        /* Check whether Transceiver module state present or not */
-        if (qsfp->status & QSFP_F_PRESENT) {
-            TRX_LOG_ERR(qsfp, "Simulated insert rejected as module already"
-                              " present");
-            return ret;
-        }
+    /* Check whether Transceiver module physically present or not */
+    ret = fpc_is_module_present(qsfp);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "fpc_is_module_present failed. ret %d", ret);
+        return;
+    } else if (ret != QSFP_PRESENT) {
+        TRX_LOG_ERR(qsfp, "Simulated insert rejected as module physically"
+                          " not present in the port");
+        return;
+    }
 
-        /* Check whether Transceiver module physically present or not */
-        ret1 = fpc_is_module_present(qsfp);
-        if (ret1 < 0) {
-            TRX_LOG_ERR(qsfp, "fpc_is_module_present failed. ret %d", ret1);
-            return ret;
-        } else if (ret1 != QSFP_PRESENT) {
-            TRX_LOG_ERR(qsfp, "Simulated insert rejected as module physically"
-                              " not present in the port");
-            return ret;
-        }
+    qsfp->sim &= (~QSFP_F_SIM_REMOVE);
+    qsfp_module_insert_irq(qsfp);
 
+    fpc_reset_qsfp(qsfp);
+
+    TRX_LOG_INFO(qsfp, "------ SIMULATED INSERT ------");
+}
+
+static void qsfp_sim_remove(struct qsfp *qsfp)
+{
+    if (!(qsfp->status & QSFP_F_PRESENT)) {
+        TRX_LOG_ERR(qsfp, "Simulated remove rejected as module not present");
+        return;
+    }
+
+    qsfp->sim |= QSFP_F_SIM_REMOVE;
+    qsfp_module_remove_irq(qsfp);
+
+    TRX_LOG_INFO(qsfp, "------ SIMULATED REMOVE ------");
+}
+
+static void qsfp_sim_los(struct qsfp *qsfp, u8 start, u8 end)
+{
+    u8 i;
+    u8 los_status;
+    u8 txf_status;
+    struct lane *lanei;
+    bool sim = false;
+
+    if (!(qsfp->status & QSFP_F_PRESENT)) {
+        TRX_LOG_ERR(qsfp, "Simulated LOS rejected as module not present");
+        return;
+    }
+
+    qsfp->need_poll = false;
+    cancel_delayed_work_sync(&qsfp->poll);
+
+    rtnl_lock();
+    mutex_lock(&qsfp->sm_mutex);
+
+    qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+    for (i = start ; i <= end ; i++) {
+        lanei = qsfp->lane[i];
+        if (lanei) {
+            if (!(lanei->status & QSFP_F_PRESENT)) {
+                TRX_LOG_ERR(lanei, "Simulated LOS rejected as "
+                                   "lane not present");
+            } else if (lanei->status & QSFP_F_LOS) {
+                TRX_LOG_ERR(lanei, "Simulated LOS rejected as "
+                                   "lane already in LOS");
+            } else {
+                sim = true;
+                qsfp->lanes_state |= (1 << (i + QSFP_LOS_SHIFT));
+                lanei->status |= QSFP_F_LOS;
+                lane_sm_event(lanei, QSFP_E_LOS);
+                TRX_LOG_INFO(lanei, "------ SIMULATED LOS ------");
+            }
+        } else {
+            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
+        }
+    }
+
+    if (sim) {
+        los_status = qsfp->status & QSFP_F_LOS;
+        txf_status = qsfp->status & QSFP_F_TX_FAULT;
+
+        qsfp_sm_link_update_txf_los_status(qsfp);
+
+        /* qsfp status changed from non-LOS to LOS */
+        if (los_status != (qsfp->status & QSFP_F_LOS)) {
+            qsfp_sm_event(qsfp, QSFP_E_LOS);
+            TRX_LOG_INFO(qsfp, "------ SIMULATED LOS ------");
+        }
+        /* qsfp status changed from no TX Fault to TX Fault */
+        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
+           qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
+           TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT (from LOS) "
+                              "------");
+        }
+    }
+
+    mutex_unlock(&qsfp->sm_mutex);
+    rtnl_unlock();
+}
+
+static void qsfp_sim_los_recovery(struct qsfp *qsfp, u8 start, u8 end)
+{
+    u8 i;
+    u8 los_status;
+    u8 txf_status;
+    struct lane *lanei;
+    bool sim = false;
+
+    if (!(qsfp->status & QSFP_F_PRESENT)) {
+        TRX_LOG_ERR(qsfp, "Simulated LOS Recovery rejected as"
+                          " module not present");
+        return;
+    }
+
+    qsfp->need_poll = false;
+    cancel_delayed_work_sync(&qsfp->poll);
+
+    rtnl_lock();
+    mutex_lock(&qsfp->sm_mutex);
+
+    qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+    for (i = start ; i <= end ; i++) {
+        lanei = qsfp->lane[i];
+        if (lanei) {
+            if (!(lanei->status & QSFP_F_PRESENT)) {
+                TRX_LOG_ERR(lanei, "Simulated LOS Recovery rejected as "
+                                   "lane not present");
+            } else if (lanei->status & QSFP_F_LOS) {
+                sim = true;
+                qsfp->lanes_state &= (~(1 << (i + QSFP_LOS_SHIFT)));
+                lanei->status &= (~QSFP_F_LOS);
+                lane_sm_event(lanei, QSFP_E_LOS_RECOVERY);
+                TRX_LOG_INFO(lanei, "------ SIMULATED LOS RECOVERY ------");
+            } else {
+                TRX_LOG_ERR(lanei, "Simulated LOS Recovery rejected as "
+                                   "lane not in LOS");
+            }
+        } else {
+            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
+        }
+    }
+
+    if (sim) {
+        los_status = qsfp->status & QSFP_F_LOS;
+        txf_status = qsfp->status & QSFP_F_TX_FAULT;
+
+        qsfp_sm_link_update_txf_los_status(qsfp);
+
+        /* qsfp status changed from LOS to non-LOS */
+        if (los_status != (qsfp->status & QSFP_F_LOS)) {
+            qsfp_sm_event(qsfp, QSFP_E_LOS_RECOVERY);
+            TRX_LOG_INFO(qsfp, "------ SIMULATED LOS RECOVERY ------");
+        }
+        /* qsfp status changed from TX Fault to no TX Fault */
+        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
+           qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
+           TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT RECOVERY (from LOS) "
+                              "------");
+        }
+    }
+
+    mutex_unlock(&qsfp->sm_mutex);
+    rtnl_unlock();
+}
+
+static void qsfp_sim_tx_fault(struct qsfp *qsfp, u8 start, u8 end)
+{
+    u8 i;
+    u8 txf_status;
+    struct lane *lanei;
+    bool sim = false;
+
+    if (!(qsfp->status & QSFP_F_PRESENT)) {
+        TRX_LOG_ERR(qsfp, "Simulated TX Fault rejected as"
+                          " module not present");
+        return;
+    }
+
+    qsfp->need_poll = false;
+    cancel_delayed_work_sync(&qsfp->poll);
+
+    rtnl_lock();
+    mutex_lock(&qsfp->sm_mutex);
+
+    qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+    for (i = start ; i <= end ; i++) {
+        lanei = qsfp->lane[i];
+        if (lanei) {
+            if (!(lanei->status & QSFP_F_PRESENT)) {
+                TRX_LOG_ERR(lanei, "Simulated TX Fault rejected as "
+                                   "lane not present");
+            } else if (lanei->status & QSFP_F_TX_FAULT) {
+                TRX_LOG_ERR(lanei, "Simulated TX Fault rejected as "
+                                   "lane already in TX Fault");
+            } else {
+                sim = true;
+                qsfp->lanes_state |= (1 << (i + QSFP_TX_FAULT_SHIFT));
+                lanei->status |= QSFP_F_TX_FAULT;
+                lane_sm_event(lanei, QSFP_E_TX_FAULT);
+                TRX_LOG_INFO(lanei, "------ SIMULATED TX FAULT ------");
+            }
+        } else {
+            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
+        }
+    }
+
+    if (sim) {
+        txf_status = qsfp->status & QSFP_F_TX_FAULT;
+        qsfp_sm_link_update_txf_los_status(qsfp);
+
+        /* qsfp status changed from no TX Fault to TX Fault */
+        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
+            qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
+            TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT ------");
+        }
+    }
+
+    mutex_unlock(&qsfp->sm_mutex);
+    rtnl_unlock();
+}
+
+static void qsfp_sim_tx_fault_recovery(struct qsfp *qsfp, u8 start, u8 end)
+{
+    u8 i;
+    u8 txf_status;
+    struct lane *lanei;
+    bool sim = false;
+
+    if (!(qsfp->status & QSFP_F_PRESENT)) {
+        TRX_LOG_ERR(qsfp, "Simulated TX Fault Recovery rejected as"
+                          " module not present");
+        return;
+    }
+
+    qsfp->need_poll = false;
+    cancel_delayed_work_sync(&qsfp->poll);
+
+    rtnl_lock();
+    mutex_lock(&qsfp->sm_mutex);
+
+    qsfp->sim |= QSFP_F_SIM_FAR_END;
+
+    for (i = start ; i <= end ; i++) {
+        lanei = qsfp->lane[i];
+        if (lanei) {
+            if (!(lanei->status & QSFP_F_PRESENT)) {
+                TRX_LOG_ERR(lanei, "Simulated TX Fault Recovery rejected as "
+                                   "lane not present");
+            } else if (lanei->status & QSFP_F_TX_FAULT) {
+                sim = true;
+                qsfp->lanes_state &= (~(1 << (i + QSFP_TX_FAULT_SHIFT)));
+                lanei->status &= (~QSFP_F_TX_FAULT);
+                lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
+                TRX_LOG_INFO(lanei, "------ SIMULATED TX FAULT RECOVERY "
+                                    "------");
+            } else {
+                TRX_LOG_ERR(lanei, "Simulated TX Fault Recovery rejected as "
+                                   "lane not in TX Fault");
+            }
+        } else {
+            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
+        }
+    }
+
+    if (sim) {
+        txf_status = qsfp->status & QSFP_F_TX_FAULT;
+        qsfp_sm_link_update_txf_los_status(qsfp);
+
+        /* qsfp status changed from TX Fault to no TX Fault */
+        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
+            qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
+            TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT RECOVERY "
+                               "------");
+        }
+    }
+
+    mutex_unlock(&qsfp->sm_mutex);
+    rtnl_unlock();
+}
+
+static void qsfp_sim_clear(struct qsfp *qsfp)
+{
+    if (qsfp->sim & QSFP_F_SIM_REMOVE) {
         qsfp->sim &= (~QSFP_F_SIM_REMOVE);
         qsfp_module_insert_irq(qsfp);
 
         fpc_reset_qsfp(qsfp);
 
-        TRX_LOG_INFO(qsfp, "-------------- SIMULATED INSERT --------------");
-
-        return ret;
+        TRX_LOG_INFO(qsfp, "------ SIMULATED INSERT ------");
     }
 
-    if (!strncmp(request, SIM_REMOVE, sizeof(SIM_REMOVE))) {
-        if (!(qsfp->status & QSFP_F_PRESENT)) {
-            TRX_LOG_ERR(qsfp, "Simulated remove rejected as module not present");
-            return ret;
+    if (qsfp->sim & QSFP_F_SIM_FAR_END) {
+        /* start polling to see actual hardware state which clears any
+         * simulated LOS and TX fault
+         */
+        qsfp->need_poll = true;
+        /* qsfp_check_state will mark whether poll needed or not */
+        qsfp_check_state(qsfp);
+        if (qsfp->need_poll) {
+            /* Poll once per second */
+            mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
         }
 
-        qsfp->sim |= QSFP_F_SIM_REMOVE;
-        qsfp_module_remove_irq(qsfp);
-
-        TRX_LOG_INFO(qsfp, "-------------- SIMULATED REMOVE --------------");
-
-        return ret;
+        qsfp->sim &= (~QSFP_F_SIM_FAR_END);
     }
 
-    if (!strncmp(request, SIM_FAR_END_INSERT, sizeof(SIM_FAR_END_INSERT))) {
-        if (!(qsfp->status & QSFP_F_PRESENT)) {
-            TRX_LOG_ERR(qsfp, "Simulated far_end_insert rejected as"
-                              " module not present");
-            return ret;
-        }
+    TRX_LOG_INFO(qsfp, "------ SIMULATION CLEAR ------");
+}
 
-        if (!(qsfp->status & QSFP_F_LOS)) {
-            TRX_LOG_ERR(qsfp, "Simulated far_end_insert rejected as far end "
-                              "already connected");
-            return ret;
-        }
+static int qsfp_sim_lane_request(struct qsfp *qsfp, char *request)
+{
+    char *p = strchr(request, '-');
+    u8 start = 0;
+    u8 end = 0;
 
-        qsfp->need_poll = false;
-        cancel_delayed_work_sync(&qsfp->poll);
-
-        rtnl_lock();
-        mutex_lock(&qsfp->sm_mutex);
-
-        qsfp->lanes_state = 0;
-        qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-        for (i = 0 ; i < qsfp->num_lanes ; i++) {
-            lanei = qsfp->lane[i];
-            if (lanei) {
-                lanei->status &= (~QSFP_F_LOS);
-                lane_sm_event(lanei, QSFP_E_LOS_RECOVERY);
-            }
-        }
-
-        qsfp->status &= (~QSFP_F_LOS);
-        qsfp_sm_event(qsfp, QSFP_E_LOS_RECOVERY);
-
-        TRX_LOG_INFO(qsfp, "---------- SIMULATED INSERT FAR END ----------");
-
-        mutex_unlock(&qsfp->sm_mutex);
-        rtnl_unlock();
-
-        return ret;
+    /* Make sure p++ 3 times in below code should not cause overflow */
+    if ((p - request) > (SIM_REQ_MAX - 3)) {
+        return -1;
     }
 
-    if (!strncmp(request, SIM_FAR_END_REMOVE, sizeof(SIM_FAR_END_REMOVE))) {
-        if (!(qsfp->status & QSFP_F_PRESENT)) {
-            TRX_LOG_ERR(qsfp, "Simulated far_end_remove rejected as"
-                              " module not present");
-            return ret;
-        }
-
-        if (qsfp->status & QSFP_F_LOS) {
-            TRX_LOG_ERR(qsfp, "Simulated far_end_remove rejected as far end "
-                              "not connected");
-            return ret;
-        }
-
-        qsfp->need_poll = false;
-        cancel_delayed_work_sync(&qsfp->poll);
-
-        rtnl_lock();
-        mutex_lock(&qsfp->sm_mutex);
-
-        qsfp->lanes_state = 0;
-        qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-        for (i = 0 ; i < qsfp->num_lanes ; i++) {
-            lanei = qsfp->lane[i];
-            if (lanei) {
-                lanei->status |= QSFP_F_LOS;
-                lane_sm_event(lanei, QSFP_E_LOS);
-            }
-        }
-
-        qsfp->status |= QSFP_F_LOS;
-        qsfp_sm_event(qsfp, QSFP_E_LOS);
-
-        TRX_LOG_INFO(qsfp, "----------- SIMULATED REMOVE FAR END -----------");
-
-        mutex_unlock(&qsfp->sm_mutex);
-        rtnl_unlock();
-
-        return ret;
+    p++;
+    /* Check whether integer or not */
+    if ((*p >= '0') && (*p <= '9')) {
+        start = *p - '0';
+    } else {
+        return -1;
     }
 
-    if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT))) {
-        if (!(qsfp->status & QSFP_F_PRESENT)) {
-            TRX_LOG_ERR(qsfp, "Simulated tx_fault rejected as"
-                              " module not present");
-            return ret;
-        }
-
-        if (qsfp->status & QSFP_F_TX_FAULT) {
-            TRX_LOG_ERR(qsfp, "Simulated tx_fault rejected as module already "
-                              "in tx fault state");
-            return ret;
-        }
-
-        qsfp->need_poll = false;
-        cancel_delayed_work_sync(&qsfp->poll);
-
-        rtnl_lock();
-        mutex_lock(&qsfp->sm_mutex);
-
-        qsfp->lanes_state = 0;
-        qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-        for (i = 0 ; i < qsfp->num_lanes ; i++) {
-            lanei = qsfp->lane[i];
-            if (lanei) {
-                lanei->status |= QSFP_F_TX_FAULT;
-                lane_sm_event(lanei, QSFP_E_TX_FAULT);
-            }
-        }
-
-        qsfp->status |= QSFP_F_TX_FAULT;
-        qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
-
-        TRX_LOG_INFO(qsfp, "----------- SIMULATED TX FAULT -----------");
-
-        mutex_unlock(&qsfp->sm_mutex);
-        rtnl_unlock();
-
-        return ret;
+    p++;
+    if (*p != '-') {
+        return -1;
     }
 
-    if (!strncmp(request, SIM_TX_FAULT_RECOVER, sizeof(SIM_TX_FAULT_RECOVER))) {
-        if (!(qsfp->status & QSFP_F_PRESENT)) {
-            TRX_LOG_ERR(qsfp, "Simulated tx_fault_recover rejected as"
-                              " module not present");
-            return ret;
-        }
-
-        if (!(qsfp->status & QSFP_F_TX_FAULT)) {
-            TRX_LOG_ERR(qsfp, "Simulated tx_fault_recover rejected as module "
-                              "not in tx fault state");
-            return ret;
-        }
-
-        qsfp->need_poll = false;
-        cancel_delayed_work_sync(&qsfp->poll);
-
-        rtnl_lock();
-        mutex_lock(&qsfp->sm_mutex);
-
-        qsfp->lanes_state = 0;
-        qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-        for (i = 0 ; i < qsfp->num_lanes ; i++) {
-            lanei = qsfp->lane[i];
-            if (lanei) {
-                lanei->status &= (~QSFP_F_TX_FAULT);
-                lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
-            }
-        }
-
-        TRX_LOG_INFO(qsfp, "--------- SIMULATED TX FAULT RECOVERY ---------");
-
-        qsfp->status &= (~QSFP_F_TX_FAULT);
-        qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
-
-        mutex_unlock(&qsfp->sm_mutex);
-        rtnl_unlock();
-
-        return ret;
+    p++;
+    if ((*p >= '0') && (*p <= '9')) {
+        end = *p - '0';
+    } else {
+        return -1;
     }
 
-    if (!strncmp(request, SIM_CLEAR, sizeof(SIM_CLEAR))) {
-        if (qsfp->sim & QSFP_F_SIM_REMOVE) {
-
-            qsfp->sim &= (~QSFP_F_SIM_REMOVE);
-            qsfp_module_insert_irq(qsfp);
-
-            fpc_reset_qsfp(qsfp);
-
-            TRX_LOG_INFO(qsfp, "-------------- SIMULATED INSERT "
-                               "--------------");
-        }
-
-        if (qsfp->sim & QSFP_F_SIM_FAR_END) {
-            /* start polling to see actual hardware state which clears any
-             * simulated LOS and TX fault
-             */
-            qsfp->need_poll = true;
-            /* qsfp_check_state will mark whether poll needed or not */
-            qsfp_check_state(qsfp);
-            if (qsfp->need_poll) {
-                /* Poll once per second */
-                mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
-            }
-
-            qsfp->sim &= (~QSFP_F_SIM_FAR_END);
-        }
-
-        TRX_LOG_INFO(qsfp, "--------------- SIMULATION CLEAR ---------------");
-
-        return ret;
+    /* Added to remove static analysis error */
+    if ((start >= MAX_LANES) || (end >= MAX_LANES)) {
+        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
+        return -1;
     }
 
-    TRX_LOG_ERR(qsfp, "Invalid input '%s'", request);
+    if ((start >= qsfp->num_lanes) || (end >= qsfp->num_lanes) ||
+        (start > end)) {
+        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
+        return -1;
+    }
 
-    return -EINVAL;
+    /* Ignore last 2 char \n */
+    if (!strncmp(request, SIM_LOS_RECOVERY, sizeof(SIM_LOS_RECOVERY) - 2)) {
+        qsfp_sim_los_recovery(qsfp, start, end);
+
+    } else if (!strncmp(request, SIM_LOS, sizeof(SIM_LOS) - 2)) {
+        qsfp_sim_los(qsfp, start, end);
+
+    } else if (!strncmp(request, SIM_TX_FAULT_RECOVERY,
+                        sizeof(SIM_TX_FAULT_RECOVERY) - 2)) {
+        qsfp_sim_tx_fault_recovery(qsfp, start, end);
+
+    } else if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT) - 2)) {
+        qsfp_sim_tx_fault(qsfp, start, end);
+
+    } else {
+        return -1;
+    }
+
+    return 0;
+}
+
+static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
+                                     size_t count, loff_t *ppos)
+{
+    ssize_t ret;
+    char request[SIM_REQ_MAX] = {0};
+    struct qsfp *qsfp = file->f_inode->i_private;
+
+    ret = simple_write_to_buffer(request, SIM_REQ_MAX - 1, ppos, buf, count);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "simple_write_to_buffer fails. ret %d", ret);
+
+    } else if (!strncmp(request, SIM_INSERT, sizeof(SIM_INSERT))) {
+        qsfp_sim_insert(qsfp);
+
+    } else if (!strncmp(request, SIM_REMOVE, sizeof(SIM_REMOVE))) {
+        qsfp_sim_remove(qsfp);
+
+    } else if (!strncmp(request, SIM_LOS_RECOVERY, sizeof(SIM_LOS_RECOVERY))) {
+        qsfp_sim_los_recovery(qsfp, 0, qsfp->num_lanes - 1);
+
+    } else if (!strncmp(request, SIM_LOS, sizeof(SIM_LOS))) {
+        qsfp_sim_los(qsfp, 0, qsfp->num_lanes - 1);
+
+    } else if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT))) {
+        qsfp_sim_tx_fault(qsfp, 0, qsfp->num_lanes - 1);
+
+    } else if (!strncmp(request, SIM_TX_FAULT_RECOVERY,
+                        sizeof(SIM_TX_FAULT_RECOVERY))) {
+        qsfp_sim_tx_fault_recovery(qsfp, 0, qsfp->num_lanes - 1);
+
+    } else if (!strncmp(request, SIM_CLEAR, sizeof(SIM_CLEAR))) {
+        qsfp_sim_clear(qsfp);
+
+    } else if (qsfp_sim_lane_request(qsfp, request)) {
+        TRX_LOG_ERR(qsfp, "Invalid input %s", request);
+        return -EINVAL;
+    }
+
+    return ret;
 }
 
 static const struct file_operations qsfp_debug_qsfp_simulation_fops = {
