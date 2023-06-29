@@ -21,8 +21,8 @@ int transceiver_led_on (const struct qsfp *qsfp, u8 led_num)
         return ERROR_INVALID_LED_NUM_INPUT;
     }
 
-    if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        TRX_LOG_WARN(qsfp, "QSFP module is not attached\n");
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        TRX_LOG_WARN(qsfp, "QSFP transceiver not inserted");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 
@@ -122,8 +122,8 @@ int transceiver_led_brightness_set(struct qsfp *qsfp,
         return ERROR_INVALID_LED_NUM_INPUT;
     }
 
-    if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        TRX_LOG_WARN(qsfp, "QSFP module is not attached\n");
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        TRX_LOG_WARN(qsfp, "QSFP transceiver not inserted");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 
@@ -223,8 +223,8 @@ int transceiver_led_blink_set(struct qsfp *qsfp, u8 led_num,
         return ERROR_INVALID_BLINK_INPUT;
     }
 
-    if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        TRX_LOG_WARN(qsfp, "QSFP module is not attached\n");
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        TRX_LOG_WARN(qsfp, "QSFP transceiver not inserted");
         return ERROR_QSFP_MODULE_PRESENCE;
     }
 

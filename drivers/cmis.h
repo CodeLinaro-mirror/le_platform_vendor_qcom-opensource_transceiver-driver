@@ -9,23 +9,23 @@
 
 /* Read from page 0 */
 struct cmis_eeprom_base {
-    // byte 128
+    /* byte 128 */
     u8 phys_id;
     char vendor_name[16];
-    // byte 145
+    /* byte 145 */
     char vendor_oui[3];
-    // byte 148
+    /* byte 148 */
     char vendor_pn[16];
-    // byte 164
+    /* byte 164 */
     char vendor_rev[2];
-    // byte 166
+    /* byte 166 */
     char vendor_sn[16];
-    // byte 182
+    /* byte 182 */
     u8 datecode[8];
-    // byte 190
+    /* byte 190 */
     u8 clei_code[10];
 
-    // byte 200
+    /* byte 200 */
     u8 reserved_1:5;
     u8 power_class:3;
 
@@ -34,7 +34,7 @@ struct cmis_eeprom_base {
     u8 baselen:6;
     u8 len_mulplier:2;
 
-    // byte 203
+    /* byte 203 */
     u8 connector;
 
     u8 atten_5ghz;
@@ -43,43 +43,42 @@ struct cmis_eeprom_base {
     u8 atten_25p8ghz;
     u8 reserved_2[2];
 
-    // byte 210
+    /* byte 210 */
     u8 medialane_unsup;
 
     u8 breakout_config:4;
     u8 reserved_3:4;
 
-    // byte 212
+    /* byte 212 */
     u8 media_interface_tech;
     u8 reserved_4[9];
 
-    // byte 222
+    /* byte 222 */
     u8 checksum;
-    //u8 custom[33];
 } __packed;
 
 /* Read from page 1 */
 struct cmis_eeprom_ext {
-    // byte 130
+    /* byte 130 */
     u8 hw_major_rev;
     u8 hw_minor_rev;
 
-    // byte 132
+    /* byte 132 */
     u8 baselen_smf:6;
     u8 len_mulplier_smf:2;
 
-    // byte 133
+    /* byte 133 */
     u8 len_om5;
     u8 len_om4;
     u8 len_om3;
     u8 len_om2;
     u8 reserved_0;
 
-    // byte 138
+    /* byte 138 */
     u16 nominal_wavelength;
     u16 wavelength_tolerance;
 
-    // byte 142
+    /* byte 142 */
     u8 banks:2;
     u8 page3:1;
     u8 page5:1;
@@ -88,23 +87,23 @@ struct cmis_eeprom_ext {
     u8 vdmpage20_2F:1;
     u8 netpathpage16_17:1;
 
-    // byte 143
+    /* byte 143 */
     u8 duration[2];
 
-    // byte 145
+    /* byte 145 */
     u8 aux_mon_obs:3;
     u8 page15:1;
     u8 epps:1;
     u8 txclk:2;
     u8 cooling_impl:1;
 
-    // byte 146
+    /* byte 146 */
     u8 max_temp;
     u8 min_temp;
     u16 propagation_delay;
     u8 volt_min;
 
-    // byte 151
+    /* byte 151 */
     u8 tx_dis_mod_wide:1;
     u8 tx_dis_fast:1;
     u8 rx_los_fast:1;
@@ -115,7 +114,7 @@ struct cmis_eeprom_ext {
 
     u8 cdr_pow_saved_per_lane;
 
-    // byte 153
+    /* byte 153 */
     u8 tx_inputeq_max:4;
     u8 rx_output_level0:1;
     u8 rx_output_level1:1;
@@ -125,7 +124,7 @@ struct cmis_eeprom_ext {
     u8 rx_eq_precursor_max:4;
     u8 rx_eq_postcursor_max:4;
 
-    // byte 155
+    /* byte 155 */
     u8 tx_polarity_flip:1;
     u8 tx_dis_sup:1;
     u8 tx_dis_autosquelch_sup:1;
@@ -134,7 +133,7 @@ struct cmis_eeprom_ext {
     u8 transmitter_tunable:1;
     u8 wavelen_ctrlable:1;
 
-    // byte 156
+    /* byte 156 */
     u8 rx_polarity_flip:1;
     u8 rx_dis_sup:1;
     u8 rx_dis_autosquelch_sup:1;
@@ -147,13 +146,13 @@ struct cmis_eeprom_ext {
     u8 tx_adap_eq_fail_sup:1;
     u8 reserved_3:4;
 
-    // byte 158
+    /* byte 158 */
     u8 reserved_4:1;
     u8 rx_los_sup:1;
     u8 rx_cdr_lol_sup:1;
     u8 reserved_5:5;
 
-    // byte 159
+    /* byte 159 */
     u8 temp_mon_sup:1;
     u8 volt_mon_sup:1;
     u8 aux1_mon_sup:1;
@@ -168,7 +167,7 @@ struct cmis_eeprom_ext {
     u8 tx_bias_cur_scal:2;
     u8 reserved_7:3;
 
-    // byte 161
+    /* byte 161 */
     u8 tx_cdr_sup:1;
     u8 tx_cdr_bypass_sup:1;
     u8 tx_eqfixedmanual_ctrl_sup:1;
@@ -177,7 +176,7 @@ struct cmis_eeprom_ext {
     u8 tx_eqrecal_buf_sup:2;
     u8 reserved_8:1;
 
-    // byte 162
+    /* byte 162 */
     u8 rx_cdr_sup:1;
     u8 rx_cdr_bypass_sup:1;
     u8 rx_ampl_ctrl_sup:1;
@@ -188,25 +187,25 @@ struct cmis_eeprom_ext {
 
     u8 cdb[4];
 
-    // byte 167
+    /* byte 167 */
     u8 max_dur_mod_powup:4;
     u8 max_dur_mod_powdown:4;
 
     u8 max_dur_dptx_on:4;
     u8 max_dur_dptx_off:4;
 
-    // byte 169
+    /* byte 169 */
     u8 reserved_10[7];
 
-    // byte 176
+    /* byte 176 */
     u8 medialane_app[15];
     u8 custom[32];
 
-    // byte 223
+    /* byte 223 */
     u8 apps_descp[28];
-    // byte 251
+    /* byte 251 */
     u8 reserved_11[4];
-    // byte 255
+    /* byte 255 */
     u8 checksum;
 } __packed;
 
@@ -220,9 +219,6 @@ struct cmis_id_stat {
     u8 step_config_only:1;
     u8 flat_mem:1;
 
-    u8 irq_deasserted:1;
-    u8 mod_state:3;
-    u8 reserved_3:4;
 } __packed;
 
 struct cmis_eeprom_id {
@@ -230,69 +226,48 @@ struct cmis_eeprom_id {
     struct cmis_eeprom_ext  ext;
 } __packed;
 
-struct cmis_irq_flags {
+struct cmis_mod_state {
     u8 irq_deasserted:1;
     u8 mod_state:3;
     u8 reserved_1:4;
-
-    u8 bank0_page11:1;
-    u8 bank0_page12:1;
-    u8 bank0_page14:1;
-    u8 bank0_page2c:1;
-    u8 reserved_2:4;
-
-    u8 bank1:4;
-    u8 reserved_3:4;
-
-    u8 bank2:4;
-    u8 reserved_4:4;
-
-    u8 bank3:4;
-    u8 reserved_5:4;
-
 } __packed;
 
-struct cmis_bank0_page11 {
-    u8 dp_state_lane1:4;
-    u8 dp_state_lane2:4;
+struct cmis_temp_volt {
+    /* byte 9 */
+    u8 temp_alarm_warn:4;
+    u8 volt_alarm_warn:4;
+} __packed;
 
-    u8 dp_state_lane3:4;
-    u8 dp_state_lane4:4;
-
-    u8 dp_state_lane5:4;
-    u8 dp_state_lane6:4;
-
-    u8 dp_state_lane7:4;
-    u8 dp_state_lane8:4;
-
-    u8 rx_output_status;
-    u8 tx_output_status;
-
-    u8 dp_state_changed;
-    /* byte 86 */
+/* Read from page 0x11 */
+struct cmis_lane_flags {
+    /* byte 135 */
     u8 tx_failure;
     u8 tx_los;
     u8 tx_cdr_lol;
     u8 tx_adap_eq_fail;
 
+    /* byte 139 */
     u8 tx_power_high_alarm;
     u8 tx_power_low_alarm;
     u8 tx_power_high_warn;
     u8 tx_power_low_warn;
 
+    /* byte 143 */
     u8 tx_bias_high_alarm;
     u8 tx_bias_low_alarm;
     u8 tx_bias_high_warn;
     u8 tx_bias_low_warn;
 
-    /* byte 98 */
+    /* byte 147 */
     u8 rx_los;
     u8 rx_cdr_lol;
+
+    /* byte 149 */
     u8 rx_power_high_alarm;
     u8 rx_power_low_alarm;
     u8 rx_power_high_warn;
     u8 rx_power_low_warn;
-    u8 rx_output_status_changed;
+
 } __packed;
 
 struct cmis_thresholds {
@@ -336,14 +311,14 @@ struct cmis_thresholds {
 
 enum {
     CMIS_MOD_CFG                     = QSFP_ADDR(0, 0x0,   2),
-    CMIS_IRQ_FLAGS                   = QSFP_ADDR(0, 0x0,   3),
+    CMIS_MOD_STATE                   = QSFP_ADDR(0, 0x0,   3),
+    CMIS_TEMP_VOLT_FLAGS             = QSFP_ADDR(0, 0x0,   9),
     CMIS_MOD_TEMPMON                 = QSFP_ADDR(0, 0x0,  14),
     CMIS_MOD_VCCMON                  = QSFP_ADDR(0, 0x0,  16),
     CMIS_MOD_GLOBAL_CTRL             = QSFP_ADDR(0, 0x0,  26),
+    CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
     CMIS_ACTIVE_FIRMWARE             = QSFP_ADDR(0, 0x0,  39),
     CMIS_MOD_FAULT_CAUSE             = QSFP_ADDR(0, 0x0,  41),
-    CMIS_MODULE_CONTROLS             = QSFP_ADDR(0, 0x0,  26),
-    CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
     CMIS_ID                          = QSFP_ADDR(0, 0x0, 128),
     CMIS_POWER_CLASS                 = QSFP_ADDR(0, 0x0, 200),
     CMIS_LANE_INFO                   = QSFP_ADDR(0, 0x0, 210),
@@ -352,28 +327,20 @@ enum {
     CMIS_ID_EXT                      = QSFP_ADDR(0, 0x1, 130),
 
     CMIS_DDM_TH                      = QSFP_ADDR(0, 0x02, 128),
+
     CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
     CMIS_PAGE10_MASKS                = QSFP_ADDR(0, 0x10, 213),
-    CMIS_TX_FAILURE_MASK             = QSFP_ADDR(0, 0x10, 214),
-    CMIS_RX_LOS_MASK                 = QSFP_ADDR(0, 0x10, 226),
 
-    CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 128),
-    CMIS_TX_FAILURE                  = QSFP_ADDR(0, 0x11, 135),
-    CMIS_RX_LOS                      = QSFP_ADDR(0, 0x11, 147),
+    CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 135),
     CMIS_TX_POWER                    = QSFP_ADDR(0, 0x11, 154),
     CMIS_TX_BIAS                     = QSFP_ADDR(0, 0x11, 170),
     CMIS_RX_POWER                    = QSFP_ADDR(0, 0x11, 186),
 
     CMIS_PAGE12_MASKS                = QSFP_ADDR(0, 0x12, 239),
-    CMIS_BANK0_PAGE12                = QSFP_ADDR(0, 0x12, 128),
 
     CMIS_PAGE13_MASKS                = QSFP_ADDR(0, 0x13, 206),
 
-    CMIS_BANK0_PAGE14                = QSFP_ADDR(0, 0x14, 128),
-
     CMIS_PAGE17_MASKS                = QSFP_ADDR(0, 0x17, 192),
-
-    CMIS_BANK0_PAGE2C                = QSFP_ADDR(0, 0x2C, 128),
 };
 
 #define CMIS_LOW_POWER_REQ_SW   (BIT(4))

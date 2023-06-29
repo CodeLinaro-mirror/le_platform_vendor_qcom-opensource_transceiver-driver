@@ -613,10 +613,10 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
         seq_printf(s, "Module present: Yes\n");
         seq_printf(s, "Module probe attempts: %d\n",
                    PROBE_RETRY - qsfp->sm_mod_tries);
-        seq_printf(s, "LOS: %d\n", !!(qsfp->status & QSFP_F_LOS));
+        seq_printf(s, "RX LOS: %d\n", !!(qsfp->status & QSFP_F_RX_LOS));
         seq_printf(s, "TX Fault: %d\n", !!(qsfp->status & QSFP_F_TX_FAULT));
         seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
-        seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_LOS ? "LOS":"",
+        seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_RX_LOS ? "RX_LOS":"",
                    qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
                    qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
     } else {
@@ -633,7 +633,7 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
 
         if (lanei->status & QSFP_F_PRESENT) {
             seq_printf(s, "Lane present: Yes\n");
-            seq_printf(s, "LOS: %d\n", !!(lanei->status & QSFP_F_LOS));
+            seq_printf(s, "RX LOS: %d\n", !!(lanei->status & QSFP_F_RX_LOS));
             seq_printf(s, "TX Fault: %d\n", !!(lanei->status & QSFP_F_TX_FAULT));
             seq_printf(s, "TX Disable: %d\n", !!(lanei->status & QSFP_F_TX_DISABLE));
         } else {
@@ -645,8 +645,8 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
         seq_printf(s, "\nSimulation Remove: Yes\n");
     }
 
-    if (qsfp->sim & QSFP_F_SIM_FAR_END) {
-        seq_printf(s, "\nSimulation Far end: Yes\n");
+    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+        seq_printf(s, "\nSimulation Flags: Yes\n");
     }
 
     mutex_unlock(&qsfp->sm_mutex);
@@ -675,17 +675,57 @@ static int qsfp_debug_qsfp_port_num_info_show(struct seq_file *s, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_port_num_info);
 
+static int qsfp_debug_qsfp_flags_show(struct seq_file *s,
+                                      void *data)
+{
+    struct qsfp *qsfp = s->private;
+    struct qsfp_flags flags;
+
+    flags = qsfp->flags;
+
+    seq_printf(s,  "Temperature High Alarm: %s\nTemperature Low Alarm: %s\n"
+    "Temperature High Warning: %s\nTemperature Low Warning: %s\n\nVoltage "
+    "High Alarm: %s\nVoltage Low Alarm: %s\nVoltage High Warning: %s\nVoltage "
+    "Low Warning: %s\n\nBelow are Lane flags (LSB for lane0 and MSB for "
+    "lane7)\n\n0x%02X RX LOS\n0x%02X TX Fault\n0x%02X TX LOS\n\n0x%02X RX CDR "
+    "LOL\n0x%02X TX CDR LOL\n0x%02X TX Adaptive EQ Fault\n\n0x%02X RX Power "
+    "High Alarm\n0x%02X RX Power Low Alarm\n0x%02X RX Power High Warning\n"
+    "0x%02X RX Power Low Warning\n\n0x%02X TX Power High Alarm\n0x%02X TX "
+    "Power Low Alarm\n0x%02X TX Power High Warning\n0x%02X TX Power Low "
+    "Warning\n\n0x%02X TX Bias High Alarm\n0x%02X TX Bias Low Alarm\n0x%02X TX"
+    " Bias High Warning\n0x%02X TX Bias Low Warning\n\n",
+    (flags.temp & QSFP_TEMP_HIGH_ALARM) ? "Yes" : "No",
+    (flags.temp & QSFP_TEMP_LOW_ALARM) ? "Yes" : "No",
+    (flags.temp & QSFP_TEMP_HIGH_WARN) ? "Yes" : "No",
+    (flags.temp & QSFP_TEMP_LOW_WARN) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_HIGH_ALARM) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_LOW_ALARM) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_HIGH_WARN) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_LOW_WARN) ? "Yes" : "No",
+    flags.rx_los, flags.tx_fault, flags.tx_los, flags.rx_cdr_lol,
+    flags.tx_cdr_lol, flags.tx_adap_eq_fault, flags.rx_power_high_alarm,
+    flags.rx_power_low_alarm, flags.rx_power_high_warn,
+    flags.rx_power_low_warn, flags.tx_power_high_alarm,
+    flags.tx_power_low_alarm, flags.tx_power_high_warn,
+    flags.tx_power_low_warn, flags.tx_bias_high_alarm,
+    flags.tx_bias_low_alarm, flags.tx_bias_high_warn,
+    flags.tx_bias_low_warn);
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_flags);
+
 static int qsfp_debug_qsfp_module_identifier_info_show(struct seq_file *s,
                                void *data)
 {
     struct qsfp *qsfp = s->private;
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing
+    /* Ensure that the transceiver inserted before processing
        showing module identifier type even module was not
        probed to handle un implemented module types       */
-    if (qsfp->sm_mod_state < QSFP_MOD_ERROR) {
-        seq_printf(s, "QSFP module is not attached\n");
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -701,9 +741,9 @@ static int qsfp_debug_revision_info_show(struct seq_file *s, void *data)
     char revSpec[75];
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -739,9 +779,9 @@ static int qsfp_debug_connector_show(struct seq_file *s, void *data)
     u8 *spec_id = (u8*)&qsfp->id;
     char vendor_data[75] ={};
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -783,9 +823,9 @@ static int qsfp_debug_vendor_info_show(struct seq_file *s, void *data)
     struct sfp_eeprom_id *sff8472_id;
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -858,9 +898,9 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
     int16_t tempc = 0;
     int ret;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -961,9 +1001,9 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
     u16 supply_voltage_t = 0;
     int ret;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -1068,9 +1108,9 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
     u8 sfp_rx_power[2] = {0};
     int ret;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -1222,9 +1262,9 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
     u8 cmis_tx_bias_multiplier = 1;
     int ret;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -1439,9 +1479,9 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
     u16 cmis_tx_power_t[8] = {0};
     int ret;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -1789,9 +1829,9 @@ static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
     struct cmis_thresholds cmis_ddm_limits = {0};
     int ret = 0;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
     switch (*spec_id) {
@@ -2163,17 +2203,38 @@ static ssize_t qsfp_simulation_read(struct file *file, char __user *ubuf,
                                     size_t count, loff_t *ppos)
 {
     struct qsfp *qsfp = file->f_inode->i_private;
+    struct qsfp_flags sf;
     char buf[SIM_READ_BUF_MAX] = "";
 
-    scnprintf(buf, SIM_READ_BUF_MAX, "Simulation Remove: %s\nSimulation Far "
-    "end: %s\n\nFollowing keywords should be used for simulation operations"
-    "\nInsert module:  %sRemove module:  %sLOS:  %sLOS Recovery:  %sTX Fault:"
-    "  %sTX Fault Recovery:  %sClear all simulation:  %s\nFor Lane level far "
-    "end simulations (LOS,LOS Recovery,TX Fault,TX Fault Recovery)\nMention "
-    "lane range after request.\nex: los-0-3 (los-start-end) for LOS on lane0 "
-    "to lane3.\n\n", (qsfp->sim & QSFP_F_SIM_REMOVE) ? "Yes" : "No",
-    (qsfp->sim & QSFP_F_SIM_FAR_END) ? "Yes" : "No", SIM_INSERT, SIM_REMOVE,
-    SIM_LOS, SIM_LOS_RECOVERY, SIM_TX_FAULT, SIM_TX_FAULT_RECOVERY, SIM_CLEAR);
+    sf = qsfp->sim_flags;
+
+    scnprintf(buf, SIM_READ_BUF_MAX, "Simulation Remove: %s\nSimulation Flags:"
+    " %s\n\nTemperature High Alarm: %s\nTemperature Low Alarm: %s\nTemperature"
+    " High Warning: %s\nTemperature Low Warning: %s\n\nVoltage High Alarm: %s"
+    "\nVoltage Low Alarm: %s\nVoltage High Warning: %s\nVoltage Low Warning: "
+    "%s\n\nBelow are Lane flags (LSB for lane0 and MSB for lane7)\n\n0x%02X RX"
+    " LOS\n0x%02X TX Fault\n0x%02X TX LOS\n\n0x%02X RX CDR LOL\n0x%02X TX CDR "
+    "LOL\n0x%02X TX Adaptive EQ Fault\n\n0x%02X RX Power High Alarm\n0x%02X RX"
+    " Power Low Alarm\n0x%02X RX Power High Warning\n0x%02X RX Power Low "
+    "Warning\n\n0x%02X TX Power High Alarm\n0x%02X TX Power Low Alarm\n0x%02X "
+    "TX Power High Warning\n0x%02X TX Power Low Warning\n\n0x%02X TX Bias High"
+    " Alarm\n0x%02X TX Bias Low Alarm\n0x%02X TX Bias High Warning\n0x%02X TX "
+    "Bias Low Warning\n\n", (qsfp->sim & QSFP_F_SIM_REMOVE) ? "Yes" : "No",
+    (qsfp->sim & QSFP_F_SIM_FLAGS) ? "Yes" : "No",
+    (sf.temp & QSFP_TEMP_HIGH_ALARM) ? "Yes" : "No",
+    (sf.temp & QSFP_TEMP_LOW_ALARM) ? "Yes" : "No",
+    (sf.temp & QSFP_TEMP_HIGH_WARN) ? "Yes" : "No",
+    (sf.temp & QSFP_TEMP_LOW_WARN) ? "Yes" : "No",
+    (sf.volt & QSFP_VOLT_HIGH_ALARM) ? "Yes" : "No",
+    (sf.volt & QSFP_VOLT_LOW_ALARM) ? "Yes" : "No",
+    (sf.volt & QSFP_VOLT_HIGH_WARN) ? "Yes" : "No",
+    (sf.volt & QSFP_VOLT_LOW_WARN) ? "Yes" : "No",
+    sf.rx_los, sf.tx_fault, sf.tx_los, sf.rx_cdr_lol, sf.tx_cdr_lol,
+    sf.tx_adap_eq_fault, sf.rx_power_high_alarm, sf.rx_power_low_alarm,
+    sf.rx_power_high_warn, sf.rx_power_low_warn, sf.tx_power_high_alarm,
+    sf.tx_power_low_alarm, sf.tx_power_high_warn, sf.tx_power_low_warn,
+    sf.tx_bias_high_alarm, sf.tx_bias_low_alarm, sf.tx_bias_high_warn,
+    sf.tx_bias_low_warn);
 
     return simple_read_from_buffer(ubuf, count, ppos, buf, strlen(buf));;
 }
@@ -2221,255 +2282,26 @@ static void qsfp_sim_remove(struct qsfp *qsfp)
     TRX_LOG_INFO(qsfp, "------ SIMULATED REMOVE ------");
 }
 
-static void qsfp_sim_los(struct qsfp *qsfp, u8 start, u8 end)
+static void qsfp_sim_flags_change(struct qsfp *qsfp)
 {
-    u8 i;
-    u8 los_status;
-    u8 txf_status;
-    struct lane *lanei;
-    bool sim = false;
-
     if (!(qsfp->status & QSFP_F_PRESENT)) {
-        TRX_LOG_ERR(qsfp, "Simulated LOS rejected as module not present");
+        TRX_LOG_ERR(qsfp, "Simulated flags change rejected as module not present");
         return;
     }
 
-    qsfp->need_poll = false;
-    cancel_delayed_work_sync(&qsfp->poll);
+    qsfp->sim |= QSFP_F_SIM_FLAGS;
 
-    rtnl_lock();
-    mutex_lock(&qsfp->sm_mutex);
+    qsfp_stop_poll(qsfp);
 
-    qsfp->sim |= QSFP_F_SIM_FAR_END;
+    qsfp_check_state(qsfp);
 
-    for (i = start ; i <= end ; i++) {
-        lanei = qsfp->lane[i];
-        if (lanei) {
-            if (!(lanei->status & QSFP_F_PRESENT)) {
-                TRX_LOG_ERR(lanei, "Simulated LOS rejected as "
-                                   "lane not present");
-            } else if (lanei->status & QSFP_F_LOS) {
-                TRX_LOG_ERR(lanei, "Simulated LOS rejected as "
-                                   "lane already in LOS");
-            } else {
-                sim = true;
-                qsfp->lanes_state |= (1 << (i + QSFP_LOS_SHIFT));
-                lanei->status |= QSFP_F_LOS;
-                lane_sm_event(lanei, QSFP_E_LOS);
-                TRX_LOG_INFO(lanei, "------ SIMULATED LOS ------");
-            }
-        } else {
-            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
-        }
-    }
-
-    if (sim) {
-        los_status = qsfp->status & QSFP_F_LOS;
-        txf_status = qsfp->status & QSFP_F_TX_FAULT;
-
-        qsfp_sm_link_update_txf_los_status(qsfp);
-
-        /* qsfp status changed from non-LOS to LOS */
-        if (los_status != (qsfp->status & QSFP_F_LOS)) {
-            qsfp_sm_event(qsfp, QSFP_E_LOS);
-            TRX_LOG_INFO(qsfp, "------ SIMULATED LOS ------");
-        }
-        /* qsfp status changed from no TX Fault to TX Fault */
-        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
-           qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
-           TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT (from LOS) "
-                              "------");
-        }
-    }
-
-    mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
-}
-
-static void qsfp_sim_los_recovery(struct qsfp *qsfp, u8 start, u8 end)
-{
-    u8 i;
-    u8 los_status;
-    u8 txf_status;
-    struct lane *lanei;
-    bool sim = false;
-
-    if (!(qsfp->status & QSFP_F_PRESENT)) {
-        TRX_LOG_ERR(qsfp, "Simulated LOS Recovery rejected as"
-                          " module not present");
-        return;
-    }
-
-    qsfp->need_poll = false;
-    cancel_delayed_work_sync(&qsfp->poll);
-
-    rtnl_lock();
-    mutex_lock(&qsfp->sm_mutex);
-
-    qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-    for (i = start ; i <= end ; i++) {
-        lanei = qsfp->lane[i];
-        if (lanei) {
-            if (!(lanei->status & QSFP_F_PRESENT)) {
-                TRX_LOG_ERR(lanei, "Simulated LOS Recovery rejected as "
-                                   "lane not present");
-            } else if (lanei->status & QSFP_F_LOS) {
-                sim = true;
-                qsfp->lanes_state &= (~(1 << (i + QSFP_LOS_SHIFT)));
-                lanei->status &= (~QSFP_F_LOS);
-                lane_sm_event(lanei, QSFP_E_LOS_RECOVERY);
-                TRX_LOG_INFO(lanei, "------ SIMULATED LOS RECOVERY ------");
-            } else {
-                TRX_LOG_ERR(lanei, "Simulated LOS Recovery rejected as "
-                                   "lane not in LOS");
-            }
-        } else {
-            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
-        }
-    }
-
-    if (sim) {
-        los_status = qsfp->status & QSFP_F_LOS;
-        txf_status = qsfp->status & QSFP_F_TX_FAULT;
-
-        qsfp_sm_link_update_txf_los_status(qsfp);
-
-        /* qsfp status changed from LOS to non-LOS */
-        if (los_status != (qsfp->status & QSFP_F_LOS)) {
-            qsfp_sm_event(qsfp, QSFP_E_LOS_RECOVERY);
-            TRX_LOG_INFO(qsfp, "------ SIMULATED LOS RECOVERY ------");
-        }
-        /* qsfp status changed from TX Fault to no TX Fault */
-        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
-           qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
-           TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT RECOVERY (from LOS) "
-                              "------");
-        }
-    }
-
-    mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
-}
-
-static void qsfp_sim_tx_fault(struct qsfp *qsfp, u8 start, u8 end)
-{
-    u8 i;
-    u8 txf_status;
-    struct lane *lanei;
-    bool sim = false;
-
-    if (!(qsfp->status & QSFP_F_PRESENT)) {
-        TRX_LOG_ERR(qsfp, "Simulated TX Fault rejected as"
-                          " module not present");
-        return;
-    }
-
-    qsfp->need_poll = false;
-    cancel_delayed_work_sync(&qsfp->poll);
-
-    rtnl_lock();
-    mutex_lock(&qsfp->sm_mutex);
-
-    qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-    for (i = start ; i <= end ; i++) {
-        lanei = qsfp->lane[i];
-        if (lanei) {
-            if (!(lanei->status & QSFP_F_PRESENT)) {
-                TRX_LOG_ERR(lanei, "Simulated TX Fault rejected as "
-                                   "lane not present");
-            } else if (lanei->status & QSFP_F_TX_FAULT) {
-                TRX_LOG_ERR(lanei, "Simulated TX Fault rejected as "
-                                   "lane already in TX Fault");
-            } else {
-                sim = true;
-                qsfp->lanes_state |= (1 << (i + QSFP_TX_FAULT_SHIFT));
-                lanei->status |= QSFP_F_TX_FAULT;
-                lane_sm_event(lanei, QSFP_E_TX_FAULT);
-                TRX_LOG_INFO(lanei, "------ SIMULATED TX FAULT ------");
-            }
-        } else {
-            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
-        }
-    }
-
-    if (sim) {
-        txf_status = qsfp->status & QSFP_F_TX_FAULT;
-        qsfp_sm_link_update_txf_los_status(qsfp);
-
-        /* qsfp status changed from no TX Fault to TX Fault */
-        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
-            qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
-            TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT ------");
-        }
-    }
-
-    mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
-}
-
-static void qsfp_sim_tx_fault_recovery(struct qsfp *qsfp, u8 start, u8 end)
-{
-    u8 i;
-    u8 txf_status;
-    struct lane *lanei;
-    bool sim = false;
-
-    if (!(qsfp->status & QSFP_F_PRESENT)) {
-        TRX_LOG_ERR(qsfp, "Simulated TX Fault Recovery rejected as"
-                          " module not present");
-        return;
-    }
-
-    qsfp->need_poll = false;
-    cancel_delayed_work_sync(&qsfp->poll);
-
-    rtnl_lock();
-    mutex_lock(&qsfp->sm_mutex);
-
-    qsfp->sim |= QSFP_F_SIM_FAR_END;
-
-    for (i = start ; i <= end ; i++) {
-        lanei = qsfp->lane[i];
-        if (lanei) {
-            if (!(lanei->status & QSFP_F_PRESENT)) {
-                TRX_LOG_ERR(lanei, "Simulated TX Fault Recovery rejected as "
-                                   "lane not present");
-            } else if (lanei->status & QSFP_F_TX_FAULT) {
-                sim = true;
-                qsfp->lanes_state &= (~(1 << (i + QSFP_TX_FAULT_SHIFT)));
-                lanei->status &= (~QSFP_F_TX_FAULT);
-                lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
-                TRX_LOG_INFO(lanei, "------ SIMULATED TX FAULT RECOVERY "
-                                    "------");
-            } else {
-                TRX_LOG_ERR(lanei, "Simulated TX Fault Recovery rejected as "
-                                   "lane not in TX Fault");
-            }
-        } else {
-            TRX_LOG_ERR(qsfp, "Lane%u is NULL", i);
-        }
-    }
-
-    if (sim) {
-        txf_status = qsfp->status & QSFP_F_TX_FAULT;
-        qsfp_sm_link_update_txf_los_status(qsfp);
-
-        /* qsfp status changed from TX Fault to no TX Fault */
-        if (txf_status != (qsfp->status & QSFP_F_TX_FAULT)) {
-            qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
-            TRX_LOG_INFO(qsfp, "------ SIMULATED TX FAULT RECOVERY "
-                               "------");
-        }
-    }
-
-    mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
+    TRX_LOG_INFO(qsfp, "------ SIMULATED FLAGS CHANGE ------");
 }
 
 static void qsfp_sim_clear(struct qsfp *qsfp)
 {
+    memset(&qsfp->sim_flags, 0, sizeof(qsfp->sim_flags));
+
     if (qsfp->sim & QSFP_F_SIM_REMOVE) {
         qsfp->sim &= (~QSFP_F_SIM_REMOVE);
         qsfp_module_insert_irq(qsfp);
@@ -2479,86 +2311,18 @@ static void qsfp_sim_clear(struct qsfp *qsfp)
         TRX_LOG_INFO(qsfp, "------ SIMULATED INSERT ------");
     }
 
-    if (qsfp->sim & QSFP_F_SIM_FAR_END) {
+    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+
+        qsfp->sim &= (~QSFP_F_SIM_FLAGS);
+
         /* start polling to see actual hardware state which clears any
-         * simulated LOS and TX fault
+         * simulated flags
          */
         qsfp->need_poll = true;
-        /* qsfp_check_state will mark whether poll needed or not */
-        qsfp_check_state(qsfp);
-        if (qsfp->need_poll) {
-            /* Poll once per second */
-            mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
-        }
-
-        qsfp->sim &= (~QSFP_F_SIM_FAR_END);
+        mod_delayed_work(system_wq, &qsfp->poll, 0);
     }
 
     TRX_LOG_INFO(qsfp, "------ SIMULATION CLEAR ------");
-}
-
-static int qsfp_sim_lane_request(struct qsfp *qsfp, char *request)
-{
-    char *p = strchr(request, '-');
-    u8 start = 0;
-    u8 end = 0;
-
-    /* Make sure p++ 3 times in below code should not cause overflow */
-    if ((p - request) > (SIM_REQ_MAX - 3)) {
-        return -1;
-    }
-
-    p++;
-    /* Check whether integer or not */
-    if ((*p >= '0') && (*p <= '9')) {
-        start = *p - '0';
-    } else {
-        return -1;
-    }
-
-    p++;
-    if (*p != '-') {
-        return -1;
-    }
-
-    p++;
-    if ((*p >= '0') && (*p <= '9')) {
-        end = *p - '0';
-    } else {
-        return -1;
-    }
-
-    /* Added to remove static analysis error */
-    if ((start >= MAX_LANES) || (end >= MAX_LANES)) {
-        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
-        return -1;
-    }
-
-    if ((start >= qsfp->num_lanes) || (end >= qsfp->num_lanes) ||
-        (start > end)) {
-        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
-        return -1;
-    }
-
-    /* Ignore last 2 char \n */
-    if (!strncmp(request, SIM_LOS_RECOVERY, sizeof(SIM_LOS_RECOVERY) - 2)) {
-        qsfp_sim_los_recovery(qsfp, start, end);
-
-    } else if (!strncmp(request, SIM_LOS, sizeof(SIM_LOS) - 2)) {
-        qsfp_sim_los(qsfp, start, end);
-
-    } else if (!strncmp(request, SIM_TX_FAULT_RECOVERY,
-                        sizeof(SIM_TX_FAULT_RECOVERY) - 2)) {
-        qsfp_sim_tx_fault_recovery(qsfp, start, end);
-
-    } else if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT) - 2)) {
-        qsfp_sim_tx_fault(qsfp, start, end);
-
-    } else {
-        return -1;
-    }
-
-    return 0;
 }
 
 static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
@@ -2567,6 +2331,11 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
     ssize_t ret;
     char request[SIM_REQ_MAX] = {0};
     struct qsfp *qsfp = file->f_inode->i_private;
+    struct lane *lanei;
+    bool recovery = false;
+    char *p;
+    u8 *flag;
+    u8 start, end, i;
 
     ret = simple_write_to_buffer(request, SIM_REQ_MAX - 1, ppos, buf, count);
     if (ret < 0) {
@@ -2574,32 +2343,281 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
 
     } else if (!strncmp(request, SIM_INSERT, sizeof(SIM_INSERT))) {
         qsfp_sim_insert(qsfp);
+        return ret;
 
     } else if (!strncmp(request, SIM_REMOVE, sizeof(SIM_REMOVE))) {
         qsfp_sim_remove(qsfp);
+        return ret;
 
-    } else if (!strncmp(request, SIM_LOS_RECOVERY, sizeof(SIM_LOS_RECOVERY))) {
-        qsfp_sim_los_recovery(qsfp, 0, qsfp->num_lanes - 1);
+    } else if (!strncmp(request, SIM_COPY_FLAGS, sizeof(SIM_COPY_FLAGS))) {
+        qsfp->sim_flags = qsfp->flags;
+        TRX_LOG_INFO(qsfp, "Copied current flags into simulation flags");
+        return ret;
 
-    } else if (!strncmp(request, SIM_LOS, sizeof(SIM_LOS))) {
-        qsfp_sim_los(qsfp, 0, qsfp->num_lanes - 1);
-
-    } else if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT))) {
-        qsfp_sim_tx_fault(qsfp, 0, qsfp->num_lanes - 1);
-
-    } else if (!strncmp(request, SIM_TX_FAULT_RECOVERY,
-                        sizeof(SIM_TX_FAULT_RECOVERY))) {
-        qsfp_sim_tx_fault_recovery(qsfp, 0, qsfp->num_lanes - 1);
+    } else if (!strncmp(request, SIM_FLAGS_CHANGE, sizeof(SIM_FLAGS_CHANGE))) {
+        qsfp_sim_flags_change(qsfp);
+        return ret;
 
     } else if (!strncmp(request, SIM_CLEAR, sizeof(SIM_CLEAR))) {
         qsfp_sim_clear(qsfp);
+        return ret;
 
-    } else if (qsfp_sim_lane_request(qsfp, request)) {
-        TRX_LOG_ERR(qsfp, "Invalid input %s", request);
-        return -EINVAL;
+    } else if (!strncmp(request, SIM_TEMP_HIGH_ALARM,
+                        sizeof(SIM_TEMP_HIGH_ALARM))) {
+        qsfp->sim_flags.temp_high_alarm = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_HIGH_ALARM_RECOVERY,
+                        sizeof(SIM_TEMP_HIGH_ALARM_RECOVERY))) {
+        qsfp->sim_flags.temp_high_alarm = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_LOW_ALARM,
+                        sizeof(SIM_TEMP_LOW_ALARM))) {
+        qsfp->sim_flags.temp_low_alarm = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_LOW_ALARM_RECOVERY,
+                        sizeof(SIM_TEMP_LOW_ALARM_RECOVERY))) {
+        qsfp->sim_flags.temp_low_alarm = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_HIGH_WARN,
+                        sizeof(SIM_TEMP_HIGH_WARN))) {
+        qsfp->sim_flags.temp_high_warn = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_HIGH_WARN_RECOVERY,
+                        sizeof(SIM_TEMP_HIGH_WARN_RECOVERY))) {
+        qsfp->sim_flags.temp_high_warn = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_LOW_WARN,
+                        sizeof(SIM_TEMP_LOW_WARN))) {
+        qsfp->sim_flags.temp_low_warn = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_TEMP_LOW_WARN_RECOVERY,
+                        sizeof(SIM_TEMP_LOW_WARN_RECOVERY))) {
+        qsfp->sim_flags.temp_low_warn = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_HIGH_ALARM,
+                        sizeof(SIM_VOLT_HIGH_ALARM))) {
+        qsfp->sim_flags.volt_high_alarm = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_HIGH_ALARM_RECOVERY,
+                        sizeof(SIM_VOLT_HIGH_ALARM_RECOVERY))) {
+        qsfp->sim_flags.volt_high_alarm = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_LOW_ALARM,
+                        sizeof(SIM_VOLT_LOW_ALARM))) {
+        qsfp->sim_flags.volt_low_alarm = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_LOW_ALARM_RECOVERY,
+                        sizeof(SIM_VOLT_LOW_ALARM_RECOVERY))) {
+        qsfp->sim_flags.volt_low_alarm = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_HIGH_WARN,
+                        sizeof(SIM_VOLT_HIGH_WARN))) {
+        qsfp->sim_flags.volt_high_warn = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_HIGH_WARN_RECOVERY,
+                        sizeof(SIM_VOLT_HIGH_WARN_RECOVERY))) {
+        qsfp->sim_flags.volt_high_warn = 0;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_LOW_WARN,
+                        sizeof(SIM_VOLT_LOW_WARN))) {
+        qsfp->sim_flags.volt_low_warn = 1;
+        return ret;
+
+    } else if (!strncmp(request, SIM_VOLT_LOW_WARN_RECOVERY,
+                        sizeof(SIM_VOLT_LOW_WARN_RECOVERY))) {
+        qsfp->sim_flags.volt_low_warn = 0;
+        return ret;
+    }
+
+    p = request;
+    /* Lane flags */
+    if (!strncmp(request, SIM_RX_LOS, sizeof(SIM_RX_LOS) - 1)) {
+        flag = &qsfp->sim_flags.rx_los;
+        p += sizeof(SIM_RX_LOS) - 1;
+
+    } else if (!strncmp(request, SIM_TX_FAULT, sizeof(SIM_TX_FAULT) - 1)) {
+        flag = &qsfp->sim_flags.tx_fault;
+        p += sizeof(SIM_TX_FAULT) - 1;
+
+    } else if (!strncmp(request, SIM_TX_LOS, sizeof(SIM_TX_LOS) - 1)) {
+        flag = &qsfp->sim_flags.tx_los;
+        p += sizeof(SIM_TX_LOS) - 1;
+
+    } else if (!strncmp(request, SIM_RX_CDR_LOL, sizeof(SIM_RX_CDR_LOL) - 1)) {
+        flag = &qsfp->sim_flags.rx_cdr_lol;
+        p += sizeof(SIM_RX_CDR_LOL) - 1;
+
+    } else if (!strncmp(request, SIM_TX_CDR_LOL, sizeof(SIM_TX_CDR_LOL) - 1)) {
+        flag = &qsfp->sim_flags.tx_cdr_lol;
+        p += sizeof(SIM_TX_CDR_LOL) - 1;
+
+    } else if (!strncmp(request, SIM_TX_ADAP_EQ_FAULT,
+                        sizeof(SIM_TX_ADAP_EQ_FAULT) - 1)) {
+        flag = &qsfp->sim_flags.tx_adap_eq_fault;
+        p += sizeof(SIM_TX_ADAP_EQ_FAULT) - 1;
+
+    } else if (!strncmp(request, SIM_RX_POWER_HIGH_ALARM,
+                        sizeof(SIM_RX_POWER_HIGH_ALARM) - 1)) {
+        flag = &qsfp->sim_flags.rx_power_high_alarm;
+        p += sizeof(SIM_RX_POWER_HIGH_ALARM) - 1;
+
+    } else if (!strncmp(request, SIM_RX_POWER_LOW_ALARM,
+                        sizeof(SIM_RX_POWER_LOW_ALARM) - 1)) {
+        flag = &qsfp->sim_flags.rx_power_low_alarm;
+        p += sizeof(SIM_RX_POWER_LOW_ALARM) - 1;
+
+    } else if (!strncmp(request, SIM_RX_POWER_HIGH_WARN,
+                        sizeof(SIM_RX_POWER_HIGH_WARN) - 1)) {
+        flag = &qsfp->sim_flags.rx_power_high_warn;
+        p += sizeof(SIM_RX_POWER_HIGH_WARN) - 1;
+
+    } else if (!strncmp(request, SIM_RX_POWER_LOW_WARN,
+                        sizeof(SIM_RX_POWER_LOW_WARN) - 1)) {
+        flag = &qsfp->sim_flags.rx_power_low_warn;
+        p += sizeof(SIM_RX_POWER_LOW_WARN) - 1;
+
+    } else if (!strncmp(request, SIM_TX_POWER_HIGH_ALARM,
+                        sizeof(SIM_TX_POWER_HIGH_ALARM) - 1)) {
+        flag = &qsfp->sim_flags.tx_power_high_alarm;
+        p += sizeof(SIM_TX_POWER_HIGH_ALARM) - 1;
+
+    } else if (!strncmp(request, SIM_TX_POWER_LOW_ALARM,
+                        sizeof(SIM_TX_POWER_LOW_ALARM) - 1)) {
+        flag = &qsfp->sim_flags.tx_power_low_alarm;
+        p += sizeof(SIM_TX_POWER_LOW_ALARM) - 1;
+
+    } else if (!strncmp(request, SIM_TX_POWER_HIGH_WARN,
+                        sizeof(SIM_TX_POWER_HIGH_WARN) - 1)) {
+        flag = &qsfp->sim_flags.tx_power_high_warn;
+        p += sizeof(SIM_TX_POWER_HIGH_WARN) - 1;
+
+    } else if (!strncmp(request, SIM_TX_POWER_LOW_WARN,
+                        sizeof(SIM_TX_POWER_LOW_WARN) - 1)) {
+        flag = &qsfp->sim_flags.tx_power_low_warn;
+        p += sizeof(SIM_TX_POWER_LOW_WARN) - 1;
+
+    } else if (!strncmp(request, SIM_TX_BIAS_HIGH_ALARM,
+                        sizeof(SIM_TX_BIAS_HIGH_ALARM) - 1)) {
+        flag = &qsfp->sim_flags.tx_bias_high_alarm;
+        p += sizeof(SIM_TX_BIAS_HIGH_ALARM) - 1;
+
+    } else if (!strncmp(request, SIM_TX_BIAS_LOW_ALARM,
+                        sizeof(SIM_TX_BIAS_LOW_ALARM) - 1)) {
+        flag = &qsfp->sim_flags.tx_bias_low_alarm;
+        p += sizeof(SIM_TX_BIAS_LOW_ALARM) - 1;
+
+    } else if (!strncmp(request, SIM_TX_BIAS_HIGH_WARN,
+                        sizeof(SIM_TX_BIAS_HIGH_WARN) - 1)) {
+        flag = &qsfp->sim_flags.tx_bias_high_warn;
+        p += sizeof(SIM_TX_BIAS_HIGH_WARN) - 1;
+
+    } else if (!strncmp(request, SIM_TX_BIAS_LOW_WARN,
+                        sizeof(SIM_TX_BIAS_LOW_WARN) - 1)) {
+        flag = &qsfp->sim_flags.tx_bias_low_warn;
+        p += sizeof(SIM_TX_BIAS_LOW_WARN) - 1;
+
+    } else {
+        goto error;
+    }
+
+    /* Lane flag recovery case */
+    if (!strncmp(p, SIM_RECOVERY, strlen(SIM_RECOVERY))) {
+        recovery = true;
+        p += sizeof(SIM_RECOVERY) - 1;
+    }
+
+    if (*p == '\n') {
+        /* ex: rx_los. In this case all lanes considered */
+        start = 0;
+        end = qsfp->num_lanes - 1;
+        goto success;
+    } else if (*p != '-') {
+        /* ex: rx_los-* */
+        goto error;
+    }
+
+    p++;
+    /* Check whether integer or not */
+    if ((*p >= '0') && (*p <= '9')) {
+        start = *p - '0';
+    } else {
+        goto error;
+    }
+
+    p++;
+    if (*p == '\n') {
+        /* ex: rx_los-2. In this case end is same as start
+         * only one lane considered
+         */
+        end = start;
+        goto success;
+    } else if (*p != '-') {
+        goto error;
+    }
+
+    p++;
+    if ((*p >= '0') && (*p <= '9')) {
+        /* ex: rx_los-0-2 */
+        end = *p - '0';
+    } else {
+        goto error;
+    }
+
+    p++;
+    if (*p != '\n') {
+        goto error;
+    }
+
+success:
+    /* Added to remove static analysis error */
+    if ((start >= MAX_LANES) || (end >= MAX_LANES)) {
+        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
+        goto error;
+    }
+
+    if ((start >= qsfp->num_lanes) || (end >= qsfp->num_lanes) ||
+        (start > end)) {
+        TRX_LOG_ERR(qsfp, "Invalid lane. start %u end %u", start, end);
+        goto error;
+    }
+
+    for (i = start ; i <= end ; i++) {
+        lanei = qsfp->lane[i];
+        if (!lanei) {
+            TRX_LOG_ERR(qsfp, "Lane %u NULL", i);
+            continue;
+        }
+
+        if (lanei->status & QSFP_F_PRESENT) {
+            if (recovery) {
+                *flag &= (~(1 << i));
+            } else {
+                *flag |= (1 << i);
+            }
+        } else {
+            TRX_LOG_ERR(lanei, "Lane not present");
+        }
     }
 
     return ret;
+
+error:
+    TRX_LOG_ERR(qsfp, "Invalid input %s", request);
+    return -EINVAL;
 }
 
 static const struct file_operations qsfp_debug_qsfp_simulation_fops = {
@@ -2676,6 +2694,14 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
                    qsfp, &qsfp_debug_qsfp_module_identifier_info_fops);
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp module_identifier debugfs_create_file"
+                        " fail, error %ld", PTR_ERR(file));
+        goto failed_trx_debugfs_dir;
+    }
+
+    file = debugfs_create_file("flags", 0600, qsfp->debugfs_dir,
+                   qsfp, &qsfp_debug_qsfp_flags_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp flags debugfs_create_file"
                         " fail, error %ld", PTR_ERR(file));
         goto failed_trx_debugfs_dir;
     }

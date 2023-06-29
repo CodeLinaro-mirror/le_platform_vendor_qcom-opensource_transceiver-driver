@@ -8,9 +8,9 @@ static int qsfp_debug_power_info_show(struct seq_file *s, void *data)
 {
     struct qsfp *qsfp = s->private;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -26,9 +26,9 @@ static int qsfp_debug_module_power_class_info_show(struct seq_file *s,
 {
     struct qsfp *qsfp = s->private;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -45,9 +45,9 @@ static int qsfp_debug_phys_ext_id_show(struct seq_file *s, void *data)
     u8 *spec_id = (u8*)&qsfp->id;
     u8 powerclassl,powerclassh;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -117,9 +117,9 @@ static int qsfp_debug_encoding_show(struct seq_file *s, void *data)
     struct sff8636_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -144,9 +144,9 @@ static int qsfp_debug_link_codes_show(struct seq_file *s, void *data)
     struct sff8636_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -171,9 +171,9 @@ static int qsfp_debug_max_case_temp_show(struct seq_file *s, void *data)
     struct sff8636_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 
@@ -198,9 +198,9 @@ static int qsfp_debug_device_tech_show(struct seq_file *s, void *data)
     u8 *spec_id = (u8*)&qsfp->id;
     u8 dtechl,dtechr;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-          seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+          seq_printf(s, "QSFP transceiver not inserted\n");
           return 0;
     }
 
@@ -288,9 +288,9 @@ static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
     struct sff8636_eeprom_id *id;
     u8 *spec_id = (u8*)&qsfp->id;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-          seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+          seq_printf(s, "QSFP transceiver not inserted\n");
           return 0;
     }
 
@@ -334,9 +334,9 @@ static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
     u8 status = 0;
     int ret;
 
-    /* Ensure that the module is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        seq_printf(s, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
         return 0;
     }
 

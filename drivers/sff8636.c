@@ -75,7 +75,7 @@ static int sff8636_check_feature_impl(struct qsfp *qsfp)
      * wont support it
      */
     if ((0 == ret) && (PORT_FIBRE == link_info)) {
-        qsfp->features |= QSFP_F_LOS;
+        qsfp->features |= QSFP_F_RX_LOS;
     } else {
         TRX_LOG_WARN(qsfp, "RX LOS not implemented");
     }
@@ -168,28 +168,33 @@ static int sff8636_module_parse_power(struct qsfp *qsfp)
     return 0;
 }
 
-/*
- * Disable the interrupts (Temperature, Voltage alarms, vendor specific)
- * which are not handled by this driver
- */
-static void sff8636_disable_redundant_irq(const struct qsfp *qsfp)
+static int sff8636_disable_redundant_irq(const struct qsfp *qsfp)
 {
     int ret;
-    /* Enable only TX/RX LOS and TX Fault intterupts */
-    u8 buf1[] = {0xF0, /* TX LOS disable, RX LOS enable */
-                 0xF0, /* TX Fault enable */
-                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    u8 buf2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    u8 buf1[] = {0x00, /* TX RX LOS */
+                 0x00, /* TX Adapt EQ Fault and TX Fault */
+                 0x00, /* TX RX CDR LOL */
+                 0x00, /* Temperature */
+                 0x00, /* voltage */
+                 0xFF, 0xFF}; /* vendor specific */
+    u8 buf2[] = {0x00, /* RX1-2 power high low alarm warning */
+                 0x00, /* RX3-4 power high low alarm warning */
+                 0x00, /* TX1-2 bias high low alarm warning */
+                 0x00, /* TX3-4 bias high low alarm warning */
+                 0x00, /* TX1-2 power high low alarm warning */
+                 0x00, /* TX3-4 power high low alarm warning */
+                 0xFF, 0xFF, 0xFF, 0xFF}; /* Reserved */
 
     /* In case of DAC where memory is flat interrupt is not supported */
     if (qsfp->module_flat_mem) {
-        return;
+        return 0;
     }
 
     ret = qsfp_write(qsfp, SFF8636_INTERRUPT_MASK,
                      buf1, sizeof(buf1));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts. ret %d", ret);
+        return ret;
     }
 
     ret = qsfp_write(qsfp, SFF8636_CHANNEL_INTERRUPT_MASK,
@@ -197,7 +202,10 @@ static void sff8636_disable_redundant_irq(const struct qsfp *qsfp)
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant channel interrupts."
                           " ret %d", ret);
+        return ret;
     }
+
+    return 0;
 }
 
 static int sff8636_handle_max_power_exceed(const struct qsfp *qsfp)
@@ -371,60 +379,114 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
 
 }
 
-static u32 sff8636_get_state(struct qsfp *qsfp)
+static void sff8636_update_flags(struct qsfp *qsfp)
 {
     int ret;
-    u32 state = 0;
     struct sff8636_irq_flags irq_flags = {0};
-    bool poll = false;
 
-    if (qsfp->need_poll) {
-        /* In case of poll just poll LOS/TX_FAULT 2 bytes */
-        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags, 2);
-    } else {
-        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags,
-                        sizeof(irq_flags));
-    }
-
+    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags, sizeof(irq_flags));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read flags. ret %d", ret);
         /* Enable poll in case of failure to retry */
         qsfp->need_poll = true;
-        /* Preserve the current state */
-        return qsfp->lanes_state;
+        return;
     }
 
-    if (irq_flags.rx_los) {
-        state |= (irq_flags.rx_los << QSFP_LOS_SHIFT);
-        /* In case LOS we have to enable polling of irq status */
-        poll = true;
+    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
+
+    qsfp->flags.rx_los = irq_flags.rx_los;
+    qsfp->flags.tx_los = irq_flags.tx_los;
+    qsfp->flags.tx_fault = irq_flags.tx_fault;
+
+    qsfp->flags.rx_cdr_lol = irq_flags.rx_cdr_lol;
+    qsfp->flags.tx_cdr_lol = irq_flags.tx_cdr_lol;
+    qsfp->flags.tx_adap_eq_fault = irq_flags.tx_adap_eq_fault;
+
+    qsfp->flags.temp_high_alarm = irq_flags.temp_high_alarm;
+    qsfp->flags.temp_low_alarm = irq_flags.temp_low_alarm;
+    qsfp->flags.temp_high_warn = irq_flags.temp_high_warn;
+    qsfp->flags.temp_low_warn = irq_flags.temp_low_warn;
+
+    qsfp->flags.volt_high_alarm = irq_flags.volt_high_alarm;
+    qsfp->flags.volt_low_alarm = irq_flags.volt_low_alarm;
+    qsfp->flags.volt_high_warn = irq_flags.volt_high_warn;
+    qsfp->flags.volt_low_warn = irq_flags.volt_low_warn;
+
+    qsfp->flags.rx1_power_high_alarm = irq_flags.rx1_power_high_alarm;
+    qsfp->flags.rx2_power_high_alarm = irq_flags.rx2_power_high_alarm;
+    qsfp->flags.rx3_power_high_alarm = irq_flags.rx3_power_high_alarm;
+    qsfp->flags.rx4_power_high_alarm = irq_flags.rx4_power_high_alarm;
+
+    qsfp->flags.rx1_power_low_alarm = irq_flags.rx1_power_low_alarm;
+    qsfp->flags.rx2_power_low_alarm = irq_flags.rx2_power_low_alarm;
+    qsfp->flags.rx3_power_low_alarm = irq_flags.rx3_power_low_alarm;
+    qsfp->flags.rx4_power_low_alarm = irq_flags.rx4_power_low_alarm;
+
+    qsfp->flags.rx1_power_high_warn = irq_flags.rx1_power_high_warn;
+    qsfp->flags.rx2_power_high_warn = irq_flags.rx2_power_high_warn;
+    qsfp->flags.rx3_power_high_warn = irq_flags.rx3_power_high_warn;
+    qsfp->flags.rx4_power_high_warn = irq_flags.rx4_power_high_warn;
+
+    qsfp->flags.rx1_power_low_warn = irq_flags.rx1_power_low_warn;
+    qsfp->flags.rx2_power_low_warn = irq_flags.rx2_power_low_warn;
+    qsfp->flags.rx3_power_low_warn = irq_flags.rx3_power_low_warn;
+    qsfp->flags.rx4_power_low_warn = irq_flags.rx4_power_low_warn;
+
+    qsfp->flags.tx1_power_high_alarm = irq_flags.tx1_power_high_alarm;
+    qsfp->flags.tx2_power_high_alarm = irq_flags.tx2_power_high_alarm;
+    qsfp->flags.tx3_power_high_alarm = irq_flags.tx3_power_high_alarm;
+    qsfp->flags.tx4_power_high_alarm = irq_flags.tx4_power_high_alarm;
+
+    qsfp->flags.tx1_power_low_alarm = irq_flags.tx1_power_low_alarm;
+    qsfp->flags.tx2_power_low_alarm = irq_flags.tx2_power_low_alarm;
+    qsfp->flags.tx3_power_low_alarm = irq_flags.tx3_power_low_alarm;
+    qsfp->flags.tx4_power_low_alarm = irq_flags.tx4_power_low_alarm;
+
+    qsfp->flags.tx1_power_high_warn = irq_flags.tx1_power_high_warn;
+    qsfp->flags.tx2_power_high_warn = irq_flags.tx2_power_high_warn;
+    qsfp->flags.tx3_power_high_warn = irq_flags.tx3_power_high_warn;
+    qsfp->flags.tx4_power_high_warn = irq_flags.tx4_power_high_warn;
+
+    qsfp->flags.tx1_power_low_warn = irq_flags.tx1_power_low_warn;
+    qsfp->flags.tx2_power_low_warn = irq_flags.tx2_power_low_warn;
+    qsfp->flags.tx3_power_low_warn = irq_flags.tx3_power_low_warn;
+    qsfp->flags.tx4_power_low_warn = irq_flags.tx4_power_low_warn;
+
+    qsfp->flags.tx1_bias_high_alarm = irq_flags.tx1_bias_high_alarm;
+    qsfp->flags.tx2_bias_high_alarm = irq_flags.tx2_bias_high_alarm;
+    qsfp->flags.tx3_bias_high_alarm = irq_flags.tx3_bias_high_alarm;
+    qsfp->flags.tx4_bias_high_alarm = irq_flags.tx4_bias_high_alarm;
+
+    qsfp->flags.tx1_bias_low_alarm = irq_flags.tx1_bias_low_alarm;
+    qsfp->flags.tx2_bias_low_alarm = irq_flags.tx2_bias_low_alarm;
+    qsfp->flags.tx3_bias_low_alarm = irq_flags.tx3_bias_low_alarm;
+    qsfp->flags.tx4_bias_low_alarm = irq_flags.tx4_bias_low_alarm;
+
+    qsfp->flags.tx1_bias_high_warn = irq_flags.tx1_bias_high_warn;
+    qsfp->flags.tx2_bias_high_warn = irq_flags.tx2_bias_high_warn;
+    qsfp->flags.tx3_bias_high_warn = irq_flags.tx3_bias_high_warn;
+    qsfp->flags.tx4_bias_high_warn = irq_flags.tx4_bias_high_warn;
+
+    qsfp->flags.tx1_bias_low_warn = irq_flags.tx1_bias_low_warn;
+    qsfp->flags.tx2_bias_low_warn = irq_flags.tx2_bias_low_warn;
+    qsfp->flags.tx3_bias_low_warn = irq_flags.tx3_bias_low_warn;
+    qsfp->flags.tx4_bias_low_warn = irq_flags.tx4_bias_low_warn;
+
+    /* if anyone flag set then enable poll as there is no further interrupt
+     * due to existing set flags
+     */
+    if (qsfp->flags.rx_los | qsfp->flags.tx_los | qsfp->flags.tx_fault |
+        qsfp->flags.rx_cdr_lol | qsfp->flags.tx_cdr_lol |
+        qsfp->flags.tx_adap_eq_fault | qsfp->flags.temp | qsfp->flags.volt |
+        qsfp->flags.rx_power_high_alarm | qsfp->flags.rx_power_low_alarm |
+        qsfp->flags.rx_power_high_warn | qsfp->flags.rx_power_low_warn |
+        qsfp->flags.tx_power_high_alarm | qsfp->flags.tx_power_low_alarm |
+        qsfp->flags.tx_power_high_warn | qsfp->flags.tx_power_low_warn |
+        qsfp->flags.tx_bias_high_alarm | qsfp->flags.tx_bias_low_alarm |
+        qsfp->flags.tx_bias_high_warn | qsfp->flags.tx_bias_low_warn) {
+
+        qsfp->need_poll = true;
     }
-
-    if (irq_flags.tx_fault) {
-        /* Nibble represent TX Fault for 4 TX lanes */
-        state |= (irq_flags.tx_fault << QSFP_TX_FAULT_SHIFT);
-        /* In case TX Fault we have to enable polling of irq status */
-        poll = true;
-    }
-
-    if (!qsfp->need_poll) {
-        TRX_LOG_INFO(qsfp, "IRQ status dump: RX_LOS 0x%X TX_LOS 0x%X "
-        "TX Fault 0x%X eq 0x%X LOL 0x%X Init 0x%X ready 0x%X Temp 0x%X VCC "
-        "0x%X Vendor 0x%X RX12_Power 0x%X RX34_Power 0x%X TX12_bias 0x%X "
-        "TX34_bias 0x%X TX12_pow 0x%X TX34_pow 0x%X Vendor 0x%X 0x%X 0x%X\n",
-        irq_flags.rx_los, irq_flags.tx_los, irq_flags.tx_fault,
-        irq_flags.tx_adap_eq_fault, irq_flags.lol, irq_flags.init_complete,
-        irq_flags.tc_ready, irq_flags.temp_alarm, irq_flags.volt_alarm,
-        irq_flags.vendor_specific1, irq_flags.rx12_pow_alarm,
-        irq_flags.rx34_pow_alarm, irq_flags.tx12_bias_alarm,
-        irq_flags.tx34_bias_alarm, irq_flags.tx12_pow_alarm,
-        irq_flags.tx34_pow_alarm, irq_flags.vendor_specific2[0],
-        irq_flags.vendor_specific2[1], irq_flags.vendor_specific2[2]);
-    }
-
-    qsfp->need_poll = poll;
-
-    return state;
 }
 
 static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
@@ -763,8 +825,8 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
 
 unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
 {
-    /* Delay added as we are getting interrupt for LOS recovery but within 30ms
-     * we are getting LOS so it is false LOS recovery event. To avoid false
+    /* Delay added as we are getting interrupt for RX LOS recovery but within 30ms
+     * we are getting RX LOS so it is false RX LOS recovery event. To avoid false
      * event we are processing interrupt after 40ms
      */
     return msecs_to_jiffies(40);
@@ -773,7 +835,7 @@ unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
 const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
-    .get_state = sff8636_get_state,
+    .update_flags = sff8636_update_flags,
     .mod_tx_disable = sff8636_mod_tx_disable,
     .lane_tx_enable = sff8636_lane_tx_enable,
     .lane_tx_disable = sff8636_lane_tx_disable,

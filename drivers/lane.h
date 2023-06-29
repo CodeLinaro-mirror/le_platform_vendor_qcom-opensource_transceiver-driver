@@ -16,7 +16,7 @@
 struct lane {
     struct device *dev;
     struct sfp_bus *sfp_bus;
-    /* Stores presence LOS TX Fault TX Disable status */
+    /* Stores presence RX LOS TX Fault TX Disable status */
     u8 status;
     u8 lane_num;
     u8 sm_mod_state;
@@ -34,8 +34,6 @@ extern void qsfp_attach(const struct lane *lane);
 extern void qsfp_detach(const struct lane *lane);
 extern void qsfp_start(const struct lane *lane);
 extern void qsfp_stop(const struct lane *lane);
-
-extern void qsfp_sm_event(struct qsfp *qsfp, u8 event);
 
 extern int qsfp_module_info(struct sfp *sfp, struct ethtool_modinfo *modinfo);
 extern int qsfp_module_eeprom(struct sfp *sfp, struct ethtool_eeprom *ee,

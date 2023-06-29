@@ -44,6 +44,7 @@ typedef enum {
     TRX_LOCAL_PLUGOUT = 0,
     TRX_TX_FAULT,
     TRX_RX_LOS,
+    TRX_ERROR,
 } trx_lane_down_reason_code_type;
 
 /* The lane configuration */

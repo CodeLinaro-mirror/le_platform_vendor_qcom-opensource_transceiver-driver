@@ -147,8 +147,6 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
         return ret;
     }
 
-    TRX_LOG_INFO(qsfp, "Input Interrupt status 0x%X", buf);
-
     if (buf & FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "ModulePresent Rising edge interrupt 0x%X", buf);
         qsfp_module_remove_irq(qsfp);
@@ -156,16 +154,14 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
     } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "ModulePresent Falling edge interrupt 0x%X", buf);
         qsfp_module_insert_irq(qsfp);
-    }
-
-    if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
+    } else if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "QSFP Falling edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
-    }
-
-    if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
+    } else if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "QSFP Rising edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
+    } else {
+        TRX_LOG_ERR(qsfp, "Unknown Input Interrupt status 0x%X", buf);
     }
 
     return 0;
@@ -207,7 +203,48 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Failed to read SCL stuck status. ret %d", ret);
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
+        u8 i;
+        struct qsfp *qsfp;
+        char *msg_scl_stuck[] = {QSFP_EVENT_I2C_SCL_STUCK, NULL};
+
         TRX_LOG_ERR(fpc, "SCL stuck error 0x%X", buf);
+
+        for (i = 0 , buf >>= 4; i < FPC_MAX_PORTS ; buf >>= 1, i++) {
+            if (buf & 1) {
+                qsfp = fpc->qsfp[i];
+                if (!qsfp) {
+                    continue;
+                }
+
+                mutex_lock(&qsfp->sm_mutex);
+
+                /* Module state already in one of the error state and upcoming
+                 * state also an error state, in that case keep first error state
+                 */
+                if ((qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C) ||
+                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
+                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C_SDA_STUCK)) {
+                    mutex_unlock(&qsfp->sm_mutex);
+                    TRX_LOG_INFO(qsfp, "Module already in error state '%s'. "
+                                       "Ignoring I2C SCL Stuck",
+                                       mod_state_to_str(qsfp->sm_mod_state));
+                    continue;
+                }
+
+                /* Only QSFP state set to error while lane state not changed
+                 * as data can still flow in this state
+                 */
+                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR_I2C_SCL_STUCK, 0);
+
+                mutex_unlock(&qsfp->sm_mutex);
+
+                TRX_LOG_ERR(qsfp, "Module state set to %s",
+                            mod_state_to_str(QSFP_MOD_ERROR_I2C_SCL_STUCK));
+
+                kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_scl_stuck);
+                TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_scl_stuck[0]);
+            }
+        }
     }
 
     buf = 0;
@@ -216,7 +253,48 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Failed to read SDA stuck status. ret %d", ret);
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
+        u8 i;
+        struct qsfp *qsfp;
+        char *msg_sda_stuck[] = {QSFP_EVENT_I2C_SDA_STUCK, NULL};
+
         TRX_LOG_ERR(fpc, "SDA stuck error 0x%X", buf);
+
+        for (i = 0 , buf >>= 4; i < FPC_MAX_PORTS ; buf >>= 1, i++) {
+            if (buf & 1) {
+                qsfp = fpc->qsfp[i];
+                if (!qsfp) {
+                    continue;
+                }
+
+                mutex_lock(&qsfp->sm_mutex);
+
+                /* Module state already in one of the error state and upcoming
+                 * state also an error state, in that case keep first error state
+                 */
+                if ((qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C) ||
+                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
+                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C_SCL_STUCK)) {
+                    mutex_unlock(&qsfp->sm_mutex);
+                    TRX_LOG_INFO(qsfp, "Module already in error state '%s'. "
+                                       "Ignoring I2C SDA Stuck",
+                                       mod_state_to_str(qsfp->sm_mod_state));
+                    continue;
+                }
+
+                /* Only QSFP state set to error while lane state not changed
+                 * as data can still flow in this state
+                 */
+                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR_I2C_SDA_STUCK, 0);
+
+                mutex_unlock(&qsfp->sm_mutex);
+
+                TRX_LOG_ERR(qsfp, "Module state set to %s",
+                            mod_state_to_str(QSFP_MOD_ERROR_I2C_SDA_STUCK));
+
+                kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_sda_stuck);
+                TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_sda_stuck[0]);
+            }
+        }
     }
 }
 

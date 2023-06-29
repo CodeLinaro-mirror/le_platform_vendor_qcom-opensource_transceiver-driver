@@ -40,8 +40,9 @@ enum {
 };
 
 enum {
-    // rev_spec
-    // SFF8636_REV_UNSPEC can be used up to SFF-8636 rev 2.5 exclusive.
+    /* rev_spec
+     * SFF8636_REV_UNSPEC can be used up to SFF-8636 rev 2.5 exclusive.
+     */
     SFF8636_REV_UNSPEC          = 0,
     SFF8636_REV_8436_4_8        = 1,
     SFF8636_REV_8436_4_8P       = 2,
@@ -56,12 +57,12 @@ enum {
 
 /* Page 0 byte 128 */
 struct sff8636_eeprom_base {
-    // byte 128
+    /* byte 128 */
     u8 phys_id;
     u8 phys_ext_id;
     u8 connector;
 
-    // byte 131
+    /* byte 131 */
     u8 e40g_active:1;
     u8 e40g_base_lr4:1;
     u8 e40g_base_sr4:1;
@@ -69,15 +70,15 @@ struct sff8636_eeprom_base {
     u8 e10g_base_sr:1;
     u8 e10g_base_lr:1;
     u8 e10g_base_lrm:1;
-    u8 ecom_extended:1; // byte 192 has details
+    u8 ecom_extended:1; /* byte 192 has details */
 
-    // byte 132
+    /* byte 132 */
     u8 sonet_oc48_short_reach:1;
     u8 sonet_oc48_smf_intermediate_reach:1;
     u8 sonet_oc48_smf_long_reach:1;
     u8 reserved_2:5;
 
-    // byte 133
+    /* byte 133 */
     u8 reserved_3:4;
     u8 sas_3gbps:1;
     u8 sas_6gbps:1;
@@ -90,7 +91,7 @@ struct sff8636_eeprom_base {
     u8 e1000_base_t:1;
     u8 reserved_4:4;
 
-    // byte 135
+    /* byte 135 */
     u8 fc_tech_electrical_inter_enclosure:1;
     u8 fc_tech_lc:1;
     u8 reserved_5:1;
@@ -106,7 +107,7 @@ struct sff8636_eeprom_base {
     u8 longwave_laser_wo_ofc:1;
     u8 electrical_intra_enclosure:1;
 
-    // byte 137
+    /* byte 137 */
     u8 fc_media_sm:1;
     u8 fc_media_om3:1;
     u8 fc_media_m5:1;
@@ -117,7 +118,7 @@ struct sff8636_eeprom_base {
     u8 fc_media_tw:1;
 
     u8 fc_speed_100:1;
-    u8 fc_extended:1;  // check byte 192
+    u8 fc_extended:1;  /* check byte 192 */
     u8 fc_speed_200:1;
     u8 fc_speed_3200:1;
     u8 fc_speed_400:1;
@@ -125,28 +126,28 @@ struct sff8636_eeprom_base {
     u8 fc_speed_800:1;
     u8 fc_speed_1200:1;
 
-    // byte 139
+    /* byte 139 */
     u8 encoding;
     u8 br_nominal;
     u8 ext_ratesel_spec;
 
-    // byte 142
+    /* byte 142 */
     u8 length[5];
 
-    // byte 147
+    /* byte 147 */
     u8 device_tech;
 
-    // byte 148
+    /* byte 148 */
     char vendor_name[16];
 
-    // byte 164
+    /* byte 164 */
     u8 ext_module;
     char vendor_oui[3];
 
-    // byte 168
+    /* byte 168 */
     char vendor_pn[16];
 
-    // byte 184
+    /* byte 184 */
     char vendor_rev[2];
     union {
         __be16 wavelength;
@@ -154,15 +155,15 @@ struct sff8636_eeprom_base {
     } __packed;
     __be16 wavelength_tolerance;
 
-    // byte 190
+    /* byte 190 */
     u8 max_case_temp;
-    // byte 191
+    /* byte 191 */
     u8 cc_base;
 } __packed;
 
 /* Page 0 byte 192 */
 struct sff8636_eeprom_ext {
-    // byte 192
+    /* byte 192 */
     u8 link_codes;
 
     u8 rx_amp_prg:1;
@@ -174,7 +175,7 @@ struct sff8636_eeprom_ext {
     u8 lpmode_gpio:1;
     u8 reserved:1;
 
-    // byte 194
+    /* byte 194 */
     u8 tx_squelch_impl:1;
     u8 tx_squelch_dis_impl:1;
     u8 rx_output_dis_impl:1;
@@ -193,18 +194,18 @@ struct sff8636_eeprom_ext {
     u8 page1:1;
     u8 page2:1;
 
-    // byte 196
+    /* byte 196 */
     char vendor_sn[16];
 
-    // byte 212
+    /* byte 212 */
     u8 datecode[8];
 
-    // byte 220
+    /* byte 220 */
     u8 diagmon;
     u8 enh_options;
     u8 baud_rate_nominal;
 
-    // byte 223
+    /* byte 223 */
     u8 cc_ext;
 } __packed;
 
@@ -224,31 +225,96 @@ struct sff8636_id_stat {
 } __packed;
 
 struct sff8636_irq_flags {
+    /* byte 3 */
     u8 rx_los:4;
     u8 tx_los:4;
 
+    /* byte 4 */
     u8 tx_fault:4;
     u8 tx_adap_eq_fault:4;
 
-    u8 lol;
+    u8 rx_cdr_lol:4;
+    u8 tx_cdr_lol:4;
 
+    /* byte 6 */
     u8 init_complete:1;
     u8 tc_ready:1;
     u8 reserved_1:2;
-    u8 temp_alarm:4;
 
+    u8 temp_low_warn:1;
+    u8 temp_high_warn:1;
+    u8 temp_low_alarm:1;
+    u8 temp_high_alarm:1;
+
+    /* byte 7 */
     u8 reserved_2:4;
-    u8 volt_alarm:4;
+    u8 volt_low_warn:1;
+    u8 volt_high_warn:1;
+    u8 volt_low_alarm:1;
+    u8 volt_high_alarm:1;
 
     u8 vendor_specific1;
-    u8 rx12_pow_alarm;
-    u8 rx34_pow_alarm;
-    u8 tx12_bias_alarm;
-    u8 tx34_bias_alarm;
-    u8 tx12_pow_alarm;
-    u8 tx34_pow_alarm;
-    u8 reserved_3[4];
-    u8 vendor_specific2[3];
+
+    /* byte 9 */
+    u8 rx2_power_low_warn:1;
+    u8 rx2_power_high_warn:1;
+    u8 rx2_power_low_alarm:1;
+    u8 rx2_power_high_alarm:1;
+    u8 rx1_power_low_warn:1;
+    u8 rx1_power_high_warn:1;
+    u8 rx1_power_low_alarm:1;
+    u8 rx1_power_high_alarm:1;
+
+    /* byte 10 */
+    u8 rx4_power_low_warn:1;
+    u8 rx4_power_high_warn:1;
+    u8 rx4_power_low_alarm:1;
+    u8 rx4_power_high_alarm:1;
+    u8 rx3_power_low_warn:1;
+    u8 rx3_power_high_warn:1;
+    u8 rx3_power_low_alarm:1;
+    u8 rx3_power_high_alarm:1;
+
+    /* byte 11 */
+    u8 tx2_bias_low_warn:1;
+    u8 tx2_bias_high_warn:1;
+    u8 tx2_bias_low_alarm:1;
+    u8 tx2_bias_high_alarm:1;
+    u8 tx1_bias_low_warn:1;
+    u8 tx1_bias_high_warn:1;
+    u8 tx1_bias_low_alarm:1;
+    u8 tx1_bias_high_alarm:1;
+
+    /* byte 12 */
+    u8 tx4_bias_low_warn:1;
+    u8 tx4_bias_high_warn:1;
+    u8 tx4_bias_low_alarm:1;
+    u8 tx4_bias_high_alarm:1;
+    u8 tx3_bias_low_warn:1;
+    u8 tx3_bias_high_warn:1;
+    u8 tx3_bias_low_alarm:1;
+    u8 tx3_bias_high_alarm:1;
+
+    /* byte 13 */
+    u8 tx2_power_low_warn:1;
+    u8 tx2_power_high_warn:1;
+    u8 tx2_power_low_alarm:1;
+    u8 tx2_power_high_alarm:1;
+    u8 tx1_power_low_warn:1;
+    u8 tx1_power_high_warn:1;
+    u8 tx1_power_low_alarm:1;
+    u8 tx1_power_high_alarm:1;
+
+    /* byte 14 */
+    u8 tx4_power_low_warn:1;
+    u8 tx4_power_high_warn:1;
+    u8 tx4_power_low_alarm:1;
+    u8 tx4_power_high_alarm:1;
+    u8 tx3_power_low_warn:1;
+    u8 tx3_power_high_warn:1;
+    u8 tx3_power_low_alarm:1;
+    u8 tx3_power_high_alarm:1;
+
 } __packed;
 
 struct sff8636_ddm_thresholds {

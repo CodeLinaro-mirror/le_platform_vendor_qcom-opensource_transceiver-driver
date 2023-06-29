@@ -32,10 +32,72 @@
 #define QSFP_LED_ON  (true)
 #define QSFP_LED_OFF (false)
 
-#define QSFP_LOS_SHIFT (8)
-#define QSFP_TX_FAULT_SHIFT (16)
-
 #define MAX_LANES 8
+
+#define QSFP_TEMP_HIGH_ALARM (BIT(0))
+#define QSFP_TEMP_LOW_ALARM (BIT(1))
+#define QSFP_TEMP_HIGH_WARN (BIT(2))
+#define QSFP_TEMP_LOW_WARN (BIT(3))
+
+#define QSFP_VOLT_HIGH_ALARM (BIT(0))
+#define QSFP_VOLT_LOW_ALARM (BIT(1))
+#define QSFP_VOLT_HIGH_WARN (BIT(2))
+#define QSFP_VOLT_LOW_WARN (BIT(3))
+
+#define QSFP_EVENT_TEMP_HIGH_ALARM  "EVENT=TEMPERATURE_HIGH_ALARM"
+#define QSFP_EVENT_TEMP_LOW_ALARM   "EVENT=TEMPERATURE_LOW_ALARM"
+#define QSFP_EVENT_TEMP_HIGH_WARN   "EVENT=TEMPERATURE_HIGH_WARN"
+#define QSFP_EVENT_TEMP_LOW_WARN    "EVENT=TEMPERATURE_LOW_WARN"
+
+#define QSFP_EVENT_TEMP_HIGH_ALARM_RECOVERY  "EVENT=TEMPERATURE_HIGH_ALARM_RECOVERY"
+#define QSFP_EVENT_TEMP_LOW_ALARM_RECOVERY   "EVENT=TEMPERATURE_LOW_ALARM_RECOVERY"
+#define QSFP_EVENT_TEMP_HIGH_WARN_RECOVERY   "EVENT=TEMPERATURE_HIGH_WARN_RECOVERY"
+#define QSFP_EVENT_TEMP_LOW_WARN_RECOVERY    "EVENT=TEMPERATURE_LOW_WARN_RECOVERY"
+
+#define QSFP_EVENT_VOLT_HIGH_ALARM  "EVENT=VOLTAGE_HIGH_ALARM"
+#define QSFP_EVENT_VOLT_LOW_ALARM   "EVENT=VOLTAGE_LOW_ALARM"
+#define QSFP_EVENT_VOLT_HIGH_WARN   "EVENT=VOLTAGE_HIGH_WARN"
+#define QSFP_EVENT_VOLT_LOW_WARN    "EVENT=VOLTAGE_LOW_WARN"
+
+#define QSFP_EVENT_VOLT_HIGH_ALARM_RECOVERY  "EVENT=VOLTAGE_HIGH_ALARM_RECOVERY"
+#define QSFP_EVENT_VOLT_LOW_ALARM_RECOVERY   "EVENT=VOLTAGE_LOW_ALARM_RECOVERY"
+#define QSFP_EVENT_VOLT_HIGH_WARN_RECOVERY   "EVENT=VOLTAGE_HIGH_WARN_RECOVERY"
+#define QSFP_EVENT_VOLT_LOW_WARN_RECOVERY    "EVENT=VOLTAGE_LOW_WARN_RECOVERY"
+
+#define QSFP_EVENT_RX_LOS   "EVENT=RX_LOS"
+#define QSFP_EVENT_TX_FAULT "EVENT=TX_FAULT"
+#define QSFP_EVENT_TX_LOS   "EVENT=TX_LOS"
+
+#define QSFP_EVENT_RX_POWER_HIGH_ALARM  "EVENT=RX_POWER_HIGH_ALARM"
+#define QSFP_EVENT_RX_POWER_LOW_ALARM   "EVENT=RX_POWER_LOW_ALARM"
+#define QSFP_EVENT_RX_POWER_HIGH_WARN   "EVENT=RX_POWER_HIGH_WARN"
+#define QSFP_EVENT_RX_POWER_LOW_WARN    "EVENT=RX_POWER_LOW_WARN"
+
+#define QSFP_EVENT_TX_POWER_HIGH_ALARM  "EVENT=TX_POWER_HIGH_ALARM"
+#define QSFP_EVENT_TX_POWER_LOW_ALARM   "EVENT=TX_POWER_LOW_ALARM"
+#define QSFP_EVENT_TX_POWER_HIGH_WARN   "EVENT=TX_POWER_HIGH_WARN"
+#define QSFP_EVENT_TX_POWER_LOW_WARN    "EVENT=TX_POWER_LOW_WARN"
+
+#define QSFP_EVENT_TX_BIAS_HIGH_ALARM  "EVENT=TX_BIAS_HIGH_ALARM"
+#define QSFP_EVENT_TX_BIAS_LOW_ALARM   "EVENT=TX_BIAS_LOW_ALARM"
+#define QSFP_EVENT_TX_BIAS_HIGH_WARN   "EVENT=TX_BIAS_HIGH_WARN"
+#define QSFP_EVENT_TX_BIAS_LOW_WARN    "EVENT=TX_BIAS_LOW_WARN"
+
+#define QSFP_EVENT_RX_CDR_LOL "EVENT=RX_CDR_LOL"
+#define QSFP_EVENT_TX_CDR_LOL "EVENT=TX_CDR_LOL"
+#define QSFP_EVENT_TX_ADAPTIVE_EQ_FAULT "EVENT=TX_ADAPTIVE_EQ_FAULT"
+
+#define QSFP_EVENT_ERROR_I2C                "EVENT=ERROR_I2C"
+#define QSFP_EVENT_ERROR_HIGH_POWER         "EVENT=ERROR_HIGH_POWER"
+#define QSFP_EVENT_I2C_SCL_STUCK            "EVENT=I2C_SCL_STUCK"
+#define QSFP_EVENT_I2C_SDA_STUCK            "EVENT=I2C_SDA_STUCK"
+
+#define QSFP_EVENT_TX_ENABLE_FAIL           "EVENT=TX_ENABLE_FAIL"
+#define QSFP_EVENT_TX_ENABLE_FAIL_RECOVERY  "EVENT=TX_ENABLE_FAIL_RECOVERY"
+
+#define QSFP_EVENT_REMOVE "EVENT=REMOVE"
+
+#define QSFP_EVENT_BUF_MAX (50)
 
 struct qsfp_eeprom_id {
     union {
@@ -45,13 +107,210 @@ struct qsfp_eeprom_id {
     };
 };
 
+struct qsfp_flags {
+    u8 rx_los;
+    u8 tx_los;
+    u8 tx_fault;
+
+    u8 rx_cdr_lol;
+    u8 tx_cdr_lol;
+    u8 tx_adap_eq_fault;
+
+    union {
+        u8 temp:4;
+        struct {
+            u8 temp_high_alarm:1;
+            u8 temp_low_alarm:1;
+            u8 temp_high_warn:1;
+            u8 temp_low_warn:1;
+        };
+    };
+
+    union {
+        u8 volt:4;
+        struct {
+            u8 volt_high_alarm:1;
+            u8 volt_low_alarm:1;
+            u8 volt_high_warn:1;
+            u8 volt_low_warn:1;
+        };
+    };
+
+    union {
+        u8 rx_power_high_alarm;
+        struct {
+            u8 rx1_power_high_alarm:1;
+            u8 rx2_power_high_alarm:1;
+            u8 rx3_power_high_alarm:1;
+            u8 rx4_power_high_alarm:1;
+            u8 rx5_power_high_alarm:1;
+            u8 rx6_power_high_alarm:1;
+            u8 rx7_power_high_alarm:1;
+            u8 rx8_power_high_alarm:1;
+        };
+    };
+
+    union {
+        u8 rx_power_low_alarm;
+        struct {
+            u8 rx1_power_low_alarm:1;
+            u8 rx2_power_low_alarm:1;
+            u8 rx3_power_low_alarm:1;
+            u8 rx4_power_low_alarm:1;
+            u8 rx5_power_low_alarm:1;
+            u8 rx6_power_low_alarm:1;
+            u8 rx7_power_low_alarm:1;
+            u8 rx8_power_low_alarm:1;
+        };
+    };
+
+    union {
+        u8 rx_power_high_warn;
+        struct {
+            u8 rx1_power_high_warn:1;
+            u8 rx2_power_high_warn:1;
+            u8 rx3_power_high_warn:1;
+            u8 rx4_power_high_warn:1;
+            u8 rx5_power_high_warn:1;
+            u8 rx6_power_high_warn:1;
+            u8 rx7_power_high_warn:1;
+            u8 rx8_power_high_warn:1;
+        };
+    };
+
+    union {
+        u8 rx_power_low_warn;
+        struct {
+            u8 rx1_power_low_warn:1;
+            u8 rx2_power_low_warn:1;
+            u8 rx3_power_low_warn:1;
+            u8 rx4_power_low_warn:1;
+            u8 rx5_power_low_warn:1;
+            u8 rx6_power_low_warn:1;
+            u8 rx7_power_low_warn:1;
+            u8 rx8_power_low_warn:1;
+        };
+    };
+
+    union {
+        u8 tx_power_high_alarm;
+        struct {
+            u8 tx1_power_high_alarm:1;
+            u8 tx2_power_high_alarm:1;
+            u8 tx3_power_high_alarm:1;
+            u8 tx4_power_high_alarm:1;
+            u8 tx5_power_high_alarm:1;
+            u8 tx6_power_high_alarm:1;
+            u8 tx7_power_high_alarm:1;
+            u8 tx8_power_high_alarm:1;
+        };
+    };
+
+    union {
+        u8 tx_power_low_alarm;
+        struct {
+            u8 tx1_power_low_alarm:1;
+            u8 tx2_power_low_alarm:1;
+            u8 tx3_power_low_alarm:1;
+            u8 tx4_power_low_alarm:1;
+            u8 tx5_power_low_alarm:1;
+            u8 tx6_power_low_alarm:1;
+            u8 tx7_power_low_alarm:1;
+            u8 tx8_power_low_alarm:1;
+        };
+    };
+
+    union {
+        u8 tx_power_high_warn;
+        struct {
+            u8 tx1_power_high_warn:1;
+            u8 tx2_power_high_warn:1;
+            u8 tx3_power_high_warn:1;
+            u8 tx4_power_high_warn:1;
+            u8 tx5_power_high_warn:1;
+            u8 tx6_power_high_warn:1;
+            u8 tx7_power_high_warn:1;
+            u8 tx8_power_high_warn:1;
+        };
+    };
+
+    union {
+        u8 tx_power_low_warn;
+        struct {
+            u8 tx1_power_low_warn:1;
+            u8 tx2_power_low_warn:1;
+            u8 tx3_power_low_warn:1;
+            u8 tx4_power_low_warn:1;
+            u8 tx5_power_low_warn:1;
+            u8 tx6_power_low_warn:1;
+            u8 tx7_power_low_warn:1;
+            u8 tx8_power_low_warn:1;
+        };
+    };
+
+    union {
+        u8 tx_bias_high_alarm;
+        struct {
+            u8 tx1_bias_high_alarm:1;
+            u8 tx2_bias_high_alarm:1;
+            u8 tx3_bias_high_alarm:1;
+            u8 tx4_bias_high_alarm:1;
+            u8 tx5_bias_high_alarm:1;
+            u8 tx6_bias_high_alarm:1;
+            u8 tx7_bias_high_alarm:1;
+            u8 tx8_bias_high_alarm:1;
+        };
+    };
+
+    union {
+        u8 tx_bias_low_alarm;
+        struct {
+            u8 tx1_bias_low_alarm:1;
+            u8 tx2_bias_low_alarm:1;
+            u8 tx3_bias_low_alarm:1;
+            u8 tx4_bias_low_alarm:1;
+            u8 tx5_bias_low_alarm:1;
+            u8 tx6_bias_low_alarm:1;
+            u8 tx7_bias_low_alarm:1;
+            u8 tx8_bias_low_alarm:1;
+       };
+    };
+
+    union {
+        u8 tx_bias_high_warn;
+        struct {
+            u8 tx1_bias_high_warn:1;
+            u8 tx2_bias_high_warn:1;
+            u8 tx3_bias_high_warn:1;
+            u8 tx4_bias_high_warn:1;
+            u8 tx5_bias_high_warn:1;
+            u8 tx6_bias_high_warn:1;
+            u8 tx7_bias_high_warn:1;
+            u8 tx8_bias_high_warn:1;
+        };
+    };
+
+    union {
+        u8 tx_bias_low_warn;
+        struct {
+            u8 tx1_bias_low_warn:1;
+            u8 tx2_bias_low_warn:1;
+            u8 tx3_bias_low_warn:1;
+            u8 tx4_bias_low_warn:1;
+            u8 tx5_bias_low_warn:1;
+            u8 tx6_bias_low_warn:1;
+            u8 tx7_bias_low_warn:1;
+            u8 tx8_bias_low_warn:1;
+        };
+    };
+};
+
 struct qsfp {
     struct device *dev;
     struct fpc *fpc;
     struct i2c_adapter *i2c;
     u32 max_power_mW;
     u32 module_power_mW;
-    u32 lanes_state;
     /* Stores presence LOS TX Fault TX Disable status */
     u8 status;
     u8 port_num;
@@ -80,18 +339,20 @@ struct qsfp {
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
     struct dentry *module_debugfs_dir;
+    struct qsfp_flags sim_flags;
     u8 sim;
 #endif
    struct kobject *qsfp_sysfs_dir;
+   struct qsfp_flags flags;
 };
 
 struct qsfp_spec_ops {
     /* called during module insert to read EEPROM */
     int (*mod_probe)(struct qsfp *qsfp);
     /* Disable uninterested interrupts */
-    void (*disable_redundant_irq)(const struct qsfp *qsfp);
-    /* Gets module current state LOS,TX Fault */
-    u32 (*get_state)(struct qsfp *qsfp);
+    int (*disable_redundant_irq)(const struct qsfp *qsfp);
+    /* Updates module current flags LOS,TX Fault, alarms, warning etc */
+    void (*update_flags)(struct qsfp *qsfp);
     /* Disable TX for whole transceiver module */
     int (*mod_tx_disable)(const struct qsfp *qsfp);
     /* Enable TX lanewise */
@@ -133,66 +394,16 @@ struct qsfp_spec_ops {
 
 enum {
     QSFP_F_PRESENT      = BIT(0),
-    QSFP_F_LOS          = BIT(1),
+    QSFP_F_RX_LOS       = BIT(1),
     QSFP_F_TX_FAULT     = BIT(2),
     QSFP_F_TX_DISABLE   = BIT(3),
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     QSFP_F_SIM_REMOVE   = BIT(0),
-    QSFP_F_SIM_FAR_END  = BIT(1),
+    QSFP_F_SIM_FLAGS    = BIT(1),
 #endif
 
-    QSFP_F_PRESENT0      = BIT(0),
-    QSFP_F_PRESENT1      = BIT(1),
-    QSFP_F_PRESENT2      = BIT(2),
-    QSFP_F_PRESENT3      = BIT(3),
-    QSFP_F_PRESENT4      = BIT(4),
-    QSFP_F_PRESENT5      = BIT(5),
-    QSFP_F_PRESENT6      = BIT(6),
-    QSFP_F_PRESENT7      = BIT(7),
-    QSFP_F_PRESENT_0_7   = QSFP_F_PRESENT0 | QSFP_F_PRESENT1 |
-                           QSFP_F_PRESENT2 | QSFP_F_PRESENT3 |
-                           QSFP_F_PRESENT4 |  QSFP_F_PRESENT5 |
-                           QSFP_F_PRESENT6 |  QSFP_F_PRESENT7,
-
-    QSFP_F_LOS0          = BIT(8),
-    QSFP_F_LOS1          = BIT(9),
-    QSFP_F_LOS2          = BIT(10),
-    QSFP_F_LOS3          = BIT(11),
-    QSFP_F_LOS4          = BIT(12),
-    QSFP_F_LOS5          = BIT(13),
-    QSFP_F_LOS6          = BIT(14),
-    QSFP_F_LOS7          = BIT(15),
-    QSFP_F_LOS_0_7       = QSFP_F_LOS0 | QSFP_F_LOS1 |  QSFP_F_LOS2 |
-                           QSFP_F_LOS3 |  QSFP_F_LOS4 |  QSFP_F_LOS5 |
-                           QSFP_F_LOS6 |  QSFP_F_LOS7,
-
-    QSFP_F_TX_FAULT0     = BIT(16),
-    QSFP_F_TX_FAULT1     = BIT(17),
-    QSFP_F_TX_FAULT2     = BIT(18),
-    QSFP_F_TX_FAULT3     = BIT(19),
-    QSFP_F_TX_FAULT4     = BIT(20),
-    QSFP_F_TX_FAULT5     = BIT(21),
-    QSFP_F_TX_FAULT6     = BIT(22),
-    QSFP_F_TX_FAULT7     = BIT(23),
-    QSFP_F_TX_FAULT_0_7  = QSFP_F_TX_FAULT0 | QSFP_F_TX_FAULT1 |
-                           QSFP_F_TX_FAULT2 | QSFP_F_TX_FAULT3 |
-                           QSFP_F_TX_FAULT4 | QSFP_F_TX_FAULT5 |
-                           QSFP_F_TX_FAULT6 | QSFP_F_TX_FAULT7,
-
-    QSFP_F_TX_DISABLE0    = BIT(24),
-    QSFP_F_TX_DISABLE1    = BIT(25),
-    QSFP_F_TX_DISABLE2    = BIT(26),
-    QSFP_F_TX_DISABLE3    = BIT(27),
-    QSFP_F_TX_DISABLE4    = BIT(28),
-    QSFP_F_TX_DISABLE5    = BIT(29),
-    QSFP_F_TX_DISABLE6    = BIT(30),
-    QSFP_F_TX_DISABLE7    = BIT(31),
-    QSFP_F_TX_DISABLE_0_7 = QSFP_F_TX_DISABLE0 | QSFP_F_TX_DISABLE1 |
-                            QSFP_F_TX_DISABLE2 | QSFP_F_TX_DISABLE3 |
-                            QSFP_F_TX_DISABLE4 | QSFP_F_TX_DISABLE5 |
-                            QSFP_F_TX_DISABLE6 | QSFP_F_TX_DISABLE7,
-
+    /* Events */
     QSFP_E_INSERT = 0,
     QSFP_E_REMOVE,
     QSFP_E_DEV_ATTACH,
@@ -202,24 +413,31 @@ enum {
     QSFP_E_DEV_UP,
     QSFP_E_TX_FAULT,
     QSFP_E_TX_FAULT_RECOVERY,
-    QSFP_E_LOS,
-    QSFP_E_LOS_RECOVERY,
+    QSFP_E_RX_LOS,
+    QSFP_E_RX_LOS_RECOVERY,
     QSFP_E_REVISIT,
 
+    /* Module states */
     QSFP_MOD_EMPTY = 0,
-    QSFP_MOD_ERROR,
+    QSFP_MOD_ERROR_I2C,
+    QSFP_MOD_ERROR_HPOWER,
+    QSFP_MOD_ERROR_TX_ENABLE_FAIL,
+    QSFP_MOD_ERROR_I2C_SCL_STUCK,
+    QSFP_MOD_ERROR_I2C_SDA_STUCK,
     QSFP_MOD_REJECT_SPEC,
     QSFP_MOD_REJECT_PWR,
     QSFP_MOD_PROBE,
     QSFP_MOD_WAITDEV,
     QSFP_MOD_PRESENT,
 
+    /* Upstream Device states */
     QSFP_DEV_DETACHED = 0,
     QSFP_DEV_DOWN,
     QSFP_DEV_UP,
 
+    /* Link states */
     QSFP_S_DOWN = 0,
-    QSFP_S_LOS,
+    QSFP_S_RX_LOS,
     QSFP_S_TX_FAULT,
     QSFP_S_LINK_UP,
 };
@@ -233,7 +451,7 @@ enum {
 #define PROBE_RETRY_TIME_GAP    msecs_to_jiffies(100)
 #define MOD_READY_TIME          msecs_to_jiffies(300)
 
-#define QSFP_STATE_STR_MAX_LEN (40)
+#define QSFP_FAULT_STR_MAX (80)
 
 enum {
     SFF8024_CONNECTOR_FC1_COPPER = 0x02,
@@ -289,7 +507,7 @@ extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
 extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
-extern void qsfp_sm_event(struct qsfp *qsfp, u8 event);
+extern void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state, u32 timeout);
 extern void qsfp_check_state(struct qsfp *qsfp);
 
 extern int sff8636_create_debugfs_files (struct qsfp *qsfp);
@@ -297,10 +515,7 @@ extern int cmis_create_debugfs_files(struct qsfp *qsfp);
 extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
 
 extern void lane_sm_event(struct lane *lane, u32 event);
-extern void lane_sm_mod_remove(struct lane *lane);
-extern void lane_sm_mod_next(struct lane *lane, u8 state);
-extern void lane_sm_link_next(struct lane *lane, u8 state);
-extern void lane_sm_link_upstream_linkdown(const struct lane *lane);
+extern void lane_sm_mod_error(struct lane *lane, u8 state);
 
 extern void *trx_ipc_log_buf;
 

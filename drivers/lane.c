@@ -10,17 +10,17 @@
 #include "lane.h"
 #include "qsfp.h"
 
-void lane_sm_link_next(struct lane *lane, u8 state)
+static void lane_sm_link_next(struct lane *lane, u8 state)
 {
     lane->sm_link_state = state;
 }
 
-void lane_sm_mod_next(struct lane *lane, u8 state)
+static void lane_sm_mod_next(struct lane *lane, u8 state)
 {
     lane->sm_mod_state = state;
 }
 
-void lane_sm_link_upstream_linkdown(const struct lane *lane)
+static void lane_sm_link_upstream_linkdown(const struct lane *lane)
 {
     sfp_link_down(lane->sfp_bus);
     TRX_LOG_INFO(lane, "sfp_link_down upstream ops called");
@@ -77,10 +77,10 @@ static void lane_sm_link_linkup(struct lane *lane)
     lane_sm_link_next(lane, QSFP_S_LINK_UP);
 }
 
-static void lane_sm_link_check_los(struct lane *lane)
+static void lane_sm_link_check_rx_los(struct lane *lane)
 {
-    if (lane->status & QSFP_F_LOS) {
-        lane_sm_link_next(lane, QSFP_S_LOS);
+    if (lane->status & QSFP_F_RX_LOS) {
+        lane_sm_link_next(lane, QSFP_S_RX_LOS);
     } else {
         lane_sm_link_linkup(lane);
     }
@@ -117,7 +117,7 @@ static void lane_sm_device(struct lane *lane, u32 event)
     }
 }
 
-void lane_sm_mod_remove(struct lane *lane)
+static void lane_sm_mod_remove(struct lane *lane)
 {
     /* Upstream remove no need to be called in case module state in WaitDev */
     if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
@@ -165,7 +165,7 @@ static void lane_sm_module(struct lane *lane, u32 event)
     switch (lane->sm_mod_state) {
     case QSFP_MOD_EMPTY:
         if (event == QSFP_E_INSERT) {
-            /* Ensure that the device is attached before proceeding */
+            /* Ensure that the device state not detached before proceeding */
             if (lane->sm_dev_state < QSFP_DEV_DOWN) {
                 lane_sm_mod_next(lane, QSFP_MOD_WAITDEV);
             } else {
@@ -188,7 +188,9 @@ static void lane_sm_module(struct lane *lane, u32 event)
 
         break;
 
-    case QSFP_MOD_ERROR:
+    case QSFP_MOD_ERROR_I2C:
+    case QSFP_MOD_ERROR_HPOWER:
+    case QSFP_MOD_ERROR_TX_ENABLE_FAIL:
         break;
     }
 }
@@ -206,6 +208,23 @@ static void lane_sm_link_linkdown(struct lane *lane)
     lane_sm_link_next(lane, QSFP_S_DOWN);
 }
 
+void lane_sm_mod_error(struct lane *lane, u8 err)
+{
+    lane_sm_mod_next(lane, err);
+    lane_sm_link_next(lane, QSFP_S_DOWN);
+
+    if (lane->sm_link_state == QSFP_S_LINK_UP) {
+        lane_sm_link_upstream_linkdown(lane);
+    }
+
+    /* Only TX enable fail error handled at lane level */
+    if (lane->sm_mod_state == QSFP_MOD_ERROR_TX_ENABLE_FAIL) {
+        char *msg_tx_enable_fail[] = {QSFP_EVENT_TX_ENABLE_FAIL, NULL};
+        kobject_uevent_env(&lane->dev->kobj, KOBJ_CHANGE, msg_tx_enable_fail);
+        TRX_LOG_INFO(lane, "Fault Report: %s", msg_tx_enable_fail[0]);
+    }
+}
+
 static void lane_sm_link_check_linkup(struct lane *lane)
 {
     int ret;
@@ -213,14 +232,14 @@ static void lane_sm_link_check_linkup(struct lane *lane)
     ret = lane_tx_enable(lane);
     if (ret < 0) {
         TRX_LOG_ERR(lane, "TX Enable failed. ret %d", ret);
-        lane_sm_mod_next(lane, QSFP_MOD_ERROR);
+        lane_sm_mod_error(lane, QSFP_MOD_ERROR_TX_ENABLE_FAIL);
         return;
     }
 
     if (lane->status & QSFP_F_TX_FAULT) {
         lane_sm_link_next(lane, QSFP_S_TX_FAULT);
     } else {
-        lane_sm_link_check_los(lane);
+        lane_sm_link_check_rx_los(lane);
     }
 }
 
@@ -243,11 +262,10 @@ static void lane_sm_link(struct lane *lane, u32 event)
 
         break;
 
-    case QSFP_S_LOS:
+    case QSFP_S_RX_LOS:
         if (event == QSFP_E_TX_FAULT) {
             lane_sm_link_next(lane, QSFP_S_TX_FAULT);
-        } else if (event == QSFP_E_LOS_RECOVERY) {
-            TRX_LOG_INFO(lane, "LOS recovered");
+        } else if (event == QSFP_E_RX_LOS_RECOVERY) {
             lane_sm_link_linkup(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
@@ -259,8 +277,7 @@ static void lane_sm_link(struct lane *lane, u32 event)
 
     case QSFP_S_TX_FAULT:
         if (event == QSFP_E_TX_FAULT_RECOVERY) {
-            TRX_LOG_INFO(lane, "TX Fault recovered");
-            lane_sm_link_check_los(lane);
+            lane_sm_link_check_rx_los(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
         } else if (event == QSFP_E_DEV_DOWN) {
@@ -273,9 +290,9 @@ static void lane_sm_link(struct lane *lane, u32 event)
         if (event == QSFP_E_TX_FAULT) {
             lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_TX_FAULT);
-        } else if (event == QSFP_E_LOS) {
+        } else if (event == QSFP_E_RX_LOS) {
             lane_sm_link_upstream_linkdown(lane);
-            lane_sm_link_next(lane, QSFP_S_LOS);
+            lane_sm_link_next(lane, QSFP_S_RX_LOS);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_DOWN);
@@ -292,7 +309,7 @@ static void lane_sm_link(struct lane *lane, u32 event)
 
 void lane_sm_event(struct lane *lane, u32 event)
 {
-    TRX_LOG_INFO(lane, "Enter [%7s:%8s:%8s]   Event: %s",
+    TRX_LOG_INFO(lane, "Enter [%s:%s:%s]   Event: %s",
                        mod_state_to_str(lane->sm_mod_state),
                        dev_state_to_str(lane->sm_dev_state),
                        link_state_to_str(lane->sm_link_state),
@@ -302,7 +319,7 @@ void lane_sm_event(struct lane *lane, u32 event)
     lane_sm_module(lane, event);
     lane_sm_link(lane, event);
 
-    TRX_LOG_INFO(lane, "Exit  [%7s:%8s:%8s]",
+    TRX_LOG_INFO(lane, "Exit  [%s:%s:%s]",
                        mod_state_to_str(lane->sm_mod_state),
                        dev_state_to_str(lane->sm_dev_state),
                        link_state_to_str(lane->sm_link_state));

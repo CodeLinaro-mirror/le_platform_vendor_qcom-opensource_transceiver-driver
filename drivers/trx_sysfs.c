@@ -31,12 +31,12 @@ static ssize_t trx_state_info_show(struct device *dev,
 
     if (qsfp->status & QSFP_F_PRESENT) {
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: Yes\n"
-               "Module probe attempts: %d\nLOS: %d\nTX Fault: %d\nPoll status:"
+               "Module probe attempts: %d\nRX LOS: %d\nTX Fault: %d\nPoll status:"
                " %s\nFeatures: %s %s %s\n", PROBE_RETRY - qsfp->sm_mod_tries,
-               !!(qsfp->status & QSFP_F_LOS),
+               !!(qsfp->status & QSFP_F_RX_LOS),
                !!(qsfp->status & QSFP_F_TX_FAULT),
                qsfp->need_poll ? "Yes" : "No",
-               qsfp->features & QSFP_F_LOS ? "LOS":"",
+               qsfp->features & QSFP_F_RX_LOS ? "RX LOS":"",
                qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
                qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
 
@@ -54,8 +54,8 @@ static ssize_t trx_state_info_show(struct device *dev,
 
         if (lanei->status & QSFP_F_PRESENT) {
             ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: Yes\n"
-                   "LOS: %d\nTX Fault: %d\nTX Disable: %d\n",
-                   !!(lanei->status & QSFP_F_LOS),
+                   "RX LOS: %d\nTX Fault: %d\nTX Disable: %d\n",
+                   !!(lanei->status & QSFP_F_RX_LOS),
                    !!(lanei->status & QSFP_F_TX_FAULT),
                    !!(lanei->status & QSFP_F_TX_DISABLE));
 
@@ -64,15 +64,17 @@ static ssize_t trx_state_info_show(struct device *dev,
         }
     }
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
     if (qsfp->sim & QSFP_F_SIM_REMOVE) {
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Remove: "
                                                      "Yes\n");
     }
 
-    if (qsfp->sim & QSFP_F_SIM_FAR_END) {
-        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Far end: "
+    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+        ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Flags: "
                                                      "Yes\n");
     }
+#endif
 
     mutex_unlock(&qsfp->sm_mutex);
 
@@ -571,9 +573,9 @@ static ssize_t trx_temperature_show(struct device *dev,
     int16_t tempc = 0;
     int ret = 0;
 
-    /* Ensure that the device is attached before processing. */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        return scnprintf(buf, PAGE_SIZE,"QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return scnprintf(buf, PAGE_SIZE,"QSFP transceiver not inserted\n");
     }
 
     switch (*spec_id) {
@@ -665,9 +667,9 @@ static ssize_t trx_supply_voltage_show(struct device *dev,
     u16 supply_voltage_t = 0;
     int ret = 0;
 
-    /* Ensure that the device is attached before processing. */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        return scnprintf(buf, PAGE_SIZE, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return scnprintf(buf, PAGE_SIZE, "QSFP transceiver not inserted\n");
     }
 
     switch (*spec_id) {
@@ -767,9 +769,9 @@ static ssize_t trx_rx_power_show(struct device *dev,
     u8  cmis_rx_power[16] = {0};
     int ret = 0;
 
-    /* Ensure that the device is attached before processing. */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        return scnprintf(buf, PAGE_SIZE, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return scnprintf(buf, PAGE_SIZE, "QSFP transceiver not inserted\n");
     }
 
     switch (*spec_id) {
@@ -912,9 +914,9 @@ static ssize_t trx_tx_bias_current_show(struct device *dev,
     u8 cmis_tx_bias_multiplier = 1;
     int ret = 0;
 
-    /* Ensure that the device is attached before processing. */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        return scnprintf(buf, PAGE_SIZE, "QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return scnprintf(buf, PAGE_SIZE, "QSFP transceiver not inserted\n");
     }
 
     switch (*spec_id) {
@@ -1116,9 +1118,9 @@ static ssize_t trx_tx_power_show(struct device *dev,
     u16 cmis_tx_power_t[8] = {0};
     int ret = 0;
 
-    /* Ensure that the device is attached before processing  */
-    if (qsfp->sm_mod_state < QSFP_MOD_PROBE) {
-        return scnprintf(buf, PAGE_SIZE,"QSFP module is not attached\n");
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return scnprintf(buf, PAGE_SIZE,"QSFP transceiver not inserted\n");
     }
 
     switch (*spec_id) {
