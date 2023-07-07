@@ -13,6 +13,14 @@
 #define SFF8636_POWER_CLASS_HIGH (BIT(2) | BIT(0))
 #define SFF8636_POWER_CLASS_1TO4 (BIT(0))
 
+#define SFF8636_POWER_CLASS_1 (0x00)
+#define SFF8636_POWER_CLASS_2 (0x40)
+#define SFF8636_POWER_CLASS_3 (0x80)
+#define SFF8636_POWER_CLASS_4 (0xC0)
+#define SFF8636_POWER_CLASS_5 (0x01)
+#define SFF8636_POWER_CLASS_6 (0x02)
+#define SFF8636_POWER_CLASS_7 (0x03)
+
 enum {
     SFF8636_IRQ_FLAGS                   = QSFP_ADDR(0, 0,   3),
     SFF8636_TEMPERATURE                 = QSFP_ADDR(0, 0,  22),
@@ -23,12 +31,12 @@ enum {
     SFF8636_TX_DISABLE                  = QSFP_ADDR(0, 0,  86),
     SFF8636_POWER_ENABLE                = QSFP_ADDR(0, 0,  93),
     SFF8636_INTERRUPT_MASK              = QSFP_ADDR(0, 0, 100),
-    SFF8636_CHANNEL_INTERRUPT_MASK      = QSFP_ADDR(0, 3, 242),
     SFF8636_CLS8_MAX_POWER              = QSFP_ADDR(0, 0, 107),
     SFF8636_FREE_SIDE_PROP              = QSFP_ADDR(0, 0, 110),
     SFF8636_CHANNEL_INFO                = QSFP_ADDR(0, 0, 113),
     SFF8636_ID                          = QSFP_ADDR(0, 0, 128),
     SFF8636_DDM_TH                      = QSFP_ADDR(0, 3, 128),
+    SFF8636_CHANNEL_INTERRUPT_MASK      = QSFP_ADDR(0, 3, 242),
 };
 
 enum {

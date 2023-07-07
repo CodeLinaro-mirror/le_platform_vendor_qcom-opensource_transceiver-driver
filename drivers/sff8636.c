@@ -97,8 +97,9 @@ static int sff8636_check_feature_impl(struct qsfp *qsfp)
 
 static int sff8636_module_parse_power(struct qsfp *qsfp)
 {
-    u32 power_mW, power_class;
-    u8 pwr = 0, mask;
+    u32 power_mW = 0, power_class = 0;
+    u8 sff8636_pwr_cls = 0;
+    u8 pwr = 0;
     int ret;
 
     if (qsfp->module_revision >= SFF8636_REV_8636_2_8 &&
@@ -112,42 +113,52 @@ static int sff8636_module_parse_power(struct qsfp *qsfp)
 
         power_class = 8;
         power_mW = pwr * 100;
-    } else {
-        if (qsfp->id.sff8636.base.phys_id == SFF8024_ID_QSFP_8438) {
-            mask = 0xc0;
-        } else {
-            mask = 0xc3;
-        }
+    } else if (qsfp->module_revision >= SFF8636_REV_8636_2_0) {
 
-        switch (qsfp->id.sff8636.base.phys_ext_id & mask) {
-        default:
-            power_mW = 1500;
-            power_class = 1;
-            break;
-        case 0x40:
-            power_mW = 2000;
-            power_class = 2;
-            break;
-        case 0x80:
-            power_mW = 2500;
-            power_class = 3;
-            break;
-        case 0xc0:
-            power_mW = 3500;
-            power_class = 4;
-            break;
-        case 0xc1:
+        sff8636_pwr_cls = qsfp->id.sff8636.base.phys_ext_id & (BIT(1) | BIT(0));
+        if (sff8636_pwr_cls == SFF8636_POWER_CLASS_5) {
             power_mW = 4000;
             power_class = 5;
-            break;
-        case 0xc2:
+        } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_6) {
             power_mW = 4500;
             power_class = 6;
-            break;
-        case 0xc3:
+        } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_7) {
             power_mW = 5000;
             power_class = 7;
-            break;
+        } else {
+            /* Power class 1 to 4 */
+            sff8636_pwr_cls = qsfp->id.sff8636.base.phys_ext_id & (BIT(7) | BIT(6));
+
+            if (sff8636_pwr_cls == SFF8636_POWER_CLASS_1) {
+                power_mW = 1500;
+                power_class = 1;
+            } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_2) {
+                power_mW = 2000;
+                power_class = 2;
+            } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_3) {
+                power_mW = 2500;
+                power_class = 3;
+            } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_4) {
+                power_mW = 3500;
+                power_class = 4;
+            }
+        }
+    } else {
+        /* Power class 1 to 4 */
+        sff8636_pwr_cls = qsfp->id.sff8636.base.phys_ext_id & (BIT(7) | BIT(6));
+
+        if (sff8636_pwr_cls == SFF8636_POWER_CLASS_1) {
+            power_mW = 1500;
+            power_class = 1;
+        } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_2) {
+            power_mW = 2000;
+            power_class = 2;
+        } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_3) {
+            power_mW = 2500;
+            power_class = 3;
+        } else if (sff8636_pwr_cls == SFF8636_POWER_CLASS_4) {
+            power_mW = 3500;
+            power_class = 4;
         }
     }
 
