@@ -263,6 +263,47 @@ int qsfp_trx_get_type(u32 lane_phandle, trx_type* type)
 }
 EXPORT_SYMBOL_GPL(qsfp_trx_get_type);
 
+int qsfp_trx_ifconfig_notifier(bool value, u32 *lane_phandle)
+{
+    struct lane *lane = NULL;
+    int i = 0;
+
+    if (lane_phandle == NULL) {
+        TRX_LOG_INFO_NODEV("Failed to get lane phandle");
+        return -EINVAL;
+    }
+
+    if (!((value == IFCFG_ENABLE) ||
+          (value == IFCFG_DISABLE))) {
+        TRX_LOG_INFO_NODEV("Invalid ifconfig event: %d", value);
+        return -EINVAL;
+    }
+
+    for(i=0; i<MAX_ETH_LANES; i++) {
+        if(lane_phandle[i] != 0) {
+            lane = phandle_to_drvdata(lane_phandle[i]);
+
+            if (!lane) {
+                TRX_LOG_ERR_NODEV("Failed to get lane pointer for"
+                                          " lane_phandle[%d]", i);
+                continue;
+            }
+
+            if (value == IFCFG_ENABLE) {
+                TRX_LOG_INFO(lane, "Processing eth interface up event..");
+                lane_start(lane);
+            }
+            else {
+                TRX_LOG_INFO(lane, "Processing eth interface down event..");
+                lane_stop(lane);
+            }
+        }
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_ifconfig_notifier);
+
 /*
  * API to determine transceiver link length range
  */

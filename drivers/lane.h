@@ -42,4 +42,7 @@ extern int qsfp_module_eeprom_by_page(struct sfp *sfp,
                      const struct ethtool_module_eeprom *page,
                      struct netlink_ext_ack *extack);
 
+void lane_start(struct lane *lane);
+void lane_stop(struct lane *lane);
+
 #endif
