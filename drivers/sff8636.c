@@ -752,6 +752,14 @@ static u8 sff8636_get_transceiver_type(const struct qsfp *qsfp)
 }
 
 /*
+ * Function to return the link length range.
+ */
+static trx_link_length_range sff8636_get_link_length_range(const struct qsfp *qsfp)
+{
+    return qsfp_link_code_to_link_length_range(qsfp->id.sff8636.ext.link_codes);
+}
+
+/*
  * Function to get channel information from EEPROM page 00h byte 113.
  */
 static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
@@ -849,6 +857,7 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .get_connector_type = sff8636_get_connector_type,
     .get_lane_speed = sff8636_get_lane_speed,
     .get_transceiver_type = sff8636_get_transceiver_type,
+    .get_link_length_range = sff8636_get_link_length_range,
     .get_lanes_presence = sff8636_get_lanes_presence,
     .get_breakout_config = sff8636_get_breakout_config,
     .irq_delay = sff8636_irq_delay,

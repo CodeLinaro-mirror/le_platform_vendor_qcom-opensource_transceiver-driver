@@ -319,6 +319,8 @@ enum {
     CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
     CMIS_ACTIVE_FIRMWARE             = QSFP_ADDR(0, 0x0,  39),
     CMIS_MOD_FAULT_CAUSE             = QSFP_ADDR(0, 0x0,  41),
+    CMIS_MEDIA_TYPE_ENCODING         = QSFP_ADDR(0, 0x0,  85),
+    CMIS_MEDIA_INTERFACE_ID          = QSFP_ADDR(0, 0x0,  87),
     CMIS_ID                          = QSFP_ADDR(0, 0x0, 128),
     CMIS_POWER_CLASS                 = QSFP_ADDR(0, 0x0, 200),
     CMIS_LANE_INFO                   = QSFP_ADDR(0, 0x0, 210),
@@ -347,5 +349,8 @@ enum {
 #define CMIS_LOW_POWER_ALLOW_HW (BIT(6))
 
 #define CMIS_MODULE_STATE_READY (0x3)
+
+#define CMIS_MMF_ENCODING (1)
+#define CMIS_SMF_ENCODING (2)
 
 #endif

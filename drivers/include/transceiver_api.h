@@ -40,6 +40,26 @@ typedef enum {
     TRX_QSFPDD,
 }trx_type;
 
+/* Enum to identify the TRX link length range */
+typedef enum {
+    TRX_LINK_UNKNOWN = 0,
+    /* Short range */
+    TRX_SR,
+    /* Long range */
+    TRX_LR,
+    /* Extended range */
+    TRX_ER,
+    /* Ze best range */
+    TRX_ZR,
+    /* Copper cable DAC */
+    TRX_CR,
+    TRX_CLR,
+    TRX_DR,
+    TRX_BR,
+    TRX_FR,
+    TRX_VR,
+} trx_link_length_range;
+
 typedef enum {
     TRX_LOCAL_PLUGOUT = 0,
     TRX_TX_FAULT,
@@ -62,6 +82,8 @@ struct qsfp_info {
     trx_lane_cfg trx_laneinfo;
     /* Far-end configuration */
     trx_breakout_cfg trx_bout_cfg;
+    /* Link length range */
+    trx_link_length_range trx_link_length_range;
 };
 
 /***************************************************************

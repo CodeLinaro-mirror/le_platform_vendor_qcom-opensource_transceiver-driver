@@ -264,6 +264,200 @@ int qsfp_trx_get_type(u32 lane_phandle, trx_type* type)
 EXPORT_SYMBOL_GPL(qsfp_trx_get_type);
 
 /*
+ * API to determine transceiver link length range
+ */
+int qsfp_trx_get_link_length_range(u32 lane_phandle,
+                                   trx_link_length_range* link_length_range)
+{
+    struct qsfp *qsfp;
+
+    qsfp = get_qsfp(lane_phandle);
+    if (!qsfp) {
+        /* There is chance that Lane/QSFP/FPC probe not yet
+         * successfully completed
+         */
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
+        return -EAGAIN;
+    }
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_link_length_range) {
+        *link_length_range = qsfp->spec_ops->get_link_length_range(qsfp);
+        TRX_LOG_INFO(qsfp, "Transceiver link length range 0x%X",
+                           *link_length_range);
+        return 0;
+    } else {
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
+        return -EINVAL;
+    }
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_link_length_range);
+
+/* Link code parsed depending on SFF-8024 table */
+trx_link_length_range qsfp_link_code_to_link_length_range(u8 link_code)
+{
+    switch (link_code) {
+    case 0x02:
+    case 0x05:
+    case 0x11:
+    case 0x28:
+    case 0x29:
+    case 0x41:
+        return TRX_SR;
+
+    case 0x03:
+    case 0x27:
+    case 0x2B:
+    case 0x2C:
+    case 0x2F:
+    case 0x45:
+    case 0x46:
+    case 0x49:
+    case 0x4B:
+        return TRX_LR;
+
+    case 0x04:
+    case 0x10:
+    case 0x2D:
+    case 0x2E:
+    case 0x34:
+    case 0x35:
+    case 0x4A:
+        return TRX_ER;
+
+    case 0x4C:
+        return TRX_ZR;
+
+    case 0x0B:
+    case 0x0C:
+    case 0x0D:
+    case 0x3F:
+    case 0x40:
+        return TRX_CR;
+
+    case 0x17:
+        return TRX_CLR;
+
+    case 0x25:
+    case 0x47:
+        return TRX_DR;
+
+    case 0x37:
+    case 0x38:
+    case 0x39:
+        return TRX_BR;
+
+    case 0x26:
+    case 0x2A:
+    case 0x43:
+    case 0x48:
+        return TRX_FR;
+
+    case 0x3A:
+    case 0x36:
+        return TRX_VR;
+
+    default:
+        return TRX_LINK_UNKNOWN;
+    }
+}
+
+/* MMF code parsed depending on SFF-8024 table */
+trx_link_length_range qsfp_mmf_code_to_link_length_range(u8 mmf_code)
+{
+    switch (mmf_code) {
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x07:
+    case 0x08:
+    case 0x09:
+    case 0x0C:
+    case 0x0D:
+    case 0x0E:
+    case 0x1B:
+    case 0x0F:
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x1A:
+        return TRX_SR;
+
+    case 0x1D:
+    case 0x1E:
+    case 0x1F:
+        return TRX_VR;
+
+    default:
+        return TRX_LINK_UNKNOWN;
+    }
+}
+
+/* SMF code parsed depending on SFF-8024 table */
+trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code)
+{
+    switch (smf_code) {
+    case 0x38:
+    case 0x3A:
+        return TRX_SR;
+
+    case 0x04:
+    case 0x07:
+    case 0x09:
+    case 0x0C:
+    case 0x0D:
+    case 0x16:
+    case 0x4A:
+    case 0x19:
+    case 0x1B:
+    case 0x43:
+    case 0x1E:
+    case 0x39:
+    case 0x3B:
+    case 0x3C:
+    case 0x3D:
+        return TRX_LR;
+
+    case 0x05:
+    case 0x08:
+    case 0x40:
+    case 0x0E:
+    case 0x4B:
+    case 0x4C:
+    case 0x41:
+    case 0x42:
+        return TRX_ER;
+
+    case 0x06:
+    case 0x44:
+    case 0x4D:
+    case 0x3E:
+    case 0x3F:
+        return TRX_ZR;
+
+    case 0x14:
+    case 0x17:
+    case 0x1C:
+        return TRX_DR;
+
+    case 0x4E:
+    case 0x4F:
+    case 0x50:
+        return TRX_BR;
+
+    case 0x0A:
+    case 0x0B:
+    case 0x15:
+    case 0x18:
+    case 0x1A:
+    case 0x1D:
+        return TRX_FR;
+
+    default:
+        return TRX_LINK_UNKNOWN;
+    }
+}
+
+/*
  * API to determine transceiver near end properties
  */
 int qsfp_trx_get_laneconfig(u32 lane_phandle, trx_lane_cfg* laneinfo)
@@ -333,6 +527,7 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info)
     trx_type trx_type_t = 0;
     trx_lane_cfg trx_laneinfo_t = 0;
     trx_breakout_cfg trx_bout_config_t = 0;
+    trx_link_length_range trx_link_length_range_t = 0;
 
     ret = qsfp_trx_get_lane_speed(lane_phandle, &trx_speed_t);
     if (ret == 0) {
@@ -346,6 +541,11 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info)
         trx_info->trx_module_type = trx_type_t;
     } else {
         return ret;
+    }
+
+    ret = qsfp_trx_get_link_length_range(lane_phandle, &trx_link_length_range_t);
+    if (ret == 0) {
+        trx_info->trx_link_length_range = trx_link_length_range_t;
     }
 
     ret = qsfp_trx_get_laneconfig(lane_phandle, &trx_laneinfo_t);
@@ -948,6 +1148,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 
     module_sysfs_exit(qsfp);
     memset(&qsfp->id, 0, sizeof(qsfp->id));
+    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
     qsfp->module_power_class = 0;

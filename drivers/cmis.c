@@ -545,6 +545,38 @@ static u8 cmis_get_transceiver_type(const struct qsfp *qsfp)
 }
 
 /*
+ * Function to return the link length range.
+ */
+static trx_link_length_range cmis_get_link_length_range(const struct qsfp *qsfp)
+{
+    u8 media_encoding = 0;
+    u8 media_interface_id = 0;
+    int ret;
+
+    ret = qsfp_read(qsfp, CMIS_MEDIA_TYPE_ENCODING, &media_encoding,
+                    sizeof(media_encoding));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Media type encoding register read failed, ret %d", ret);
+        return TRX_LINK_UNKNOWN;
+    }
+
+    ret = qsfp_read(qsfp, CMIS_MEDIA_INTERFACE_ID, &media_interface_id,
+                    sizeof(media_interface_id));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Media interface id register read failed, ret %d", ret);
+        return TRX_LINK_UNKNOWN;
+    }
+
+    if (media_encoding == CMIS_MMF_ENCODING) {
+        return qsfp_mmf_code_to_link_length_range(media_interface_id);
+    } else if (media_encoding == CMIS_SMF_ENCODING) {
+        return qsfp_smf_code_to_link_length_range(media_interface_id);
+    }
+
+    return TRX_LINK_UNKNOWN;
+}
+
+/*
  * Function to return the cable assembly information from QSFP EEPROM
  * page 00h, byte 211 BIT [4-0].
  */
@@ -595,6 +627,7 @@ const struct qsfp_spec_ops cmis_spec_ops = {
     .get_connector_type = cmis_get_connector_type,
     .get_lane_speed = cmis_get_lane_speed,
     .get_transceiver_type = cmis_get_transceiver_type,
+    .get_link_length_range = cmis_get_link_length_range,
     .get_lanes_presence = cmis_get_lanes_presence,
     .get_breakout_config = cmis_get_breakout_config,
     .irq_delay = cmis_irq_delay,

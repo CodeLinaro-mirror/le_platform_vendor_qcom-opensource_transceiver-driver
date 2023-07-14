@@ -383,6 +383,8 @@ struct qsfp_spec_ops {
     int (*get_lane_speed)(const struct qsfp *qsfp, trx_lane_speed* speed);
     /* Gets transceive type */
     u8 (*get_transceiver_type)(const struct qsfp *qsfp);
+    /* Gets link length ramge */
+    trx_link_length_range (*get_link_length_range)(const struct qsfp *qsfp);
     /* Gets Near-End Implementation */
     int (*get_lanes_presence)(const struct qsfp *qsfp, trx_lane_cfg* laneinfo);
     /* Gets Far-End Implementation */
@@ -516,6 +518,10 @@ extern int sff8472_create_debugfs_files(struct qsfp *qsfp);
 
 extern void lane_sm_event(struct lane *lane, u32 event);
 extern void lane_sm_mod_error(struct lane *lane, u8 state);
+
+extern trx_link_length_range qsfp_link_code_to_link_length_range(u8 link_code);
+extern trx_link_length_range qsfp_mmf_code_to_link_length_range(u8 mmf_code);
+extern trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code);
 
 extern void *trx_ipc_log_buf;
 

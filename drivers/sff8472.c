@@ -350,6 +350,14 @@ static u8 sff8472_get_transceiver_type(const struct qsfp *qsfp)
     return qsfp->id.sff8472.base.phys_id;
 }
 
+/*
+ * Function to return the link length range.
+ */
+static trx_link_length_range sff8472_get_link_length_range(const struct qsfp *qsfp)
+{
+    return qsfp_link_code_to_link_length_range(qsfp->id.sff8472.base.extended_cc);
+}
+
 static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
                                       trx_lane_cfg* laneinfo)
 {
@@ -462,6 +470,7 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .get_connector_type = sff8472_get_connector_type,
     .get_lane_speed = sff8472_get_lane_speed,
     .get_transceiver_type = sff8472_get_transceiver_type,
+    .get_link_length_range = sff8472_get_link_length_range,
     .get_lanes_presence = sff8472_get_lanes_presence,
     .get_breakout_config = sff8472_get_breakout_config,
     .irq_delay = sff8472_irq_delay,
