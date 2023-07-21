@@ -13,15 +13,64 @@
 #endif
 
 #define SIM_REQ_MAX (40)
-#define SIM_READ_BUF_MAX (500)
+#define SIM_READ_BUF_MAX (800)
 
 #define SIM_INSERT "insert\n"
 #define SIM_REMOVE "remove\n"
-#define SIM_LOS "los\n"
-#define SIM_LOS_RECOVERY "los_recovery\n"
-#define SIM_TX_FAULT "tx_fault\n"
-#define SIM_TX_FAULT_RECOVERY "tx_fault_recovery\n"
+
+#define SIM_COPY_FLAGS "copy_flags\n"
+#define SIM_FLAGS_CHANGE "flags_change\n"
 #define SIM_CLEAR "clear\n"
+
+#define SIM_TEMP_HIGH_ALARM "temp_high_alarm\n"
+#define SIM_TEMP_HIGH_ALARM_RECOVERY "temp_high_alarm_recovery\n"
+
+#define SIM_TEMP_LOW_ALARM "temp_low_alarm\n"
+#define SIM_TEMP_LOW_ALARM_RECOVERY "temp_low_alarm_recovery\n"
+
+#define SIM_TEMP_HIGH_WARN "temp_high_warn\n"
+#define SIM_TEMP_HIGH_WARN_RECOVERY "temp_high_warn_recovery\n"
+
+#define SIM_TEMP_LOW_WARN "temp_low_warn\n"
+#define SIM_TEMP_LOW_WARN_RECOVERY "temp_low_warn_recovery\n"
+
+#define SIM_VOLT_HIGH_ALARM "volt_high_alarm\n"
+#define SIM_VOLT_HIGH_ALARM_RECOVERY "volt_high_alarm_recovery\n"
+
+#define SIM_VOLT_LOW_ALARM "volt_low_alarm\n"
+#define SIM_VOLT_LOW_ALARM_RECOVERY "volt_low_alarm_recovery\n"
+
+#define SIM_VOLT_HIGH_WARN "volt_high_warn\n"
+#define SIM_VOLT_HIGH_WARN_RECOVERY "volt_high_warn_recovery\n"
+
+#define SIM_VOLT_LOW_WARN "volt_low_warn\n"
+#define SIM_VOLT_LOW_WARN_RECOVERY "volt_low_warn_recovery\n"
+
+/* Lane flags */
+#define SIM_RX_LOS "rx_los"
+#define SIM_TX_FAULT "tx_fault"
+#define SIM_TX_LOS "tx_los"
+
+#define SIM_RX_CDR_LOL "rx_cdr_lol"
+#define SIM_TX_CDR_LOL "tx_cdr_lol"
+#define SIM_TX_ADAP_EQ_FAULT "tx_adap_eq_fault"
+
+#define SIM_RX_POWER_HIGH_ALARM "rx_power_high_alarm"
+#define SIM_RX_POWER_LOW_ALARM "rx_power_low_alarm"
+#define SIM_RX_POWER_HIGH_WARN "rx_power_high_warn"
+#define SIM_RX_POWER_LOW_WARN "rx_power_low_warn"
+
+#define SIM_TX_POWER_HIGH_ALARM "tx_power_high_alarm"
+#define SIM_TX_POWER_LOW_ALARM "tx_power_low_alarm"
+#define SIM_TX_POWER_HIGH_WARN "tx_power_high_warn"
+#define SIM_TX_POWER_LOW_WARN "tx_power_low_warn"
+
+#define SIM_TX_BIAS_HIGH_ALARM "tx_bias_high_alarm"
+#define SIM_TX_BIAS_LOW_ALARM "tx_bias_low_alarm"
+#define SIM_TX_BIAS_HIGH_WARN "tx_bias_high_warn"
+#define SIM_TX_BIAS_LOW_WARN "tx_bias_low_warn"
+
+#define SIM_RECOVERY "_recovery"
 
 void transceiver_debugfs_init(void);
 void transceiver_debugfs_exit(void);
@@ -39,7 +88,7 @@ int module_debugfs_init(struct qsfp *qsfp);
 inline void spec_info_print(struct seq_file *s, u8 spec_id);
 extern void fpc_reset_qsfp(const struct qsfp *qsfp);
 const char *sff8472_mod_revision_to_str(u8 mod_rev_value);
+extern void qsfp_stop_poll(struct qsfp *qsfp);
 
-extern void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp);
 #endif
 

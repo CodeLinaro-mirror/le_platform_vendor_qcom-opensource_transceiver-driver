@@ -20,9 +20,8 @@ static int cmis_mod_probe(struct qsfp *qsfp)
         return ret;
     }
 
-    TRX_LOG_INFO(qsfp, "id_stat id 0x%X rev 0x%X flat_mem 0x%X state 0x%X",
-                 id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem,
-                 id_stat.mod_state);
+    TRX_LOG_INFO(qsfp, "id_stat id 0x%X rev 0x%X flat_mem 0x%X",
+                 id_stat.phys_id, id_stat.rev_spec, id_stat.flat_mem);
 
     /* Early setup - we need to know if this module has a page register */
     qsfp->module_flat_mem = id_stat.flat_mem;
@@ -75,31 +74,47 @@ static int cmis_mod_probe(struct qsfp *qsfp)
     return 0;
 }
 
-static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
+static int cmis_disable_redundant_irq(const struct qsfp *qsfp)
 {
     int ret;
-    u8 mod_mask[] = {0xC7, 0xFF, 0xFF, 0xFF};
-    u8 page10_mask[] = {0xFF,
-                        0x00, /* TX Fault/TX Failure */
-                        0xFF, /* TX LOS disable */
-                        0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                        0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                        0x00, /* RX LOS enable */
-                        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    u8 mod_mask[] = {0xC7,
+                     0xFF, /* voltage and temperature */
+                     0xFF, 0xFF};
+    u8 page10_mask[] = {0xFF, /* Data path state change masks */
+                        0xFF, /* TX Fault/TX Failure */
+                        0xFF, /* TX LOS */
+                        0xFF, /* TX CDR LOL */
+                        0xFF, /* TX Adaptive eq fault */
+                        0xFF, /* TX power high alarm */
+                        0xFF, /* TX power low alarm */
+                        0xFF, /* TX power high warning */
+                        0xFF, /* TX power low warning */
+                        0xFF, /* TX bias high alarm */
+                        0xFF, /* TX bias low alarm */
+                        0xFF, /* TX bias high warning */
+                        0xFF, /* TX bias low warning */
+                        0xFF, /* RX LOS */
+                        0xFF, /* RX CDR LOL */
+                        0xFF, /* RX power high alarm */
+                        0xFF, /* RX power low alarm */
+                        0xFF, /* RX power high warning */
+                        0xFF, /* RX power low warning */
+                        0xFF};/* Output status changed mask */
     u8 page12_mask[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     u8 page13_mask[] = {0x80, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    u8 page17_mask[] = {0xFF};
+    u8 page17_mask[] = {0xFF}; /* Network Path Related Masks */
 
     /* Flat memory (Page 00h supported only) */
     if (qsfp->module_flat_mem == 0x01) {
         TRX_LOG_WARN(qsfp, "LaneMask feature not supported");
-        return;
+        return 0;
     }
 
     ret = qsfp_write(qsfp, CMIS_MODULE_MASKS, mod_mask, sizeof(mod_mask));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant module level "
                           "interrupts. ret %d", ret);
+        return ret;
     }
 
     ret = qsfp_write(qsfp, CMIS_PAGE10_MASKS, page10_mask,
@@ -107,6 +122,7 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
                           "page10. ret %d", ret);
+        return ret;
     }
 
     ret = qsfp_write(qsfp, CMIS_PAGE12_MASKS, page12_mask,
@@ -114,6 +130,7 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
                           "page12. ret %d", ret);
+        return ret;
     }
 
     ret = qsfp_write(qsfp, CMIS_PAGE13_MASKS, page13_mask,
@@ -121,6 +138,7 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
                           "page13. ret %d", ret);
+        return ret;
     }
 
     ret = qsfp_write(qsfp, CMIS_PAGE17_MASKS, page17_mask,
@@ -128,189 +146,89 @@ static void cmis_disable_redundant_irq(const struct qsfp *qsfp)
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts from "
                           "page17. ret %d", ret);
-    }
-}
-
-static int cmis_unmask_interrupt(struct qsfp *qsfp)
-{
-    int ret;
-    u8 buf = 0;
-
-    ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf, sizeof(buf));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to mask QSFP RX LOS. ret %d", ret);
-    }
-
-    ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf, sizeof(buf));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to mask QSFP TX Failure. ret %d", ret);
+        return ret;
     }
 
     return 0;
 }
 
-static int cmis_mask_interrupt(struct qsfp *qsfp)
+static void cmis_update_flags(struct qsfp *qsfp)
 {
     int ret;
-    u8 buf = 0xFF;
+    struct cmis_mod_state modst = {0};
+    struct cmis_temp_volt tv = {0};
+    struct cmis_lane_flags lane_flags = {0};
 
-    ret = qsfp_write(qsfp, CMIS_RX_LOS_MASK, &buf, sizeof(buf));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to mask QSFP RX LOS. ret %d", ret);
-    }
-
-    ret = qsfp_write(qsfp, CMIS_TX_FAILURE_MASK, &buf, sizeof(buf));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to mask QSFP TX Failure. ret %d", ret);
-    }
-
-    return 0;
-}
-
-static u32 cmis_get_state_poll(struct qsfp *qsfp)
-{
-    int ret;
-    u8 rx_los = 0;
-    u8 tx_failure = 0;
-    u32 state = 0;
-    bool poll = false;
-
-    ret = qsfp_read(qsfp, CMIS_TX_FAILURE, &tx_failure, sizeof(tx_failure));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read TX status. ret %d", ret);
-        /* Enable poll in case of failure to retry */
+    if (qsfp->need_poll == false) {
+        TRX_LOG_ERR(qsfp, "Ignoring interrupt");
         qsfp->need_poll = true;
-        return qsfp->lanes_state;
+        return;
     }
 
-    ret = qsfp_read(qsfp, CMIS_RX_LOS, &rx_los, sizeof(rx_los));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read RX LOS. ret %d", ret);
-        /* Enable poll in case of failure to retry */
+    if ((qsfp->features & QSFP_F_RX_LOS) || (qsfp->features & QSFP_F_TX_FAULT)) {
+        /* All interrupts were disabled so enable poll */
         qsfp->need_poll = true;
-        return qsfp->lanes_state;
-    }
-
-    if (rx_los) {
-        state |= (rx_los << QSFP_LOS_SHIFT);
-        poll = true;
-    }
-
-    if (tx_failure) {
-        state |= (tx_failure << QSFP_TX_FAULT_SHIFT);
-        poll = true;
-    }
-
-    /* If none of flag set then unmask the interrupt */
-    if (!poll) {
-        cmis_unmask_interrupt(qsfp);
-    }
-
-    qsfp->need_poll = poll;
-
-    return state;
-}
-
-static u32 cmis_get_state_irq(struct qsfp *qsfp)
-{
-    int ret;
-    u32 state = 0;
-    struct cmis_irq_flags irq_flags = {0};
-    bool poll = false;
-
-    ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, sizeof(irq_flags));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
-        /* Enable poll in case of failure to retry */
-        qsfp->need_poll = true;
-        /* Preserve the current state */
-        return qsfp->lanes_state;
-    }
-
-    TRX_LOG_INFO(qsfp, "IntL %u Module state 0x%X Bank 0: page11 %u "
-    "page12 %u page 14 %u page 2c %u", irq_flags.irq_deasserted,
-    irq_flags.mod_state, irq_flags.bank0_page11, irq_flags.bank0_page12,
-    irq_flags.bank0_page14, irq_flags.bank0_page2c);
-
-    if (irq_flags.bank0_page11) {
-        struct cmis_bank0_page11 b0p11 = {0};
-        ret = qsfp_read(qsfp, CMIS_LANE_FLAGS, &b0p11, sizeof(b0p11));
-        if (ret < 0) {
-            TRX_LOG_ERR(qsfp, "Failed to read QSFP lane flags. ret %d", ret);
-            /* Enable poll in case of failure to retry */
-            qsfp->need_poll = true;
-            /* Preserve the current state */
-            return qsfp->lanes_state;
-        }
-
-        if (b0p11.rx_los) {
-            state |= (b0p11.rx_los << QSFP_LOS_SHIFT);
-            poll = true;
-        }
-
-        if (b0p11.tx_failure) {
-            state |= (b0p11.tx_failure << QSFP_TX_FAULT_SHIFT);
-            poll = true;
-        }
-
-        /* If flag is set then mask the interrupt */
-        if (poll) {
-            cmis_mask_interrupt(qsfp);
-        }
-
-        TRX_LOG_INFO(qsfp, "LOS RX 0x%X TX 0x%X , TX Fault 0x%X",
-                     b0p11.rx_los, b0p11.tx_los, b0p11.tx_failure);
-    }
-
-    if (irq_flags.bank1) {
-        TRX_LOG_INFO(qsfp, "Bank1 not supported by the driver. 0x%X",
-                           irq_flags.bank1);
-    }
-
-    if (irq_flags.bank2) {
-        TRX_LOG_INFO(qsfp, "Bank2 not supported by the driver. 0x%X",
-                           irq_flags.bank2);
-    }
-
-    if (irq_flags.bank3) {
-        TRX_LOG_INFO(qsfp, "Bank3 not supported by the driver. 0x%X",
-                           irq_flags.bank3);
-    }
-
-    qsfp->need_poll = poll;
-
-    return state;
-}
-
-static u32 cmis_get_state(struct qsfp *qsfp)
-{
-    int ret;
-    struct cmis_irq_flags irq_flags = {0};
-
-    ret = qsfp_read(qsfp, CMIS_IRQ_FLAGS, &irq_flags, 1);
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read QSFP IRQ status. ret %d", ret);
-        /* Enable poll in case of failure to retry */
-        qsfp->need_poll = true;
-        /* Preserve the current state */
-        return qsfp->lanes_state;
-    }
-
-    /* Before cmis module state reach ready we are facing issue of LOS
-     * register not giving appropriate status and masking of interrupt
-     * not working
-     */
-    if (irq_flags.mod_state != CMIS_MODULE_STATE_READY) {
-        TRX_LOG_INFO(qsfp, "Module state 0x%X\n", irq_flags.mod_state);
-        qsfp->need_poll = true;
-        return qsfp->lanes_state;
-    }
-
-    if (qsfp->need_poll) {
-        return cmis_get_state_poll(qsfp);
     } else {
-        return cmis_get_state_irq(qsfp);
+        /* In case of DAC no need poll */
+        qsfp->need_poll = false;
+        return;
     }
+
+    ret = qsfp_read(qsfp, CMIS_MOD_STATE, &modst, sizeof(modst));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read IRQ status. ret %d", ret);
+        return;
+    }
+
+    /* Before cmis module state reaches ready state flags were not ready */
+    if (modst.mod_state  != CMIS_MODULE_STATE_READY) {
+        TRX_LOG_INFO(qsfp, "Module state 0x%X. Not yet ready",
+                           modst.mod_state);
+        return;
+    }
+
+    ret = qsfp_read(qsfp, CMIS_TEMP_VOLT_FLAGS, &tv, sizeof(tv));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read temperature and voltage flags."
+                          " ret %d", ret);
+        return;
+    }
+
+    ret = qsfp_read(qsfp, CMIS_LANE_FLAGS, &lane_flags,
+                    sizeof(lane_flags));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read Lane flags. ret %d", ret);
+        return;
+    }
+
+    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
+
+    qsfp->flags.temp = tv.temp_alarm_warn;
+    qsfp->flags.volt = tv.volt_alarm_warn;
+
+    qsfp->flags.rx_los = lane_flags.rx_los;
+    qsfp->flags.tx_los = lane_flags.tx_los;
+    qsfp->flags.tx_fault = lane_flags.tx_failure;
+
+    qsfp->flags.rx_cdr_lol = lane_flags.rx_cdr_lol;
+    qsfp->flags.tx_cdr_lol = lane_flags.tx_cdr_lol;
+    qsfp->flags.tx_adap_eq_fault = lane_flags.tx_adap_eq_fail;
+
+    qsfp->flags.rx_power_high_alarm = lane_flags.rx_power_high_alarm;
+    qsfp->flags.rx_power_low_alarm = lane_flags.rx_power_low_alarm;
+    qsfp->flags.rx_power_high_warn = lane_flags.rx_power_high_warn;
+    qsfp->flags.rx_power_low_warn = lane_flags.rx_power_low_warn;
+
+    qsfp->flags.tx_power_high_alarm = lane_flags.tx_power_high_alarm;
+    qsfp->flags.tx_power_low_alarm = lane_flags.tx_power_low_alarm;
+    qsfp->flags.tx_power_high_warn = lane_flags.tx_power_high_warn;
+    qsfp->flags.tx_power_low_warn = lane_flags.tx_power_low_warn;
+
+    qsfp->flags.tx_bias_high_alarm = lane_flags.tx_bias_high_alarm;
+    qsfp->flags.tx_bias_low_alarm = lane_flags.tx_bias_low_alarm;
+    qsfp->flags.tx_bias_high_warn = lane_flags.tx_bias_high_warn;
+    qsfp->flags.tx_bias_low_warn = lane_flags.tx_bias_low_warn;
+
 }
 
 static int cmis_mod_tx_disable(const struct qsfp *qsfp)
@@ -404,7 +322,7 @@ static int cmis_check_feature_impl(struct qsfp *qsfp)
     }
 
     if (qsfp->id.cmis.ext.rx_los_sup) {
-        qsfp->features |= QSFP_F_LOS;
+        qsfp->features |= QSFP_F_RX_LOS;
     } else {
         TRX_LOG_WARN(qsfp, "RX LOS not implemented");
     }
@@ -442,7 +360,7 @@ static int cmis_mod_high_power(const struct qsfp *qsfp)
     int ret;
     u8 mod_ctrl = 0;
 
-    ret = qsfp_read(qsfp, CMIS_MODULE_CONTROLS, &mod_ctrl, sizeof(mod_ctrl));
+    ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read module controls: %d", ret);
         return ret;
@@ -450,7 +368,7 @@ static int cmis_mod_high_power(const struct qsfp *qsfp)
 
     mod_ctrl &= ~(CMIS_LOW_POWER_ALLOW_HW | CMIS_LOW_POWER_REQ_SW);
 
-    return qsfp_write(qsfp, CMIS_MODULE_CONTROLS, &mod_ctrl, sizeof(mod_ctrl));
+    return qsfp_write(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
 }
 
 static int cmis_mod_low_power(const struct qsfp *qsfp)
@@ -458,7 +376,7 @@ static int cmis_mod_low_power(const struct qsfp *qsfp)
     int ret;
     u8 mod_ctrl = 0;
 
-    ret = qsfp_read(qsfp, CMIS_MODULE_CONTROLS, &mod_ctrl, sizeof(mod_ctrl));
+    ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Failed to read module controls: %d", ret);
         return ret;
@@ -466,7 +384,7 @@ static int cmis_mod_low_power(const struct qsfp *qsfp)
 
     mod_ctrl |= CMIS_LOW_POWER_REQ_SW;
 
-    return qsfp_write(qsfp, CMIS_MODULE_CONTROLS, &mod_ctrl, sizeof(mod_ctrl));
+    return qsfp_write(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
 }
 
 static void cmis_eeprom_print(const struct qsfp *qsfp)
@@ -627,6 +545,38 @@ static u8 cmis_get_transceiver_type(const struct qsfp *qsfp)
 }
 
 /*
+ * Function to return the link length range.
+ */
+static trx_link_length_range cmis_get_link_length_range(const struct qsfp *qsfp)
+{
+    u8 media_encoding = 0;
+    u8 media_interface_id = 0;
+    int ret;
+
+    ret = qsfp_read(qsfp, CMIS_MEDIA_TYPE_ENCODING, &media_encoding,
+                    sizeof(media_encoding));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Media type encoding register read failed, ret %d", ret);
+        return TRX_LINK_UNKNOWN;
+    }
+
+    ret = qsfp_read(qsfp, CMIS_MEDIA_INTERFACE_ID, &media_interface_id,
+                    sizeof(media_interface_id));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Media interface id register read failed, ret %d", ret);
+        return TRX_LINK_UNKNOWN;
+    }
+
+    if (media_encoding == CMIS_MMF_ENCODING) {
+        return qsfp_mmf_code_to_link_length_range(media_interface_id);
+    } else if (media_encoding == CMIS_SMF_ENCODING) {
+        return qsfp_smf_code_to_link_length_range(media_interface_id);
+    }
+
+    return TRX_LINK_UNKNOWN;
+}
+
+/*
  * Function to return the cable assembly information from QSFP EEPROM
  * page 00h, byte 211 BIT [4-0].
  */
@@ -663,7 +613,7 @@ const char* cmis_revision_to_str(u8 mod_rev_value, char *revStr)
 const struct qsfp_spec_ops cmis_spec_ops = {
     .mod_probe = cmis_mod_probe,
     .disable_redundant_irq = cmis_disable_redundant_irq,
-    .get_state = cmis_get_state,
+    .update_flags = cmis_update_flags,
     .mod_tx_disable = cmis_mod_tx_disable,
     .lane_tx_enable = cmis_lane_tx_enable,
     .lane_tx_disable = cmis_lane_tx_disable,
@@ -677,6 +627,7 @@ const struct qsfp_spec_ops cmis_spec_ops = {
     .get_connector_type = cmis_get_connector_type,
     .get_lane_speed = cmis_get_lane_speed,
     .get_transceiver_type = cmis_get_transceiver_type,
+    .get_link_length_range = cmis_get_link_length_range,
     .get_lanes_presence = cmis_get_lanes_presence,
     .get_breakout_config = cmis_get_breakout_config,
     .irq_delay = cmis_irq_delay,

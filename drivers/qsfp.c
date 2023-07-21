@@ -145,9 +145,13 @@ int qsfp_trx_get_lane_down_reason_code(u32 lane_phandle,
 
     if (lane->sm_mod_state == QSFP_MOD_EMPTY) {
         *reason = TRX_LOCAL_PLUGOUT;
+    } else if ((lane->sm_mod_state == QSFP_MOD_ERROR_I2C) ||
+               (lane->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
+               (lane->sm_mod_state == QSFP_MOD_ERROR_TX_ENABLE_FAIL)) {
+        *reason = TRX_ERROR;
     } else if (lane->status & QSFP_F_TX_FAULT) {
         *reason = TRX_TX_FAULT;
-    } else if (lane->status & QSFP_F_LOS) {
+    } else if (lane->status & QSFP_F_RX_LOS) {
         *reason = TRX_RX_LOS;
     } else {
         TRX_LOG_INFO(lane, "Not able find reason for link down");
@@ -260,6 +264,200 @@ int qsfp_trx_get_type(u32 lane_phandle, trx_type* type)
 EXPORT_SYMBOL_GPL(qsfp_trx_get_type);
 
 /*
+ * API to determine transceiver link length range
+ */
+int qsfp_trx_get_link_length_range(u32 lane_phandle,
+                                   trx_link_length_range* link_length_range)
+{
+    struct qsfp *qsfp;
+
+    qsfp = get_qsfp(lane_phandle);
+    if (!qsfp) {
+        /* There is chance that Lane/QSFP/FPC probe not yet
+         * successfully completed
+         */
+        TRX_LOG_ERR_NODEV("Unable to get QSFP handler");
+        return -EAGAIN;
+    }
+
+    if (qsfp->spec_ops && qsfp->spec_ops->get_link_length_range) {
+        *link_length_range = qsfp->spec_ops->get_link_length_range(qsfp);
+        TRX_LOG_INFO(qsfp, "Transceiver link length range 0x%X",
+                           *link_length_range);
+        return 0;
+    } else {
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
+        return -EINVAL;
+    }
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_link_length_range);
+
+/* Link code parsed depending on SFF-8024 table */
+trx_link_length_range qsfp_link_code_to_link_length_range(u8 link_code)
+{
+    switch (link_code) {
+    case 0x02:
+    case 0x05:
+    case 0x11:
+    case 0x28:
+    case 0x29:
+    case 0x41:
+        return TRX_SR;
+
+    case 0x03:
+    case 0x27:
+    case 0x2B:
+    case 0x2C:
+    case 0x2F:
+    case 0x45:
+    case 0x46:
+    case 0x49:
+    case 0x4B:
+        return TRX_LR;
+
+    case 0x04:
+    case 0x10:
+    case 0x2D:
+    case 0x2E:
+    case 0x34:
+    case 0x35:
+    case 0x4A:
+        return TRX_ER;
+
+    case 0x4C:
+        return TRX_ZR;
+
+    case 0x0B:
+    case 0x0C:
+    case 0x0D:
+    case 0x3F:
+    case 0x40:
+        return TRX_CR;
+
+    case 0x17:
+        return TRX_CLR;
+
+    case 0x25:
+    case 0x47:
+        return TRX_DR;
+
+    case 0x37:
+    case 0x38:
+    case 0x39:
+        return TRX_BR;
+
+    case 0x26:
+    case 0x2A:
+    case 0x43:
+    case 0x48:
+        return TRX_FR;
+
+    case 0x3A:
+    case 0x36:
+        return TRX_VR;
+
+    default:
+        return TRX_LINK_UNKNOWN;
+    }
+}
+
+/* MMF code parsed depending on SFF-8024 table */
+trx_link_length_range qsfp_mmf_code_to_link_length_range(u8 mmf_code)
+{
+    switch (mmf_code) {
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x07:
+    case 0x08:
+    case 0x09:
+    case 0x0C:
+    case 0x0D:
+    case 0x0E:
+    case 0x1B:
+    case 0x0F:
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x1A:
+        return TRX_SR;
+
+    case 0x1D:
+    case 0x1E:
+    case 0x1F:
+        return TRX_VR;
+
+    default:
+        return TRX_LINK_UNKNOWN;
+    }
+}
+
+/* SMF code parsed depending on SFF-8024 table */
+trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code)
+{
+    switch (smf_code) {
+    case 0x38:
+    case 0x3A:
+        return TRX_SR;
+
+    case 0x04:
+    case 0x07:
+    case 0x09:
+    case 0x0C:
+    case 0x0D:
+    case 0x16:
+    case 0x4A:
+    case 0x19:
+    case 0x1B:
+    case 0x43:
+    case 0x1E:
+    case 0x39:
+    case 0x3B:
+    case 0x3C:
+    case 0x3D:
+        return TRX_LR;
+
+    case 0x05:
+    case 0x08:
+    case 0x40:
+    case 0x0E:
+    case 0x4B:
+    case 0x4C:
+    case 0x41:
+    case 0x42:
+        return TRX_ER;
+
+    case 0x06:
+    case 0x44:
+    case 0x4D:
+    case 0x3E:
+    case 0x3F:
+        return TRX_ZR;
+
+    case 0x14:
+    case 0x17:
+    case 0x1C:
+        return TRX_DR;
+
+    case 0x4E:
+    case 0x4F:
+    case 0x50:
+        return TRX_BR;
+
+    case 0x0A:
+    case 0x0B:
+    case 0x15:
+    case 0x18:
+    case 0x1A:
+    case 0x1D:
+        return TRX_FR;
+
+    default:
+        return TRX_LINK_UNKNOWN;
+    }
+}
+
+/*
  * API to determine transceiver near end properties
  */
 int qsfp_trx_get_laneconfig(u32 lane_phandle, trx_lane_cfg* laneinfo)
@@ -329,6 +527,7 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info)
     trx_type trx_type_t = 0;
     trx_lane_cfg trx_laneinfo_t = 0;
     trx_breakout_cfg trx_bout_config_t = 0;
+    trx_link_length_range trx_link_length_range_t = 0;
 
     ret = qsfp_trx_get_lane_speed(lane_phandle, &trx_speed_t);
     if (ret == 0) {
@@ -342,6 +541,11 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info)
         trx_info->trx_module_type = trx_type_t;
     } else {
         return ret;
+    }
+
+    ret = qsfp_trx_get_link_length_range(lane_phandle, &trx_link_length_range_t);
+    if (ret == 0) {
+        trx_info->trx_link_length_range = trx_link_length_range_t;
     }
 
     ret = qsfp_trx_get_laneconfig(lane_phandle, &trx_laneinfo_t);
@@ -362,7 +566,11 @@ EXPORT_SYMBOL_GPL(qsfp_trx_get_info);
 
 static const char  * const mod_state_strings[] = {
     [QSFP_MOD_EMPTY] = "Empty",
-    [QSFP_MOD_ERROR] = "ERROR",
+    [QSFP_MOD_ERROR_I2C] = "I2C_ERROR",
+    [QSFP_MOD_ERROR_HPOWER] = "High_Power_ERROR",
+    [QSFP_MOD_ERROR_TX_ENABLE_FAIL] = "TX_Enable_ERROR",
+    [QSFP_MOD_ERROR_I2C_SCL_STUCK] = "I2C_SCL_STUCK_ERROR",
+    [QSFP_MOD_ERROR_I2C_SDA_STUCK] = "I2C_SDA_STUCK_ERROR",
     [QSFP_MOD_REJECT_SPEC] = "Reject_Spec",
     [QSFP_MOD_REJECT_PWR] = "Reject_Power",
     [QSFP_MOD_PROBE] = "Probe",
@@ -404,8 +612,8 @@ static const char * const event_strings[] = {
     [QSFP_E_DEV_UP] = "Dev_up",
     [QSFP_E_TX_FAULT] = "TX_Fault",
     [QSFP_E_TX_FAULT_RECOVERY] = "TX_Fault_Recovery",
-    [QSFP_E_LOS] = "LOS",
-    [QSFP_E_LOS_RECOVERY] = "LOS_Recovery",
+    [QSFP_E_RX_LOS] = "RX_LOS",
+    [QSFP_E_RX_LOS_RECOVERY] = "RX_LOS_Recovery",
     [QSFP_E_REVISIT] = "Revisit",
 };
 
@@ -420,7 +628,7 @@ const char *event_to_str(u8 event)
 
 static const char * const sm_state_strings[] = {
     [QSFP_S_DOWN] = "Down",
-    [QSFP_S_LOS] = "LOS",
+    [QSFP_S_RX_LOS] = "RX_LOS",
     [QSFP_S_TX_FAULT] = "TX_Fault",
     [QSFP_S_LINK_UP] = "Link_Up",
 };
@@ -649,53 +857,20 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
     return 0;
 }
 
-static char* lanes_state_to_str(u32 state, char *str, int len)
+static void qsfp_update_flags(struct qsfp *qsfp)
 {
-    u8 s;
-    u8 i;
-
-    memset(str, 0, len);
-    /* Shift by 8 to move LOS to 1st and TX Fault to 2nd byte */
-    state >>= QSFP_LOS_SHIFT;
-
-    strlcpy(str, "LOS [", len);
-    s = strlen("LOS [");
-
-    for (i = 0 ; i < 8 && s < len; i++) {
-        if (state & 1) {
-            str[s++] = '0' + i;
-        }
-        state >>= 1;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+        /* Update current state from simulated flags */
+        qsfp->flags = qsfp->sim_flags;
+    } else {
+        /* Update current state from HW */
+        qsfp->spec_ops->update_flags(qsfp);
     }
-
-    strlcat(str, "], TX_FAULT [", len);
-    s += strlen("], TX_FAULT [");
-
-    for (i = 0 ; i < 8 && s < len; i++) {
-        if (state & 1) {
-            str[s++] = '0' + i;
-        }
-        state >>= 1;
-    }
-
-    strlcat(str, "] ", len);
-
-    return str;
-}
-
-static u32 qsfp_get_state(struct qsfp *qsfp)
-{
-    u32 state;
-
-    /* Below code is needed when ISR gets called before qsfp_sm_mod_probe */
-    if (qsfp_set_spec_ops(qsfp) < 0) {
-        TRX_LOG_ERR(qsfp, "Unable to set the spec ops");
-        return qsfp->lanes_state;
-    }
-
-    state = qsfp->spec_ops->get_state(qsfp);
-
-    return state;
+#else
+    /* Update current state from HW */
+    qsfp->spec_ops->update_flags(qsfp);
+#endif
 }
 
 u8 qsfp_check(void *buf, size_t len)
@@ -724,7 +899,7 @@ static void qsfp_sm_link_next(struct qsfp *qsfp, u8 state)
     qsfp->sm_link_state = state;
 }
 
-static void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state,
+void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state,
                              u32 timeout)
 {
     qsfp->sm_mod_state = state;
@@ -743,10 +918,10 @@ static void qsfp_sm_link_linkdown(struct qsfp *qsfp)
     transceiver_led_off(qsfp, QSFP_LED2);
 }
 
-static void qsfp_sm_link_check_los(struct qsfp *qsfp)
+static void qsfp_sm_link_check_rx_los(struct qsfp *qsfp)
 {
-    if (qsfp->status & QSFP_F_LOS) {
-        qsfp_sm_link_next(qsfp, QSFP_S_LOS);
+    if (qsfp->status & QSFP_F_RX_LOS) {
+        qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
     } else {
         qsfp_sm_link_linkup(qsfp);
     }
@@ -852,8 +1027,6 @@ static int qsfp_sm_mod_insert_lanes(struct qsfp *qsfp)
         return ret;
     }
 
-    qsfp->lanes_state |= laneinfo;
-
     for (i = 0 ; i < qsfp->num_lanes ; i++) {
         lanei = qsfp->lane[i];
         if (!lanei) {
@@ -892,8 +1065,6 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         return ret;
     }
 
-    qsfp->spec_ops->disable_redundant_irq(qsfp);
-
     /* TX disable when module inserted */
     ret = qsfp_module_tx_disable(qsfp);
     if (ret < 0) {
@@ -901,6 +1072,14 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         return ret;
     } else {
         TRX_LOG_INFO(qsfp, "Module TX Disable success");
+    }
+
+    ret = qsfp->spec_ops->disable_redundant_irq(qsfp);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Disable interrupts failed. ret %d", ret);
+        return ret;
+    } else {
+        TRX_LOG_INFO(qsfp, "Disable interrupts success");
     }
 
     /* Parse the module power requirement */
@@ -924,14 +1103,6 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         }
     }
 
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-    /* call spec specific create debugfs function to create files
-       specific to transceiver */
-    if (qsfp->spec_ops->create_debugfs) {
-        qsfp->spec_ops->create_debugfs(qsfp);
-    }
-#endif
-
     module_sysfs_init(qsfp);
 
     ret = qsfp_sm_mod_insert_lanes(qsfp);
@@ -941,6 +1112,12 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
     } else {
         TRX_LOG_INFO(qsfp, "Insert lanes success");
     }
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    /* call spec specific create debugfs function to create files
+       specific to transceiver */
+    qsfp->spec_ops->create_debugfs(qsfp);
+#endif
 
     qsfp->spec_ops->eeprom_print(qsfp);
 
@@ -971,6 +1148,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 
     module_sysfs_exit(qsfp);
     memset(&qsfp->id, 0, sizeof(qsfp->id));
+    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
     qsfp->module_power_class = 0;
@@ -978,7 +1156,6 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->spec_ops = NULL;
     qsfp->need_poll = false;
     qsfp->status = 0;
-    qsfp->lanes_state = 0;
     qsfp->module_flat_mem = 0;
 
     TRX_LOG_INFO(qsfp, "Module removed");
@@ -1020,7 +1197,7 @@ static void qsfp_sm_link_check_linkup(struct qsfp *qsfp)
     if (qsfp->status & QSFP_F_TX_FAULT) {
         qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
     } else {
-        qsfp_sm_link_check_los(qsfp);
+        qsfp_sm_link_check_rx_los(qsfp);
     }
 }
 
@@ -1029,16 +1206,16 @@ static void qsfp_sm_link_check_txf_los(struct qsfp *qsfp)
     if (qsfp->status & QSFP_F_TX_FAULT) {
         qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
         transceiver_led_off(qsfp, QSFP_LED2);
-    } else if (qsfp->status & QSFP_F_LOS) {
-        qsfp_sm_link_next(qsfp, QSFP_S_LOS);
+    } else if (qsfp->status & QSFP_F_RX_LOS) {
+        qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
         transceiver_led_off(qsfp, QSFP_LED2);
     }
 }
 
-void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp)
+static void qsfp_sm_link_update_txf_rxlos_status(struct qsfp *qsfp)
 {
     u8 i;
-    bool los = false;
+    bool rx_los = false;
     bool tx_fault = false;
     struct lane *lanei;
 
@@ -1054,13 +1231,13 @@ void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp)
 
         if (lanei->sm_link_state == QSFP_S_LINK_UP) {
         /* Even if single lane is up, remove LOS and TX Fault */
-            qsfp->status &= (~QSFP_F_LOS);
+            qsfp->status &= (~QSFP_F_RX_LOS);
             qsfp->status &= (~QSFP_F_TX_FAULT);
             return;
         }
 
-        if (lanei->status & QSFP_F_LOS) {
-            los = true;
+        if (lanei->status & QSFP_F_RX_LOS) {
+            rx_los = true;
         }
 
         if (lanei->status & QSFP_F_TX_FAULT) {
@@ -1068,10 +1245,10 @@ void qsfp_sm_link_update_txf_los_status(struct qsfp *qsfp)
         }
     }
 
-    if (los) {
-        qsfp->status |= QSFP_F_LOS;
+    if (rx_los) {
+        qsfp->status |= QSFP_F_RX_LOS;
     } else {
-        qsfp->status &= (~QSFP_F_LOS);
+        qsfp->status &= (~QSFP_F_RX_LOS);
     }
 
     if (tx_fault) {
@@ -1087,14 +1264,14 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
     switch (qsfp->sm_link_state) {
     case QSFP_S_DOWN:
         if (event == QSFP_E_REVISIT) {
-            qsfp_sm_link_update_txf_los_status(qsfp);
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             /* if device is ifconfig up then only try to make it up */
             if ((qsfp->sm_dev_state == QSFP_DEV_UP) &&
                 (qsfp->sm_mod_state == QSFP_MOD_PRESENT)) {
                 qsfp_sm_link_check_linkup(qsfp);
             }
         } else if (event == QSFP_E_DEV_UP) {
-            qsfp_sm_link_update_txf_los_status(qsfp);
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             /* if module present then only try to make it up */
             if (qsfp->sm_mod_state == QSFP_MOD_PRESENT) {
                 qsfp_sm_link_check_linkup(qsfp);
@@ -1103,16 +1280,15 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
 
         break;
 
-    case QSFP_S_LOS:
+    case QSFP_S_RX_LOS:
         if (event == QSFP_E_TX_FAULT) {
             qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
 
-        } else if (event == QSFP_E_LOS_RECOVERY) {
-            TRX_LOG_INFO(qsfp, "LOS recovered");
+        } else if (event == QSFP_E_RX_LOS_RECOVERY) {
             qsfp_sm_link_linkup(qsfp);
 
         } else if (event == QSFP_E_DEV_UP) {
-            qsfp_sm_link_update_txf_los_status(qsfp);
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             /* DevUp event comes for each of its lane going ifconfig up */
             qsfp_sm_link_check_linkup(qsfp);
 
@@ -1121,20 +1297,19 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
             /* DevDown event comes if all of its lane going ifconfig down */
             qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
         }
-        /* No need to handle LaneDown because if in LOS then there is no TX
+        /* No need to handle LaneDown because if in RX LOS then there is no TX
          * Fault. Single lane going ifconfig down cant be in linkup as qsfp
-         * state is LOS so there atleast one of the remaining lane in LOS
+         * state is RX LOS so there atleast one of the remaining lane in RX LOS
          * so state wont change
          */
         break;
 
     case QSFP_S_TX_FAULT:
         if (event == QSFP_E_TX_FAULT_RECOVERY) {
-            TRX_LOG_INFO(qsfp, "TX Fault recovered");
-            qsfp_sm_link_check_los(qsfp);
+            qsfp_sm_link_check_rx_los(qsfp);
 
         } else if ((event == QSFP_E_DEV_UP) || (event == QSFP_E_LANE_DOWN)) {
-            qsfp_sm_link_update_txf_los_status(qsfp);
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             qsfp_sm_link_check_linkup(qsfp);
 
         } else if ((event == QSFP_E_REMOVE) || (event == QSFP_E_DEV_DOWN) ||
@@ -1146,22 +1321,22 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
 
     case QSFP_S_LINK_UP:
         if (event == QSFP_E_LANE_DOWN) {
-            qsfp_sm_link_update_txf_los_status(qsfp);
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             qsfp_sm_link_check_txf_los(qsfp);
 
         } else if (event == QSFP_E_TX_FAULT) {
             qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
             transceiver_led_off(qsfp, QSFP_LED2);
 
-        } else if (event == QSFP_E_LOS) {
-            qsfp_sm_link_next(qsfp, QSFP_S_LOS);
+        } else if (event == QSFP_E_RX_LOS) {
+            qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
             transceiver_led_off(qsfp, QSFP_LED2);
 
         } else if ((event == QSFP_E_REMOVE) || (event == QSFP_E_DEV_DOWN) ||
                    (event == QSFP_E_DEV_DETACH)) {
             qsfp_sm_link_linkdown(qsfp);
         }
-        /* No need it handle DevUp event as it wont change current state */
+        /* No need to handle DevUp event as it wont change current state */
 
         break;
 
@@ -1184,7 +1359,7 @@ static int qsfp_sm_mod_present(struct qsfp *qsfp)
     return 0;
 }
 
-static void qsfp_sm_mod_error(struct qsfp *qsfp)
+static void qsfp_sm_mod_error(struct qsfp *qsfp, u8 err)
 {
     struct lane *lanei;
     u8 i;
@@ -1196,15 +1371,24 @@ static void qsfp_sm_mod_error(struct qsfp *qsfp)
         return;
     }
 
-    TRX_LOG_ERR(qsfp, "Module state set to ERROR");
-    qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR, 0);
+    TRX_LOG_ERR(qsfp, "Module state set to %s", mod_state_to_str(err));
+    qsfp_sm_mod_next(qsfp, err, 0);
+
+    if (err == QSFP_MOD_ERROR_I2C) {
+        char *msg_i2c[] = {QSFP_EVENT_ERROR_I2C, NULL};
+        kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_i2c);
+        TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_i2c[0]);
+
+    } else if (err == QSFP_MOD_ERROR_HPOWER) {
+        char *msg_hpow[] = {QSFP_EVENT_ERROR_HIGH_POWER, NULL};
+        kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_hpow);
+        TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_hpow[0]);
+    }
 
     for (i = 0 ; i < qsfp->num_lanes ; i++) {
         lanei = qsfp->lane[i];
         if (lanei && (lanei->status & QSFP_F_PRESENT)) {
-            lane_sm_mod_next(lanei, QSFP_MOD_ERROR);
-            lane_sm_link_next(lanei, QSFP_S_DOWN);
-            lane_sm_mod_remove(lanei);
+            lane_sm_mod_error(lanei, err);
         }
     }
 }
@@ -1316,11 +1500,11 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_PWR, 0);
             break;
         } else if (ret < 0) {
-            qsfp_sm_mod_error(qsfp);
+            qsfp_sm_mod_error(qsfp, QSFP_MOD_ERROR_I2C);
             break;
         }
 
-        /* Update device state as per lanes presence */
+        /* Update device state as per lanes lane_presence */
         qsfp_insert_update_devstate(qsfp);
 
         if (qsfp->sm_dev_state < QSFP_DEV_DOWN) {
@@ -1330,7 +1514,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
         ret = qsfp_sm_mod_present(qsfp);
         if (ret < 0) {
-            qsfp_sm_mod_error(qsfp);
+            qsfp_sm_mod_error(qsfp, QSFP_MOD_ERROR_HPOWER);
         } else {
         /* check state if there is no initial interrupt (ex: sff8472) and
          * Needed in case interrupt called before EEPROM read and
@@ -1343,11 +1527,11 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         break;
 
     case QSFP_MOD_WAITDEV:
-        /* Revisit event comes in case of failure and retry */
+        /* Revisit event comes in case of high power failure and retry */
         if ((event == QSFP_E_DEV_ATTACH) || (event == QSFP_E_REVISIT)) {
             ret = qsfp_sm_mod_present(qsfp);
             if (ret < 0) {
-                qsfp_sm_mod_error(qsfp);
+                qsfp_sm_mod_error(qsfp, QSFP_MOD_ERROR_HPOWER);
             } else {
                 mod_delayed_work(system_wq, &qsfp->poll,
                                  msecs_to_jiffies(300));
@@ -1367,14 +1551,16 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
 
     case QSFP_MOD_REJECT_SPEC:
     case QSFP_MOD_REJECT_PWR:
-    case QSFP_MOD_ERROR:
+    case QSFP_MOD_ERROR_I2C:
+    case QSFP_MOD_ERROR_HPOWER:
+    case QSFP_MOD_ERROR_TX_ENABLE_FAIL:
          break;
     }
 }
 
-void qsfp_sm_event(struct qsfp *qsfp, u8 event)
+static void qsfp_sm_event(struct qsfp *qsfp, u8 event)
 {
-    TRX_LOG_INFO(qsfp, "Enter [%7s:%8s:%8s]   Event: %s",
+    TRX_LOG_INFO(qsfp, "Enter [%s:%s:%s]   Event: %s",
                        mod_state_to_str(qsfp->sm_mod_state),
                        dev_state_to_str(qsfp->sm_dev_state),
                        link_state_to_str(qsfp->sm_link_state),
@@ -1384,7 +1570,7 @@ void qsfp_sm_event(struct qsfp *qsfp, u8 event)
     qsfp_sm_module(qsfp, event);
     qsfp_sm_link(qsfp, event);
 
-    TRX_LOG_INFO(qsfp, "Exit  [%7s:%8s:%8s]\n",
+    TRX_LOG_INFO(qsfp, "Exit  [%s:%s:%s]\n",
                        mod_state_to_str(qsfp->sm_mod_state),
                        dev_state_to_str(qsfp->sm_dev_state),
                        link_state_to_str(qsfp->sm_link_state));
@@ -1605,98 +1791,196 @@ static void qsfp_timeout(struct work_struct *work)
     rtnl_unlock();
 }
 
-/*
- * Checks QSFP status for LOS and TX Fault
- */
-void qsfp_check_state(struct qsfp *qsfp)
+static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
+                                   u8 new_flag, char *str)
 {
     u8 i;
-    u8 status;
-    u8 los_state;
-    u8 tf_state;
-    u8 presence_state;
-    u8 changed_tf_state;
-    u8 changed_los_state;
-    u32 lanes_state;
-    u32 changed;
+    char rstr[QSFP_FAULT_STR_MAX];
     struct lane *lanei;
-    char cur_state_str[QSFP_STATE_STR_MAX_LEN];
-    char next_state_str[QSFP_STATE_STR_MAX_LEN];
-    char changed_state_str[QSFP_STATE_STR_MAX_LEN];
-    bool qsfp_los = true;
-    bool qsfp_tf = true;
+    char *msg[] = {str, NULL};
+    char *msg_recovery[] = {rstr, NULL};
 
-    lanes_state = qsfp_get_state(qsfp);
-    changed = lanes_state ^ qsfp->lanes_state;
-    changed &= (QSFP_F_LOS_0_7) | (QSFP_F_TX_FAULT_0_7);
+    scnprintf(rstr, QSFP_FAULT_STR_MAX, "%s_RECOVERY", str);
 
-    if (!changed) {
+    for (i = 0 ; i < qsfp->num_lanes ; i++, chgd >>= 1, new_flag >>= 1) {
+        lanei = qsfp->lane[i];
+        if (!lanei) {
+            continue;
+        }
+        if ((chgd & 1) && (lanei->sm_dev_state == QSFP_DEV_UP) &&
+            (lanei->status & QSFP_F_PRESENT)) {
+            if (new_flag & 1) {
+                kobject_uevent_env(&lanei->dev->kobj, KOBJ_CHANGE, msg);
+                TRX_LOG_INFO(lanei, "Fault Report: %s", str);
+            } else {
+                kobject_uevent_env(&lanei->dev->kobj, KOBJ_CHANGE, msg_recovery);
+                TRX_LOG_INFO(lanei, "Fault Report Recovery: %s", rstr);
+            }
+        }
+    }
+}
+
+static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
+{
+    u8 new_flag;
+
+    if (qsfp->sm_dev_state != QSFP_DEV_UP) {
         return;
     }
 
-    TRX_LOG_INFO(qsfp, "Current state %s 0x%X, Next state %s 0x%X, "
-    "Changed state to be processed %s 0x%X",
-    lanes_state_to_str(qsfp->lanes_state, cur_state_str, sizeof(cur_state_str))
-    , qsfp->lanes_state ,
-    lanes_state_to_str(lanes_state, next_state_str, sizeof(next_state_str)),
-    lanes_state,
-    lanes_state_to_str(changed, changed_state_str, sizeof(changed_state_str)),
-    changed);
+    new_flag = qsfp->flags.temp;
 
-    lanes_state |= qsfp->lanes_state & (QSFP_F_PRESENT_0_7 |
-                                        QSFP_F_TX_DISABLE_0_7);
-    qsfp->lanes_state = lanes_state;
+    if (chgd & QSFP_TEMP_HIGH_ALARM) {
+        if (new_flag & QSFP_TEMP_HIGH_ALARM) {
+            char *msg_high_alarm[] = {QSFP_EVENT_TEMP_HIGH_ALARM, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_alarm[0]);
+        } else {
+            char *msg_high_alarm_recovery[] = {QSFP_EVENT_TEMP_HIGH_ALARM_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_alarm_recovery[0]);
+        }
+    }
 
-    presence_state = lanes_state & (QSFP_F_PRESENT_0_7);
-    los_state = (lanes_state & (QSFP_F_LOS_0_7)) >> QSFP_LOS_SHIFT;
-    tf_state = (lanes_state & (QSFP_F_TX_FAULT_0_7)) >> QSFP_TX_FAULT_SHIFT;
-    changed_los_state = (changed & (QSFP_F_LOS_0_7)) >> QSFP_LOS_SHIFT;
-    changed_tf_state = (changed & (QSFP_F_TX_FAULT_0_7)) >> QSFP_TX_FAULT_SHIFT;
+    if (chgd & QSFP_TEMP_LOW_ALARM) {
+        if (new_flag & QSFP_TEMP_LOW_ALARM) {
+            char *msg_low_alarm[] = {QSFP_EVENT_TEMP_LOW_ALARM, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_alarm[0]);
+        } else {
+            char *msg_low_alarm_recovery[] = {QSFP_EVENT_TEMP_LOW_ALARM_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_alarm_recovery[0]);
+        }
+    }
+
+    if (chgd & QSFP_TEMP_HIGH_WARN) {
+        if (new_flag & QSFP_TEMP_HIGH_WARN) {
+            char *msg_high_warn[] = {QSFP_EVENT_TEMP_HIGH_WARN, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_warn[0]);
+        } else {
+            char *msg_high_warn_recovery[] = {QSFP_EVENT_TEMP_HIGH_WARN_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_warn_recovery[0]);
+        }
+    }
+
+    if (chgd & QSFP_TEMP_LOW_WARN) {
+        if (new_flag & QSFP_TEMP_LOW_WARN) {
+            char *msg_low_warn[] = {QSFP_EVENT_TEMP_LOW_WARN, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_warn[0]);
+        } else {
+            char *msg_low_warn_recovery[] = {QSFP_EVENT_TEMP_LOW_WARN_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_warn_recovery[0]);
+        }
+    }
+}
+
+static void qsfp_volt_fault_report(const struct qsfp *qsfp, u8 chgd)
+{
+    u8 new_flag;
+
+    if (qsfp->sm_dev_state != QSFP_DEV_UP) {
+        return;
+    }
+
+    new_flag = qsfp->flags.volt;
+
+    if (chgd & QSFP_VOLT_HIGH_ALARM) {
+        if (new_flag & QSFP_VOLT_HIGH_ALARM) {
+            char *msg_high_alarm[] = {QSFP_EVENT_VOLT_HIGH_ALARM, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_alarm[0]);
+        } else {
+            char *msg_high_alarm_recovery[] = {QSFP_EVENT_VOLT_HIGH_ALARM_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_alarm_recovery[0]);
+        }
+    }
+
+    if (chgd & QSFP_VOLT_LOW_ALARM) {
+        if (new_flag & QSFP_VOLT_LOW_ALARM) {
+            char *msg_low_alarm[] = {QSFP_EVENT_VOLT_LOW_ALARM, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_alarm[0]);
+        } else {
+            char *msg_low_alarm_recovery[] = {QSFP_EVENT_VOLT_LOW_ALARM_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_alarm_recovery[0]);
+        }
+    }
+
+    if (chgd & QSFP_VOLT_HIGH_WARN) {
+        if (new_flag & QSFP_VOLT_HIGH_WARN) {
+            char *msg_high_warn[] = {QSFP_EVENT_VOLT_HIGH_WARN, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_warn[0]);
+        } else {
+            char *msg_high_warn_recovery[] = {QSFP_EVENT_VOLT_HIGH_WARN_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_warn_recovery[0]);
+        }
+    }
+
+    if (chgd & QSFP_VOLT_LOW_WARN) {
+        if (new_flag & QSFP_VOLT_LOW_WARN) {
+            char *msg_low_warn[] = {QSFP_EVENT_VOLT_LOW_WARN, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn);
+            TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_warn[0]);
+        } else {
+            char *msg_low_warn_recovery[] = {QSFP_EVENT_VOLT_LOW_WARN_RECOVERY, NULL};
+            kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn_recovery);
+            TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_warn_recovery[0]);
+        }
+    }
+}
+
+static void qsfp_lane_rxlos_txf(struct qsfp *qsfp, u8 chgd_rxlos, u8 chgd_txf)
+{
+    u8 i;
+    struct lane *lanei;
+    u8 rx_los;
+    u8 tx_fault;
+
+    rx_los = qsfp->flags.rx_los;
+    tx_fault = qsfp->flags.tx_fault;
 
     rtnl_lock();
     mutex_lock(&qsfp->sm_mutex);
 
-    for (i = 0 ; i < qsfp->num_lanes ; i++, los_state >>= 1, tf_state >>= 1,
-        changed_los_state >>= 1, changed_tf_state >>= 1) {
+    for (i = 0 ; i < qsfp->num_lanes ; i++, rx_los >>= 1, tx_fault >>= 1,
+         chgd_rxlos >>= 1, chgd_txf >>= 1) {
 
         lanei = qsfp->lane[i];
         if (!lanei) {
             continue;
         }
 
-        status = lanei->status  & (QSFP_F_PRESENT | QSFP_F_TX_DISABLE);
-
-        if (!(status  & QSFP_F_PRESENT)) {
+        if (!(lanei->status  & QSFP_F_PRESENT)) {
             continue;
         }
 
-        if (los_state & 1) {
-            status |= QSFP_F_LOS;
-        }
-
-        if (tf_state & 1) {
-            status |= QSFP_F_TX_FAULT;
-        }
-
-        /* Consider only lanes which are ifconfig up */
-        if (lanei->sm_dev_state == QSFP_DEV_UP) {
-            if (!(status & QSFP_F_LOS)) {
-                qsfp_los = false;
-            }
-            if (!(status & QSFP_F_TX_FAULT)) {
-                qsfp_tf = false;
+        if (chgd_rxlos & 1) {
+            if (rx_los & 1) {
+                lanei->status |= QSFP_F_RX_LOS;
+                lane_sm_event(lanei, QSFP_E_RX_LOS);
+            } else {
+                lanei->status &= (~QSFP_F_RX_LOS);
+                lane_sm_event(lanei, QSFP_E_RX_LOS_RECOVERY);
             }
         }
 
-        lanei->status = status;
-
-        if (changed_los_state & 1) {
-            lane_sm_event(lanei, status & QSFP_F_LOS ?
-                          QSFP_E_LOS : QSFP_E_LOS_RECOVERY);
-        }
-        if (changed_tf_state & 1) {
-            lane_sm_event(lanei, status & QSFP_F_TX_FAULT ?
-                          QSFP_E_TX_FAULT : QSFP_E_TX_FAULT_RECOVERY);
+        if (chgd_txf & 1) {
+            if (tx_fault & 1) {
+                lanei->status |= QSFP_F_TX_FAULT;
+                lane_sm_event(lanei, QSFP_E_TX_FAULT);
+            } else {
+                lanei->status &= (~QSFP_F_TX_FAULT);
+                lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
+            }
         }
     }
 
@@ -1704,52 +1988,280 @@ void qsfp_check_state(struct qsfp *qsfp)
      * we will consider events only from lanes which are ifconfig up
      * Do not update qsfp state
      */
-    if (qsfp->sm_dev_state != QSFP_DEV_UP) {
-        mutex_unlock(&qsfp->sm_mutex);
-        rtnl_unlock();
+    if (qsfp->sm_dev_state == QSFP_DEV_UP) {
+        u8 old_rxlos = qsfp->status & QSFP_F_RX_LOS;
+        u8 old_tx_fault = qsfp->status & QSFP_F_TX_FAULT;
+
+        qsfp_sm_link_update_txf_rxlos_status(qsfp);
+
+        if (old_rxlos) {
+            if (!(qsfp->status & QSFP_F_RX_LOS)) {
+                qsfp->status &= (~QSFP_F_RX_LOS);
+                qsfp_sm_event(qsfp, QSFP_E_RX_LOS_RECOVERY);
+            }
+        } else {
+            if (qsfp->status & QSFP_F_RX_LOS) {
+                qsfp->status |= QSFP_F_RX_LOS;
+                qsfp_sm_event(qsfp, QSFP_E_RX_LOS);
+            }
+        }
+
+        if (old_tx_fault) {
+            if (!(qsfp->status & QSFP_F_TX_FAULT)) {
+                qsfp->status &= (~QSFP_F_TX_FAULT);
+                qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
+            }
+        } else {
+            if (qsfp->status & QSFP_F_TX_FAULT) {
+                qsfp->status |= QSFP_F_TX_FAULT;
+                qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
+            }
+        }
+
+    } else {
         TRX_LOG_INFO(qsfp, "Not updating qsfp state as all lanes were"
                            " ifconfig down");
-        return;
-    }
-
-    /* Handling QSFP event depending on Lane status */
-    if (qsfp_los) {
-        if (!(qsfp->status & QSFP_F_LOS)) {
-            qsfp->status |= QSFP_F_LOS;
-            qsfp_sm_event(qsfp, QSFP_E_LOS);
-        }
-    } else {
-        if (qsfp->status & QSFP_F_LOS) {
-            qsfp->status &= (~QSFP_F_LOS);
-            qsfp_sm_event(qsfp, QSFP_E_LOS_RECOVERY);
-        }
-    }
-
-    if (qsfp_tf) {
-        if (!(qsfp->status & QSFP_F_TX_FAULT)) {
-            qsfp->status |= QSFP_F_TX_FAULT;
-            qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
-        }
-    } else {
-        if (qsfp->status & QSFP_F_TX_FAULT) {
-            qsfp->status &= (~QSFP_F_TX_FAULT);
-            qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
-        }
     }
 
     mutex_unlock(&qsfp->sm_mutex);
     rtnl_unlock();
 }
 
+/*
+ * Checks QSFP status for TX/RX LOS, TX Fault, Temperature, Voltage, Power etc
+ */
+void qsfp_check_state(struct qsfp *qsfp)
+{
+    struct qsfp_flags old;
+    struct qsfp_flags chgd;
+
+    /* Save previous flags */
+    old = qsfp->flags;
+
+    qsfp_update_flags(qsfp);
+
+    chgd.rx_los = old.rx_los ^ qsfp->flags.rx_los;
+    chgd.tx_los = old.tx_los ^ qsfp->flags.tx_los;
+    chgd.tx_fault = old.tx_fault ^ qsfp->flags.tx_fault;
+
+    chgd.rx_cdr_lol = old.rx_cdr_lol ^ qsfp->flags.rx_cdr_lol;
+    chgd.tx_cdr_lol = old.tx_cdr_lol ^ qsfp->flags.tx_cdr_lol;
+    chgd.tx_adap_eq_fault = old.tx_adap_eq_fault ^ qsfp->flags.tx_adap_eq_fault;
+
+    chgd.temp = old.temp ^ qsfp->flags.temp;
+    chgd.volt = old.volt ^ qsfp->flags.volt;
+
+    chgd.rx_power_high_alarm = old.rx_power_high_alarm ^ qsfp->flags.rx_power_high_alarm;
+    chgd.rx_power_low_alarm = old.rx_power_low_alarm ^ qsfp->flags.rx_power_low_alarm;
+    chgd.rx_power_high_warn = old.rx_power_high_warn ^ qsfp->flags.rx_power_high_warn;
+    chgd.rx_power_low_warn = old.rx_power_low_warn ^ qsfp->flags.rx_power_low_warn;
+
+    chgd.tx_power_high_alarm = old.tx_power_high_alarm ^ qsfp->flags.tx_power_high_alarm;
+    chgd.tx_power_low_alarm = old.tx_power_low_alarm ^ qsfp->flags.tx_power_low_alarm;
+    chgd.tx_power_high_warn = old.tx_power_high_warn ^ qsfp->flags.tx_power_high_warn;
+    chgd.tx_power_low_warn = old.tx_power_low_warn ^ qsfp->flags.tx_power_low_warn;
+
+    chgd.tx_bias_high_alarm = old.tx_bias_high_alarm ^ qsfp->flags.tx_bias_high_alarm;
+    chgd.tx_bias_low_alarm = old.tx_bias_low_alarm ^ qsfp->flags.tx_bias_low_alarm;
+    chgd.tx_bias_high_warn = old.tx_bias_high_warn ^ qsfp->flags.tx_bias_high_warn;
+    chgd.tx_bias_low_warn = old.tx_bias_low_warn ^ qsfp->flags.tx_bias_low_warn;
+
+    if (chgd.rx_los) {
+        TRX_LOG_INFO(qsfp, "RX LOS: Current [0x%02X] Next [0x%02X], Changed "
+        "[0x%02X]", old.rx_los, qsfp->flags.rx_los, chgd.rx_los);
+
+        qsfp_lane_fault_report(qsfp, chgd.rx_los, qsfp->flags.rx_los, QSFP_EVENT_RX_LOS);
+    }
+
+    if (chgd.tx_fault) {
+        TRX_LOG_INFO(qsfp, "TX Fault: Current [0x%02X] Next [0x%02X] Changed "
+        "[0x%02X]", old.tx_fault, qsfp->flags.tx_fault, chgd.tx_fault);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_fault, qsfp->flags.tx_fault,
+                               QSFP_EVENT_TX_FAULT);
+    }
+
+    if (chgd.rx_los | chgd.tx_fault) {
+        qsfp_lane_rxlos_txf(qsfp, chgd.rx_los, chgd.tx_fault);
+    }
+
+    if (chgd.tx_los) {
+        TRX_LOG_INFO(qsfp, "TX LOS: Current [0x%02X] Next [0x%02X], Changed "
+        "[0x%02X]", old.tx_los, qsfp->flags.tx_los, chgd.tx_los);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_los, qsfp->flags.tx_los,
+                               QSFP_EVENT_TX_LOS);
+    }
+
+    if (chgd.temp) {
+        TRX_LOG_INFO(qsfp, "Temperature: Current [0x%02X] Next [0x%02X], "
+        "Changed [0x%02X]", old.temp, qsfp->flags.temp, chgd.temp);
+
+        qsfp_temp_fault_report(qsfp, chgd.temp);
+    }
+
+    if (chgd.volt) {
+        TRX_LOG_INFO(qsfp, "Voltage: Current [0x%02X] Next [0x%02X], Changed "
+        "[0x%02X]", old.volt, qsfp->flags.volt, chgd.volt);
+
+        qsfp_volt_fault_report(qsfp, chgd.volt);
+    }
+
+    if (chgd.rx_power_high_alarm) {
+        TRX_LOG_INFO(qsfp, "RX Power High Alarm: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.rx_power_high_alarm,
+        qsfp->flags.rx_power_high_alarm, chgd.rx_power_high_alarm);
+
+        qsfp_lane_fault_report(qsfp, chgd.rx_power_high_alarm,
+                               qsfp->flags.rx_power_high_alarm,
+                               QSFP_EVENT_RX_POWER_HIGH_ALARM);
+    }
+    if (chgd.rx_power_low_alarm) {
+        TRX_LOG_INFO(qsfp, "RX Power Low Alarm: Current [0x%02X] Next [0x%02X]"
+        ", Changed [0x%02X]", old.rx_power_low_alarm,
+        qsfp->flags.rx_power_low_alarm, chgd.rx_power_low_alarm);
+
+        qsfp_lane_fault_report(qsfp, chgd.rx_power_low_alarm,
+                               qsfp->flags.rx_power_low_alarm,
+                               QSFP_EVENT_RX_POWER_LOW_ALARM);
+    }
+    if (chgd.rx_power_high_warn) {
+        TRX_LOG_INFO(qsfp, "RX Power High Warning: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.rx_power_high_warn,
+        qsfp->flags.rx_power_high_warn, chgd.rx_power_high_warn);
+
+        qsfp_lane_fault_report(qsfp, chgd.rx_power_high_warn,
+                               qsfp->flags.rx_power_high_warn,
+                               QSFP_EVENT_RX_POWER_HIGH_WARN);
+    }
+    if (chgd.rx_power_low_warn) {
+        TRX_LOG_INFO(qsfp, "RX Power Low Warning: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.rx_power_low_warn,
+        qsfp->flags.rx_power_low_warn, chgd.rx_power_low_warn);
+
+        qsfp_lane_fault_report(qsfp, chgd.rx_power_low_warn,
+                               qsfp->flags.rx_power_low_warn,
+                               QSFP_EVENT_RX_POWER_LOW_WARN);
+    }
+
+    if (chgd.tx_power_high_alarm) {
+        TRX_LOG_INFO(qsfp, "TX Power High Alarm: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_power_high_alarm,
+        qsfp->flags.tx_power_high_alarm, chgd.tx_power_high_alarm);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_power_high_alarm,
+                               qsfp->flags.tx_power_high_alarm,
+                               QSFP_EVENT_TX_POWER_HIGH_ALARM);
+    }
+    if (chgd.tx_power_low_alarm) {
+        TRX_LOG_INFO(qsfp, "TX Power Low Alarm: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_power_low_alarm,
+        qsfp->flags.tx_power_low_alarm, chgd.tx_power_low_alarm);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_power_low_alarm,
+                               qsfp->flags.tx_power_low_alarm,
+                               QSFP_EVENT_TX_POWER_LOW_ALARM);
+    }
+    if (chgd.tx_power_high_warn) {
+        TRX_LOG_INFO(qsfp, "TX Power High Warning: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_power_high_warn,
+        qsfp->flags.tx_power_high_warn, chgd.tx_power_high_warn);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_power_high_warn,
+                               qsfp->flags.tx_power_high_warn,
+                               QSFP_EVENT_TX_POWER_HIGH_WARN);
+    }
+    if (chgd.tx_power_low_warn) {
+        TRX_LOG_INFO(qsfp, "TX Power Low Warning: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_power_low_warn,
+        qsfp->flags.tx_power_low_warn, chgd.tx_power_low_warn);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_power_low_warn,
+                               qsfp->flags.tx_power_low_warn,
+                               QSFP_EVENT_TX_POWER_LOW_WARN);
+    }
+
+    if (chgd.tx_bias_high_alarm) {
+        TRX_LOG_INFO(qsfp, "TX Bias High Alarm: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_bias_high_alarm,
+        qsfp->flags.tx_bias_high_alarm, chgd.tx_bias_high_alarm);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_bias_high_alarm,
+                               qsfp->flags.tx_bias_high_alarm,
+                               QSFP_EVENT_TX_BIAS_HIGH_ALARM);
+    }
+    if (chgd.tx_bias_low_alarm) {
+        TRX_LOG_INFO(qsfp, "TX Bias Low Alarm: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_bias_low_alarm,
+        qsfp->flags.tx_bias_low_alarm, chgd.tx_bias_low_alarm);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_bias_low_alarm,
+                               qsfp->flags.tx_bias_low_alarm,
+                               QSFP_EVENT_TX_BIAS_LOW_ALARM);
+    }
+    if (chgd.tx_bias_high_warn) {
+        TRX_LOG_INFO(qsfp, "TX Bias High Warning: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_bias_high_warn,
+        qsfp->flags.tx_bias_high_warn, chgd.tx_bias_high_warn);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_bias_high_warn,
+                               qsfp->flags.tx_bias_high_warn,
+                               QSFP_EVENT_TX_BIAS_HIGH_WARN);
+    }
+    if (chgd.tx_bias_low_warn) {
+        TRX_LOG_INFO(qsfp, "TX Bias Low Warning: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_bias_low_warn,
+        qsfp->flags.tx_bias_low_warn, chgd.tx_bias_low_warn);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_bias_low_warn,
+                               qsfp->flags.tx_bias_low_warn,
+                               QSFP_EVENT_TX_BIAS_LOW_WARN);
+    }
+
+    if (chgd.rx_cdr_lol) {
+        TRX_LOG_INFO(qsfp, "RX CDR LOL: Current [0x%02X] Next [0x%02X], "
+        "Changed [0x%02X]", old.rx_cdr_lol, qsfp->flags.rx_cdr_lol,
+        chgd.rx_cdr_lol);
+
+        qsfp_lane_fault_report(qsfp, chgd.rx_cdr_lol, qsfp->flags.rx_cdr_lol,
+                               QSFP_EVENT_RX_CDR_LOL);
+    }
+    if (chgd.tx_cdr_lol) {
+        TRX_LOG_INFO(qsfp, "TX CDR LOL: Current [0x%02X] Next [0x%02X], "
+        "Changed [0x%02X]", old.tx_cdr_lol, qsfp->flags.tx_cdr_lol,
+        chgd.tx_cdr_lol);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_cdr_lol, qsfp->flags.tx_cdr_lol,
+                               QSFP_EVENT_TX_CDR_LOL);
+    }
+    if (chgd.tx_adap_eq_fault) {
+        TRX_LOG_INFO(qsfp, "TX Adaptive EQ Fault: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_adap_eq_fault,
+        qsfp->flags.tx_adap_eq_fault, chgd.tx_adap_eq_fault);
+
+        qsfp_lane_fault_report(qsfp, chgd.tx_adap_eq_fault,
+                               qsfp->flags.tx_adap_eq_fault,
+                               QSFP_EVENT_TX_ADAPTIVE_EQ_FAULT);
+    }
+}
+
 static void qsfp_poll(struct work_struct *work)
 {
     struct qsfp *qsfp = container_of(work, struct qsfp, poll.work);
+    bool temp = qsfp->need_poll;
 
     qsfp_check_state(qsfp);
 
     if (qsfp->need_poll) {
+        if (temp == false) {
+            TRX_LOG_INFO(qsfp, "Polling started");
+        }
         /* Poll once per second */
         mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(1000));
+    } else {
+        if (temp == true) {
+            TRX_LOG_INFO(qsfp, "Polling stoped");
+        }
     }
 }
 
@@ -1762,16 +2274,30 @@ void qsfp_irq(struct qsfp *qsfp)
      * it should be ignored
      */
     if ((qsfp->sim & QSFP_F_SIM_REMOVE) ||
-        (qsfp->sim & QSFP_F_SIM_FAR_END)) {
+        (qsfp->sim & QSFP_F_SIM_FLAGS)) {
         TRX_LOG_INFO(qsfp, "Transceiver in simulation state. IRQ ignored");
         return;
     }
 #endif
 
+    qsfp->need_poll = false;
+
     if (qsfp_set_spec_ops(qsfp) < 0) {
-        /* To make sure event wont get missed */
-        TRX_LOG_ERR(qsfp, "Unable to set the spec ops. Process irq after 1sec");
-        delay = msecs_to_jiffies(1000);
+        if (qsfp->status & QSFP_F_PRESENT) {
+            /* To make sure event wont get missed */
+            TRX_LOG_ERR(qsfp, "Unable to set the spec ops. Process irq "
+                              "after 1sec");
+            delay = msecs_to_jiffies(1000);
+        } else {
+            /* During transceiver removal if qsfp interrupt line in falling
+             * edge then after removal it will be moved default rising edge.
+             * It is expected to come along with removal interrupt but
+             * sometimes it comes late so it need to be ignored
+             */
+            TRX_LOG_ERR(qsfp, "Ignoring interrupt generated after "
+                              "transceiver got removed");
+            return;
+        }
     } else {
         delay = qsfp->spec_ops->irq_delay(qsfp);
     }
@@ -1779,7 +2305,7 @@ void qsfp_irq(struct qsfp *qsfp)
     mod_delayed_work(system_wq, &qsfp->poll, delay);
 }
 
-static void qsfp_stop_poll(struct qsfp *qsfp)
+void qsfp_stop_poll(struct qsfp *qsfp)
 {
     if (qsfp->need_poll) {
         qsfp->need_poll = false;
@@ -1805,6 +2331,8 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
 
 void qsfp_module_remove_irq(struct qsfp *qsfp)
 {
+    char *msg_remove[] = {QSFP_EVENT_REMOVE, NULL};
+
     TRX_LOG_INFO(qsfp, "");
 
     qsfp_stop_poll(qsfp);
@@ -1817,6 +2345,9 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
 
     mutex_unlock(&qsfp->sm_mutex);
     rtnl_unlock();
+
+    /* Will send remove event so that app can do cleanup after transceiver removal */
+    kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_remove);
 }
 
 /*

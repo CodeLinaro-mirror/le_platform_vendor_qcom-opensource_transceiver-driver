@@ -56,8 +56,8 @@ static int sff8472_check_feature_impl(struct qsfp *qsfp)
 {
     u8 features = qsfp->id.sff8472.ext.enhopts;
 
-    if (features & SFF8472_LOS_IMPL) {
-        qsfp->features |= QSFP_F_LOS;
+    if (features & SFF8472_RX_LOS_IMPL) {
+        qsfp->features |= QSFP_F_RX_LOS;
     } else {
         TRX_LOG_WARN(qsfp, "RX LOS not implemented");
     }
@@ -105,11 +105,12 @@ static int sff8472_module_parse_power(struct qsfp *qsfp)
     return 0;
 }
 
-static void sff8472_disable_redundant_irq(const struct qsfp *qsfp)
+static int sff8472_disable_redundant_irq(const struct qsfp *qsfp)
 {
     /* sff8472 doesnot support disabling any interrupts and there are
      * no redundant interrupts as well to disable them
      */
+    return 0;
 }
 
 static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
@@ -121,8 +122,6 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 {
     int ret;
     u8 val = 0;
-
-    TRX_LOG_INFO(qsfp, "");
 
     /* As power class 1 is the highest we can not push module for
      * further high power class
@@ -154,8 +153,6 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 {
     int ret;
     u8 val = 0;
-
-    TRX_LOG_INFO(qsfp, "");
 
     /* As power class 1 is the highest we can not push module for
      * further high power class
@@ -220,60 +217,62 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
                        id->ext.vendor_sn);
 }
 
-static u32 sff8472_get_state(struct qsfp *qsfp)
+static void sff8472_update_flags(struct qsfp *qsfp)
 {
     int ret;
-    u32 state = 0;
-    u8 irq_flag = 0;
-    const __be16 los_inverted = cpu_to_be16(SFP_OPTIONS_LOS_INVERTED);
-    const __be16 los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
-    __be16 los_options;
+    struct sff8472_irq_flags irq_flags = {0};
+    const __be16 rx_los_inverted = cpu_to_be16(SFP_OPTIONS_LOS_INVERTED);
+    const __be16 rx_los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
+    __be16 rx_los_options;
 
-    /* Neither LOS or TX Fault is supported */
-    if (!((qsfp->features & QSFP_F_LOS) ||
-          (qsfp->features & QSFP_F_TX_FAULT))) {
-        qsfp->need_poll = false;
-        return qsfp->lanes_state;
-    }
-
-    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flag, sizeof(irq_flag));
+    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flags, sizeof(irq_flags));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read IRQ status flag. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read flags. ret %d", ret);
         /* Enable poll in case of failure to retry */
         qsfp->need_poll = true;
-        /* Preserve the current state */
-        return qsfp->lanes_state;
+        return;
     } else {
         /* When read is successful disable polling */
         qsfp->need_poll = false;
     }
 
-    TRX_LOG_INFO(qsfp, "IRQ status flag: 0x%X", irq_flag);
+    rx_los_options = qsfp->id.sff8472.ext.options & (rx_los_inverted | rx_los_normal);
 
-    los_options = qsfp->id.sff8472.ext.options & (los_inverted | los_normal);
+    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
 
-    if (qsfp->features & QSFP_F_LOS) {
-        if (los_options == los_normal) {
-            if (irq_flag & SFF8472_LOS) {
-                state |= (1 << QSFP_LOS_SHIFT);
-                TRX_LOG_INFO(qsfp, "LOS set");
-            }
-        } else if (los_options == los_inverted) {
-            if (!(irq_flag & SFF8472_LOS)) {
-                state |= (1 << QSFP_LOS_SHIFT);
-                TRX_LOG_INFO(qsfp, "LOS set (inverted)");
-            }
-        } else {
-            TRX_LOG_ERR(qsfp, "LOS Neither normal nor inverted");
-        }
+    if (rx_los_options == rx_los_normal) {
+        qsfp->flags.rx_los = irq_flags.rx_los;
+    } else if (rx_los_options == rx_los_inverted) {
+        qsfp->flags.rx_los = ~irq_flags.rx_los;
     }
 
-    if ((qsfp->features & QSFP_F_TX_FAULT) && (irq_flag & SFF8472_TX_FAULT)) {
-        state |= (1 << QSFP_TX_FAULT_SHIFT);
-        TRX_LOG_INFO(qsfp, "TX Fault set");
-    }
+    qsfp->flags.tx_fault = irq_flags.tx_fault;
 
-    return state;
+    qsfp->flags.temp_high_alarm = irq_flags.temp_high_alarm | irq_flags.laser_temp_high_alarm;
+    qsfp->flags.temp_low_alarm = irq_flags.temp_low_alarm | irq_flags.laser_temp_low_alarm;
+    qsfp->flags.temp_high_warn = irq_flags.temp_high_warn | irq_flags.laser_temp_high_warn;
+    qsfp->flags.temp_low_warn = irq_flags.temp_low_warn | irq_flags.laser_temp_low_warn;
+
+    qsfp->flags.volt_high_alarm = irq_flags.volt_high_alarm;
+    qsfp->flags.volt_low_alarm = irq_flags.volt_low_alarm;
+    qsfp->flags.volt_high_warn = irq_flags.volt_high_warn;
+    qsfp->flags.volt_low_warn = irq_flags.volt_low_warn;
+
+    qsfp->flags.rx1_power_high_alarm = irq_flags.rx_power_high_alarm;
+    qsfp->flags.rx1_power_low_alarm = irq_flags.rx_power_low_alarm;
+    qsfp->flags.rx1_power_high_warn = irq_flags.rx_power_high_warn;
+    qsfp->flags.rx1_power_low_warn = irq_flags.rx_power_low_warn;
+
+    qsfp->flags.tx1_power_high_alarm = irq_flags.tx_power_high_alarm;
+    qsfp->flags.tx1_power_low_alarm = irq_flags.tx_power_low_alarm;
+    qsfp->flags.tx1_power_high_warn = irq_flags.tx_power_high_warn;
+    qsfp->flags.tx1_power_low_warn = irq_flags.tx_power_low_warn;
+
+    qsfp->flags.tx1_bias_high_alarm = irq_flags.tx_bias_high_alarm;
+    qsfp->flags.tx1_bias_low_alarm = irq_flags.tx_bias_low_alarm;
+    qsfp->flags.tx1_bias_high_warn = irq_flags.tx_bias_high_warn;
+    qsfp->flags.tx1_bias_low_warn = irq_flags.tx_bias_low_warn;
+
 }
 
 static int sff8472_module_info(struct qsfp *qsfp,
@@ -304,7 +303,7 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
 
     *lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
-    if (qsfp->lane[0]) {
+    if (!qsfp->lane[0]) {
         TRX_LOG_INFO(qsfp, "Unable to get the lane\n");
         return -EINVAL;
     }
@@ -351,6 +350,14 @@ static u8 sff8472_get_transceiver_type(const struct qsfp *qsfp)
     return qsfp->id.sff8472.base.phys_id;
 }
 
+/*
+ * Function to return the link length range.
+ */
+static trx_link_length_range sff8472_get_link_length_range(const struct qsfp *qsfp)
+{
+    return qsfp_link_code_to_link_length_range(qsfp->id.sff8472.base.extended_cc);
+}
+
 static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
                                       trx_lane_cfg* laneinfo)
 {
@@ -387,7 +394,11 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
         return ret;
     }
 
-    TRX_LOG_INFO(lane, "Ctrl: 0x%X", ctrl);
+    if (!(ctrl & SFF8472_TX_DISABLE)) {
+        TRX_LOG_INFO(lane, "TX already enabled");
+        return 0;
+    }
+
     ctrl &= (~SFF8472_TX_DISABLE);
 
     ret = qsfp_write(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
@@ -411,7 +422,11 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
         return ret;
     }
 
-    TRX_LOG_INFO(qsfp, "Ctrl: 0x%X", ctrl);
+    if (ctrl & SFF8472_TX_DISABLE) {
+        TRX_LOG_INFO(qsfp, "TX already disabled");
+        return 0;
+    }
+
     ctrl |= SFF8472_TX_DISABLE;
 
     ret = qsfp_write(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
@@ -441,7 +456,7 @@ unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
 const struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_probe = sff8472_mod_probe,
     .disable_redundant_irq = sff8472_disable_redundant_irq,
-    .get_state = sff8472_get_state,
+    .update_flags = sff8472_update_flags,
     .mod_tx_disable = sff8472_mod_tx_disable,
     .lane_tx_enable = sff8472_lane_tx_enable,
     .lane_tx_disable = sff8472_lane_tx_disable,
@@ -455,6 +470,7 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .get_connector_type = sff8472_get_connector_type,
     .get_lane_speed = sff8472_get_lane_speed,
     .get_transceiver_type = sff8472_get_transceiver_type,
+    .get_link_length_range = sff8472_get_link_length_range,
     .get_lanes_presence = sff8472_get_lanes_presence,
     .get_breakout_config = sff8472_get_breakout_config,
     .irq_delay = sff8472_irq_delay,

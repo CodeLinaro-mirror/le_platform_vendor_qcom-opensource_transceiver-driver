@@ -27,6 +27,59 @@ enum {
 
 };
 
+struct sff8472_irq_flags {
+    /* Device 1 */
+    /* byte 110 */
+    u8 data_not_ready:1;
+    u8 rx_los:1;
+    u8 tx_fault:1;
+    u8 rate_select:3;
+    u8 soft_tx_disble_select:1;
+    u8 tx_disable_state:1;
+
+    u8 reserved1;
+
+    /* byte 112 */
+    u8 tx_power_low_alarm:1;
+    u8 tx_power_high_alarm:1;
+    u8 tx_bias_low_alarm:1;
+    u8 tx_bias_high_alarm:1;
+    u8 volt_low_alarm:1;
+    u8 volt_high_alarm:1;
+    u8 temp_low_alarm:1;
+    u8 temp_high_alarm:1;
+
+    /* byte 113 */
+    u8 reserved2:2;
+    u8 tec_cur_alarm:2;
+    u8 laser_temp_low_alarm:1;
+    u8 laser_temp_high_alarm:1;
+    u8 rx_power_low_alarm:1;
+    u8 rx_power_high_alarm:1;
+
+    /* byte 114 */
+    u8 tx_input_eq_ctrl_rate;
+    u8 rx_output_emp_ctrl_rate;
+
+    /* byte 116 */
+    u8 tx_power_low_warn:1;
+    u8 tx_power_high_warn:1;
+    u8 tx_bias_low_warn:1;
+    u8 tx_bias_high_warn:1;
+    u8 volt_low_warn:1;
+    u8 volt_high_warn:1;
+    u8 temp_low_warn:1;
+    u8 temp_high_warn:1;
+
+    /* byte 117 */
+    u8 reserved3:2;
+    u8 tec_cur_warn:2;
+    u8 laser_temp_low_warn:1;
+    u8 laser_temp_high_warn:1;
+    u8 rx_power_low_warn:1;
+    u8 rx_power_high_warn:1;
+}__packed;
+
 struct sff8472_temp_diag {
     u16 cal_t_slope;
     int16_t cal_t_offset;
@@ -84,11 +137,9 @@ struct sff8472_ddm_thresholds {
 #define SFP_OPTIONS_HIGH_POWER_LEVEL4 (BIT(14))
 #define SFF8472_HIGH_POWER (BIT(0))
 #define SFF8472_TX_DISABLE (BIT(6))
-#define SFF8472_LOS_IMPL (BIT(4))
+#define SFF8472_RX_LOS_IMPL (BIT(4))
 #define SFF8472_TX_FAULT_IMPL (BIT(5))
 #define SFF8472_TX_DISABLE_IMPL (BIT(6))
-#define SFF8472_LOS (BIT(1))
-#define SFF8472_TX_FAULT (BIT(2))
 #define SFF8472_DIAGMON_EXT_CAL  (BIT(4))
 #define SFF8472_DIAGMON_INT_CAL  (BIT(5))
 #define SFF8472_DIAGMON_DDM      (BIT(6))
