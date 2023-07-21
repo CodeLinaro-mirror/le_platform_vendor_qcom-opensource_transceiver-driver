@@ -390,6 +390,8 @@ struct qsfp_spec_ops {
     /* Gets Far-End Implementation */
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
+    /* Set Rate select */
+    int (*set_rate_select)(const struct qsfp *qsfp);
     unsigned long (*irq_delay)(const struct qsfp *qsfp);
     int (*create_debugfs)(struct qsfp *qsfp);
 };

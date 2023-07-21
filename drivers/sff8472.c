@@ -118,6 +118,107 @@ static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
     return -E_MAX_POWER_EXCEED;
 }
 
+static int sff8472_set_rate_select(const struct qsfp *qsfp)
+{
+    int ret;
+    u8 ctrl = 0;
+    u8 rate_id = 0;
+    bool rx_rs0 = false;
+    bool tx_rs1 = false;
+
+    if (!(qsfp->id.sff8472.ext.enhopts & SFF8472_SOFT_RATE_SELECT_IMPL)) {
+        TRX_LOG_INFO(qsfp, "Soft Rate select not supported");
+        return 0;
+    }
+
+    ret = qsfp_read(qsfp, SFF8472_RATE_ID, &rate_id, sizeof(rate_id));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read rate identifier register. "
+                          "ret %d", ret);
+        return ret;
+    } else {
+        TRX_LOG_INFO(qsfp, "Rate identifier 0x%X", rate_id);
+    }
+
+    switch (rate_id) {
+    case 0x02:
+    case 0x08:
+        rx_rs0 = true;
+        break;
+
+    case 0x04:
+        tx_rs1 = true;
+        break;
+
+    case 0x01:
+    case 0x06:
+    case 0x0A:
+    case 0x0C:
+    case 0x0E:
+    case 0x10:
+        rx_rs0 = true;
+        tx_rs1 = true;
+        break;
+
+    default:
+        rx_rs0 = false;
+        tx_rs1 = false;
+        TRX_LOG_INFO(qsfp, "Unspecified or Reserved Rate identifier 0x%X", rate_id);
+        break;
+    }
+
+    if (rx_rs0) {
+        ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read status/control register. "
+                              "ret %d", ret);
+            return ret;
+        }
+
+        if (!(ctrl & SFF8472_RX_RATE_SELECT)) {
+            if (rate_id == 0x0E) {
+                TRX_LOG_WARN(qsfp, "RX Rate select not set by default");
+            }
+
+            ctrl |= SFF8472_RX_RATE_SELECT;
+
+            ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
+                                  "ret %d", ret);
+                return ret;
+            }
+        }
+    }
+
+    if (tx_rs1) {
+        ctrl = 0;
+        ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read extended status/control register. "
+                              "ret %d", ret);
+            return ret;
+        }
+
+        if (!(ctrl & SFF8472_TX_RATE_SELECT)) {
+            if (rate_id == 0x0E) {
+                TRX_LOG_WARN(qsfp, "TX Rate select not set by default");
+            }
+
+            ctrl |= SFF8472_TX_RATE_SELECT;
+
+            ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                                  "ret %d", ret);
+                return ret;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int sff8472_mod_high_power(const struct qsfp *qsfp)
 {
     int ret;
@@ -132,8 +233,8 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read extended module control."
-                        " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read extended status/control register."
+                          " ret %d", ret);
         return ret;
     }
 
@@ -141,8 +242,8 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write extended module control."
-                          " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -163,8 +264,8 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read extended module control."
-                          " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read extended status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -172,8 +273,8 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write extended module control."
-                          " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -225,9 +326,9 @@ static void sff8472_update_flags(struct qsfp *qsfp)
     const __be16 rx_los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
     __be16 rx_los_options;
 
-    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flags, sizeof(irq_flags));
+    ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &irq_flags, sizeof(irq_flags));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read flags. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read status/control register. ret %d", ret);
         /* Enable poll in case of failure to retry */
         qsfp->need_poll = true;
         return;
@@ -247,6 +348,10 @@ static void sff8472_update_flags(struct qsfp *qsfp)
     }
 
     qsfp->flags.tx_fault = irq_flags.tx_fault;
+
+    qsfp->flags.rx_cdr_lol = irq_flags.rx_cdr_lol;
+    qsfp->flags.tx_cdr_lol = irq_flags.tx_cdr_lol;
+    qsfp->flags.tx_adap_eq_fault = irq_flags.tx_adap_eq_fault;
 
     qsfp->flags.temp_high_alarm = irq_flags.temp_high_alarm | irq_flags.laser_temp_high_alarm;
     qsfp->flags.temp_low_alarm = irq_flags.temp_low_alarm | irq_flags.laser_temp_low_alarm;
@@ -387,10 +492,11 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
         return -EINVAL;
     }
 
-    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed to read control register. ret %d", ret);
+        TRX_LOG_ERR(lane, "Failed to read status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -401,10 +507,11 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
 
     ctrl &= (~SFF8472_TX_DISABLE);
 
-    ret = qsfp_write(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_write(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed to write control register. ret %d", ret);
+        TRX_LOG_ERR(lane, "Failed to write status/control register. "
+                          "ret %d", ret);
     }
 
     return ret;
@@ -415,10 +522,11 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
     int ret;
     u8 ctrl = 0;
 
-    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read control register. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -429,10 +537,11 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
 
     ctrl |= SFF8472_TX_DISABLE;
 
-    ret = qsfp_write(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write control register. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
+                          "ret %d", ret);
     }
 
     return ret;
@@ -473,6 +582,7 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .get_link_length_range = sff8472_get_link_length_range,
     .get_lanes_presence = sff8472_get_lanes_presence,
     .get_breakout_config = sff8472_get_breakout_config,
+    .set_rate_select = sff8472_set_rate_select,
     .irq_delay = sff8472_irq_delay,
     .create_debugfs = sff8472_create_debugfs_files,
 };

@@ -1144,6 +1144,14 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         }
     }
 
+    ret = qsfp->spec_ops->set_rate_select(qsfp);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Rate select failed. ret %d", ret);
+        return ret;
+    } else {
+        TRX_LOG_INFO(qsfp, "Rate select success");
+    }
+
     module_sysfs_init(qsfp);
 
     ret = qsfp_sm_mod_insert_lanes(qsfp);

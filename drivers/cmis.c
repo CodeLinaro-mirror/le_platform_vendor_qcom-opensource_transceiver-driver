@@ -610,6 +610,12 @@ const char* cmis_revision_to_str(u8 mod_rev_value, char *revStr)
     return revStr;
 }
 
+static int cmis_set_rate_select(const struct qsfp *qsfp)
+{
+    /* Rate select not supported by CMIS */
+    return 0;
+}
+
 const struct qsfp_spec_ops cmis_spec_ops = {
     .mod_probe = cmis_mod_probe,
     .disable_redundant_irq = cmis_disable_redundant_irq,
@@ -630,6 +636,7 @@ const struct qsfp_spec_ops cmis_spec_ops = {
     .get_link_length_range = cmis_get_link_length_range,
     .get_lanes_presence = cmis_get_lanes_presence,
     .get_breakout_config = cmis_get_breakout_config,
+    .set_rate_select = cmis_set_rate_select,
     .irq_delay = cmis_irq_delay,
     .create_debugfs = cmis_create_debugfs_files,
 };

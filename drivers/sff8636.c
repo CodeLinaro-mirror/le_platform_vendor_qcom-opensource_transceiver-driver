@@ -840,6 +840,12 @@ unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
     return msecs_to_jiffies(40);
 }
 
+static int sff8636_set_rate_select(const struct qsfp *qsfp)
+{
+    /* SFF8636 supports Rate select however it is not supported by our driver */
+    return 0;
+}
+
 const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
@@ -860,6 +866,7 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .get_link_length_range = sff8636_get_link_length_range,
     .get_lanes_presence = sff8636_get_lanes_presence,
     .get_breakout_config = sff8636_get_breakout_config,
+    .set_rate_select = sff8636_set_rate_select,
     .irq_delay = sff8636_irq_delay,
     .create_debugfs = sff8636_create_debugfs_files,
 };

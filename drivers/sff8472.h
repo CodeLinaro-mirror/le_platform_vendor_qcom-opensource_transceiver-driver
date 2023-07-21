@@ -8,6 +8,7 @@
 
 enum {
     SFF8472_ID                   = QSFP_ADDR(0, 0,   0),
+    SFF8472_RATE_ID              = QSFP_ADDR(0, 0,  13),
 
     /* Device 1 registers */
     SFF8472_DDM_TH               = QSFP_ADDR(1, 0, 0),
@@ -22,7 +23,7 @@ enum {
     SFF8472_TEMP_EXT             = QSFP_ADDR(1, 0, 84),
     SFF8472_VCC_EXT              = QSFP_ADDR(1, 0, 88),
 
-    SFF8472_STATUS_FLAGS         = QSFP_ADDR(1, 0, 110),
+    SFF8472_STATUS_CTRL          = QSFP_ADDR(1, 0, 110),
     SFF8472_EXT_MOD_CTRL         = QSFP_ADDR(1, 0, 118),
 
 };
@@ -78,6 +79,22 @@ struct sff8472_irq_flags {
     u8 laser_temp_high_warn:1;
     u8 rx_power_low_warn:1;
     u8 rx_power_high_warn:1;
+
+    /* byte 118 */
+    u8 power_select:1;
+    u8 power_state:1;
+    u8 power4_enable:1;
+    u8 soft_tx_rate_select:1;
+    u8 tx_adap_eq_fault:1;
+    u8 reserved4:3;
+
+    /* byte 119 */
+    u8 rx_cdr_lol:1;
+    u8 tx_cdr_lol:1;
+    u8 gfc64:1;
+    u8 rx_pam4:1;
+    u8 tx_pam4:1;
+    u8 reserved5:3;
 }__packed;
 
 struct sff8472_temp_diag {
@@ -137,12 +154,17 @@ struct sff8472_ddm_thresholds {
 #define SFP_OPTIONS_HIGH_POWER_LEVEL4 (BIT(14))
 #define SFF8472_HIGH_POWER (BIT(0))
 #define SFF8472_TX_DISABLE (BIT(6))
+
+#define SFF8472_SOFT_RATE_SELECT_IMPL (BIT(3)|BIT(1))
 #define SFF8472_RX_LOS_IMPL (BIT(4))
 #define SFF8472_TX_FAULT_IMPL (BIT(5))
 #define SFF8472_TX_DISABLE_IMPL (BIT(6))
+
 #define SFF8472_DIAGMON_EXT_CAL  (BIT(4))
 #define SFF8472_DIAGMON_INT_CAL  (BIT(5))
 #define SFF8472_DIAGMON_DDM      (BIT(6))
 #define SFF8472_ENHOPTS_ALARMWARN (BIT(7))
+#define SFF8472_RX_RATE_SELECT      (BIT(3))
+#define SFF8472_TX_RATE_SELECT      (BIT(3))
 
 #endif
