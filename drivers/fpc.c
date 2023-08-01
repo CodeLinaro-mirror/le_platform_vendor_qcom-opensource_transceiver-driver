@@ -154,10 +154,12 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
     } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "ModulePresent Falling edge interrupt 0x%X", buf);
         qsfp_module_insert_irq(qsfp);
-    } else if (buf & FPC_IN_A_INT_FALLING_EDGE_MASK) {
+    } else if ((buf & FPC_IN_A_INT_FALLING_EDGE_MASK) ||
+        (buf & FPC_IN_C_INT_FALLING_EDGE_MASK)) {
         TRX_LOG_INFO(qsfp, "QSFP Falling edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
-    } else if (buf & FPC_IN_A_INT_RISING_EDGE_MASK) {
+    } else if ( (buf & FPC_IN_A_INT_RISING_EDGE_MASK) ||
+        (buf & FPC_IN_C_INT_RISING_EDGE_MASK)){
         TRX_LOG_INFO(qsfp, "QSFP Rising edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
     } else {
@@ -299,13 +301,13 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
 }
 
 /*
- * Enable FPC interrupt for changes in input A and B lines
+ * Enable FPC interrupt for changes in input A,B and C lines
  */
 int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp)
 {
     u8 buf;
 
-    buf = FPC_ENABLE_INPUT_A_B_INTERRUPT;
+    buf = FPC_ENABLE_INPUT_A_B_C_INTERRUPT;
 
     return fpc_write(qsfp->fpc,
            FPC_PORT_REG[FPC_INPUT_PIN_INTERRUPT_ENABLE][qsfp->port_num],
