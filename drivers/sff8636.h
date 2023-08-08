@@ -22,7 +22,13 @@
 #define SFF8636_POWER_CLASS_7 (0x03)
 
 enum {
-    SFF8636_IRQ_FLAGS                   = QSFP_ADDR(0, 0,   3),
+    SFF8636_LOS                         = QSFP_ADDR(0, 0,   3),
+    SFF8636_TX_FAULT                    = QSFP_ADDR(0, 0,   4),
+    SFF8636_CDR_LOL                     = QSFP_ADDR(0, 0,   5),
+    SFF8636_TEMP_FLAGS                  = QSFP_ADDR(0, 0,   6),
+    SFF8636_VOLT_FLAGS                  = QSFP_ADDR(0, 0,   7),
+    SFF8636_RX_FLAGS                    = QSFP_ADDR(0, 0,   9),
+    SFF8636_TX_FLAGS                    = QSFP_ADDR(0, 0,  11),
     SFF8636_TEMPERATURE                 = QSFP_ADDR(0, 0,  22),
     SFF8636_SUPPLY_VOLTAGE              = QSFP_ADDR(0, 0,  26),
     SFF8636_RX_POWER                    = QSFP_ADDR(0, 0,  34),
@@ -201,7 +207,19 @@ struct sff8636_eeprom_ext {
     u8 datecode[8];
 
     /* byte 220 */
-    u8 diagmon;
+    union {
+        u8 diagmon;
+        struct {
+            u8 reserved1:2;
+            u8 tx_mon_impl:1;
+            u8 rx_mon_impl:1;
+            u8 volt_mon_impl:1;
+            u8 temp_mon_impl:1;
+            u8 reserved2:2;
+        };
+    };
+
+    /* byte 221 */
     u8 enh_options;
     u8 baud_rate_nominal;
 
@@ -224,37 +242,45 @@ struct sff8636_id_stat {
     u8 reserved:5;
 } __packed;
 
-struct sff8636_irq_flags {
+struct sff8636_los {
     /* byte 3 */
     u8 rx_los:4;
     u8 tx_los:4;
+} __packed;
 
+struct sff8636_tx_fault {
     /* byte 4 */
     u8 tx_fault:4;
-    u8 tx_adap_eq_fault:4;
+    u8 tx_adap_eq_in_fail:4;
+} __packed;
 
+struct sff8636_cdr_lol {
+    /* byte 5 */
     u8 rx_cdr_lol:4;
     u8 tx_cdr_lol:4;
+} __packed;
 
+struct sff8636_temp_flags {
     /* byte 6 */
     u8 init_complete:1;
     u8 tc_ready:1;
     u8 reserved_1:2;
-
     u8 temp_low_warn:1;
     u8 temp_high_warn:1;
     u8 temp_low_alarm:1;
     u8 temp_high_alarm:1;
+} __packed;
 
+struct sff8636_volt_flags {
     /* byte 7 */
     u8 reserved_2:4;
     u8 volt_low_warn:1;
     u8 volt_high_warn:1;
     u8 volt_low_alarm:1;
     u8 volt_high_alarm:1;
+} __packed;
 
-    u8 vendor_specific1;
-
+struct sff8636_rx_flags {
     /* byte 9 */
     u8 rx2_power_low_warn:1;
     u8 rx2_power_high_warn:1;
@@ -274,7 +300,9 @@ struct sff8636_irq_flags {
     u8 rx3_power_high_warn:1;
     u8 rx3_power_low_alarm:1;
     u8 rx3_power_high_alarm:1;
+} __packed;
 
+struct sff8636_tx_flags {
     /* byte 11 */
     u8 tx2_bias_low_warn:1;
     u8 tx2_bias_high_warn:1;
@@ -314,7 +342,6 @@ struct sff8636_irq_flags {
     u8 tx3_power_high_warn:1;
     u8 tx3_power_low_alarm:1;
     u8 tx3_power_high_alarm:1;
-
 } __packed;
 
 struct sff8636_ddm_thresholds {

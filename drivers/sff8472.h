@@ -12,23 +12,24 @@ enum {
 
     /* Device 1 registers */
     SFF8472_DDM_TH               = QSFP_ADDR(1, 0, 0),
+    SFF8472_ENH_FLAGS_ADV        = QSFP_ADDR(1, 0, 58),
+    SFF8472_TXI_EXT              = QSFP_ADDR(1, 0, 76),
+    SFF8472_TXPWR_EXT            = QSFP_ADDR(1, 0, 80),
+    SFF8472_TEMP_EXT             = QSFP_ADDR(1, 0, 84),
+    SFF8472_VCC_EXT              = QSFP_ADDR(1, 0, 88),
     SFF8472_TEMP                 = QSFP_ADDR(1, 0, 96),
     SFF8472_VCC                  = QSFP_ADDR(1, 0, 98),
     SFF8472_TX_BIAS              = QSFP_ADDR(1, 0, 100),
     SFF8472_TX_POWER             = QSFP_ADDR(1, 0, 102),
     SFF8472_RX_POWER             = QSFP_ADDR(1, 0, 104),
-
-    SFF8472_TXI_EXT              = QSFP_ADDR(1, 0, 76),
-    SFF8472_TXPWR_EXT            = QSFP_ADDR(1, 0, 80),
-    SFF8472_TEMP_EXT             = QSFP_ADDR(1, 0, 84),
-    SFF8472_VCC_EXT              = QSFP_ADDR(1, 0, 88),
-
     SFF8472_STATUS_CTRL          = QSFP_ADDR(1, 0, 110),
+    SFF8472_ALARM_WARN           = QSFP_ADDR(1, 0, 112),
     SFF8472_EXT_MOD_CTRL         = QSFP_ADDR(1, 0, 118),
+    SFF8472_CDR_LOL              = QSFP_ADDR(1, 0, 119),
 
 };
 
-struct sff8472_irq_flags {
+struct sff8472_rxlos_txf {
     /* Device 1 */
     /* byte 110 */
     u8 data_not_ready:1;
@@ -37,9 +38,10 @@ struct sff8472_irq_flags {
     u8 rate_select:3;
     u8 soft_tx_disble_select:1;
     u8 tx_disable_state:1;
+}__packed;
 
-    u8 reserved1;
-
+struct sff8472_alarm_warn {
+    /* Device 1 */
     /* byte 112 */
     u8 tx_power_low_alarm:1;
     u8 tx_power_high_alarm:1;
@@ -51,7 +53,7 @@ struct sff8472_irq_flags {
     u8 temp_high_alarm:1;
 
     /* byte 113 */
-    u8 reserved2:2;
+    u8 reserved:2;
     u8 tec_cur_alarm:2;
     u8 laser_temp_low_alarm:1;
     u8 laser_temp_high_alarm:1;
@@ -73,28 +75,34 @@ struct sff8472_irq_flags {
     u8 temp_high_warn:1;
 
     /* byte 117 */
-    u8 reserved3:2;
+    u8 reserved1:2;
     u8 tec_cur_warn:2;
     u8 laser_temp_low_warn:1;
     u8 laser_temp_high_warn:1;
     u8 rx_power_low_warn:1;
     u8 rx_power_high_warn:1;
+}__packed;
 
+struct sff8472_tx_adp_eq_in_fail {
+    /* Device 1 */
     /* byte 118 */
     u8 power_select:1;
     u8 power_state:1;
     u8 power4_enable:1;
     u8 soft_tx_rate_select:1;
-    u8 tx_adap_eq_fault:1;
-    u8 reserved4:3;
+    u8 tx_adap_eq_in_fail:1;
+    u8 reserved:3;
+}__packed;
 
+struct sff8472_cdr_lol {
+    /* Device 1 */
     /* byte 119 */
     u8 rx_cdr_lol:1;
     u8 tx_cdr_lol:1;
     u8 gfc64:1;
     u8 rx_pam4:1;
     u8 tx_pam4:1;
-    u8 reserved5:3;
+    u8 reserved1:3;
 }__packed;
 
 struct sff8472_temp_diag {
@@ -156,15 +164,12 @@ struct sff8472_ddm_thresholds {
 #define SFF8472_TX_DISABLE (BIT(6))
 
 #define SFF8472_SOFT_RATE_SELECT_IMPL (BIT(3)|BIT(1))
-#define SFF8472_RX_LOS_IMPL (BIT(4))
-#define SFF8472_TX_FAULT_IMPL (BIT(5))
-#define SFF8472_TX_DISABLE_IMPL (BIT(6))
+#define SFF8472_TX_ADAP_EQ_IN_FAIL_IMPL (BIT(0))
 
 #define SFF8472_DIAGMON_EXT_CAL  (BIT(4))
 #define SFF8472_DIAGMON_INT_CAL  (BIT(5))
 #define SFF8472_DIAGMON_DDM      (BIT(6))
-#define SFF8472_ENHOPTS_ALARMWARN (BIT(7))
-#define SFF8472_RX_RATE_SELECT      (BIT(3))
-#define SFF8472_TX_RATE_SELECT      (BIT(3))
+#define SFF8472_RX_RATE_SELECT   (BIT(3))
+#define SFF8472_TX_RATE_SELECT   (BIT(3))
 
 #endif

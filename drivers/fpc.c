@@ -150,18 +150,28 @@ static int fpc_qsfp_irq(struct qsfp *qsfp)
     if (buf & FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "ModulePresent Rising edge interrupt 0x%X", buf);
         qsfp_module_remove_irq(qsfp);
-        return 0;
+
     } else if (buf & FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK) {
         TRX_LOG_INFO(qsfp, "ModulePresent Falling edge interrupt 0x%X", buf);
         qsfp_module_insert_irq(qsfp);
+
+    } else if (((buf & FPC_IN_A_INT_FALLING_EDGE_MASK) &&
+               (buf & FPC_IN_A_INT_RISING_EDGE_MASK)) ||
+               ((buf & FPC_IN_C_INT_FALLING_EDGE_MASK) &&
+               (buf & FPC_IN_C_INT_RISING_EDGE_MASK))) {
+        TRX_LOG_INFO(qsfp, "QSFP Falling and Rising edge interrupt 0x%X", buf);
+        qsfp_irq(qsfp);
+
     } else if ((buf & FPC_IN_A_INT_FALLING_EDGE_MASK) ||
-        (buf & FPC_IN_C_INT_FALLING_EDGE_MASK)) {
+               (buf & FPC_IN_C_INT_FALLING_EDGE_MASK)) {
         TRX_LOG_INFO(qsfp, "QSFP Falling edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
-    } else if ( (buf & FPC_IN_A_INT_RISING_EDGE_MASK) ||
-        (buf & FPC_IN_C_INT_RISING_EDGE_MASK)){
+
+    } else if ((buf & FPC_IN_A_INT_RISING_EDGE_MASK) ||
+               (buf & FPC_IN_C_INT_RISING_EDGE_MASK)){
         TRX_LOG_INFO(qsfp, "QSFP Rising edge interrupt 0x%X", buf);
         qsfp_irq(qsfp);
+
     } else {
         TRX_LOG_ERR(qsfp, "Unknown Input Interrupt status 0x%X", buf);
     }

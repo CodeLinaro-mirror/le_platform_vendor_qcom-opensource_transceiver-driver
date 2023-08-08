@@ -299,18 +299,18 @@ static int qsfp_debug_device_diagmon_show(struct seq_file *s, void *data)
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
         seq_printf(s, "Diagnostic Monitoring Type: 0x%X\n",id->ext.diagmon);
-        id->ext.diagmon&BIT(5)?seq_printf(s, "BIT[5]: Temperature monitoring"
+        id->ext.temp_mon_impl?seq_printf(s, "BIT[5]: Temperature monitoring"
                                              " implemented\n"):
             seq_printf(s, "BIT[5]: Temperature monitoring Not implemented"
                               " or pre-Rev 2.8\n");
-        id->ext.diagmon&BIT(4)?seq_printf(s, "BIT[4]: Supply voltage"
+        id->ext.volt_mon_impl?seq_printf(s, "BIT[4]: Supply voltage"
                                              " monitoring implemented\n"):
             seq_printf(s, "BIT[4]: Supply voltage monitoring Not implemented"
                           " or pre-Rev 2.8\n");
-        id->ext.diagmon&BIT(3)?seq_printf(s, "BIT[3]: Received power "
+        id->ext.rx_mon_impl?seq_printf(s, "BIT[3]: Received power "
                                "measurements type is Average Power\n"):
             seq_printf(s, "BIT[3]: Received power measurements type is OMA\n");
-        id->ext.diagmon&BIT(2)?seq_printf(s, "BIT[2]: Transmitter power "
+        id->ext.tx_mon_impl?seq_printf(s, "BIT[2]: Transmitter power "
                                              "measurement Supported\n"):
             seq_printf(s, "BIT[2]: Transmitter power measurement "
                                                "Not supported\n");
@@ -343,7 +343,7 @@ static int qsfp_debug_status_indicators_show(struct seq_file *s, void *data)
     switch (*spec_id) {
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
-        ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &status,
+        ret = qsfp_read(qsfp, SFF8636_LOS, &status,
                          sizeof(status));
         if (ret < 0) {
             seq_printf(s, "QSFP read error: %d\n", ret);

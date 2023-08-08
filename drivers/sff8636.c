@@ -63,10 +63,12 @@ static int sff8636_mod_probe(struct qsfp *qsfp)
     return 0;
 }
 
-static int sff8636_check_feature_impl(struct qsfp *qsfp)
+static int sff8636_update_features_supported(struct qsfp *qsfp)
 {
     int ret;
     u8 link_info = PORT_OTHER;
+    struct sff8636_eeprom_ext *ext = &qsfp->id.sff8636.ext;
+    struct qsfp_support *support = &qsfp->support;
 
     ret = qsfp_get_link_type(qsfp, &link_info);
 
@@ -75,22 +77,53 @@ static int sff8636_check_feature_impl(struct qsfp *qsfp)
      * wont support it
      */
     if ((0 == ret) && (PORT_FIBRE == link_info)) {
-        qsfp->features |= QSFP_F_RX_LOS;
-    } else {
-        TRX_LOG_WARN(qsfp, "RX LOS not implemented");
+        support->rx_los = 1;
     }
 
-    if (qsfp->id.sff8636.ext.tx_fault_impl) {
-        qsfp->features |= QSFP_F_TX_FAULT;
+    if (ext->temp_mon_impl) {
+        support->temp_flags = 1;
     } else {
-        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
+        /* If temp_mon_impl zero means Temperature monitoring not implemented or pre-Rev 2.8.
+         * Even though temp_mon_impl zero still there is chance that temperature monitor supported.
+         * we have to check module version to confirm it. same applies to voltage as well
+         */
+        if (qsfp->module_revision < SFF8636_REV_8636_2_8) {
+            /* Optic fibre case */
+            if ((0 == ret) && (PORT_FIBRE == link_info)) {
+                support->temp_flags = 1;
+            } else {
+            /* DAC case */
+                support->temp_flags = 0;
+            }
+        } else {
+            support->temp_flags = 0;
+        }
     }
 
-    if (qsfp->id.sff8636.ext.tx_dis_impl) {
-        qsfp->features |= QSFP_F_TX_DISABLE;
+    if (ext->volt_mon_impl) {
+        support->volt_flags = 1;
     } else {
-        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
+        if (qsfp->module_revision < SFF8636_REV_8636_2_8) {
+            if ((0 == ret) && (PORT_FIBRE == link_info)) {
+                support->volt_flags = 1;
+            } else {
+                support->volt_flags = 0;
+            }
+        } else {
+            support->volt_flags = 0;
+        }
     }
+
+    support->tx_fault = ext->tx_fault_impl;
+    support->tx_disable = ext->tx_dis_impl;
+    support->tx_los = ext->tx_los_impl;
+    support->rx_cdr_lol = ext->rx_cdr_lol_impl;
+    support->tx_cdr_lol = ext->tx_cdr_lol_impl;
+    support->rx_power_flags = ext->rx_mon_impl;
+    support->tx_power_flags = ext->tx_mon_impl;
+    support->tx_bias_flags = ext->tx_mon_impl;
+    support->rate_select = ext->rate_select_impl;
+    support->tx_adap_eq_in_fail = ext->tx_eq_auto_adap || ext->tx_adap_eq_freeze;
 
     return 0;
 }
@@ -382,110 +415,174 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
 static void sff8636_update_flags(struct qsfp *qsfp)
 {
     int ret;
-    struct sff8636_irq_flags irq_flags = {0};
+    bool err = false;
+    struct sff8636_los los = {0};
+    struct sff8636_tx_fault txf = {0};
+    struct sff8636_cdr_lol lol = {0};
+    struct sff8636_temp_flags tmf = {0};
+    struct sff8636_volt_flags vf = {0};
+    struct sff8636_rx_flags rf = {0};
+    struct sff8636_tx_flags tf = {0};
+    struct qsfp_flags *flags = &qsfp->flags;
+    struct qsfp_support *support = &qsfp->support;
 
-    ret = qsfp_read(qsfp, SFF8636_IRQ_FLAGS, &irq_flags, sizeof(irq_flags));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read flags. ret %d", ret);
-        /* Enable poll in case of failure to retry */
-        qsfp->need_poll = true;
-        return;
+    /* RX LOS and TX LOS read from same register */
+    if (support->rx_los || support->tx_los) {
+        ret = qsfp_read(qsfp, SFF8636_LOS, &los, sizeof(los));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read los. ret %d", ret);
+            err = true;
+        } else {
+            flags->rx_los = los.rx_los;
+            flags->tx_los = los.tx_los;
+        }
     }
 
-    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
+    /* TX Fault and TX Adaptive EQ input fail read from same register */
+    if (support->tx_fault || support->tx_adap_eq_in_fail) {
+        ret = qsfp_read(qsfp, SFF8636_TX_FAULT, &txf, sizeof(txf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read tx fault. ret %d", ret);
+            err = true;
+        } else {
+            flags->tx_fault = txf.tx_fault;
+            flags->tx_adap_eq_in_fail = txf.tx_adap_eq_in_fail;
+        }
+    }
 
-    qsfp->flags.rx_los = irq_flags.rx_los;
-    qsfp->flags.tx_los = irq_flags.tx_los;
-    qsfp->flags.tx_fault = irq_flags.tx_fault;
+    /* RX LOL and TX LOL read from same register */
+    if (support->rx_cdr_lol || support->tx_cdr_lol) {
+        ret = qsfp_read(qsfp, SFF8636_CDR_LOL, &lol, sizeof(lol));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read cdr lol. ret %d", ret);
+            err = true;
+        } else {
+            flags->rx_cdr_lol = lol.rx_cdr_lol;
+            flags->tx_cdr_lol = lol.tx_cdr_lol;
+        }
+    }
 
-    qsfp->flags.rx_cdr_lol = irq_flags.rx_cdr_lol;
-    qsfp->flags.tx_cdr_lol = irq_flags.tx_cdr_lol;
-    qsfp->flags.tx_adap_eq_fault = irq_flags.tx_adap_eq_fault;
+    if (support->temp_flags) {
+        ret = qsfp_read(qsfp, SFF8636_TEMP_FLAGS, &tmf, sizeof(tmf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read temperature alarm warning. ret %d", ret);
+            /* Enable poll in case of failure to retry */
+            err = true;
+        } else {
+            flags->temp_high_alarm = tmf.temp_high_alarm;
+            flags->temp_low_alarm = tmf.temp_low_alarm;
+            flags->temp_high_warn = tmf.temp_high_warn;
+            flags->temp_low_warn = tmf.temp_low_warn;
+        }
+    }
 
-    qsfp->flags.temp_high_alarm = irq_flags.temp_high_alarm;
-    qsfp->flags.temp_low_alarm = irq_flags.temp_low_alarm;
-    qsfp->flags.temp_high_warn = irq_flags.temp_high_warn;
-    qsfp->flags.temp_low_warn = irq_flags.temp_low_warn;
+    if (support->volt_flags) {
+        ret = qsfp_read(qsfp, SFF8636_VOLT_FLAGS, &vf, sizeof(vf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read voltage alarm warning. ret %d", ret);
+            err = true;
+        } else {
+            flags->volt_high_alarm = vf.volt_high_alarm;
+            flags->volt_low_alarm = vf.volt_low_alarm;
+            flags->volt_high_warn = vf.volt_high_warn;
+            flags->volt_low_warn = vf.volt_low_warn;
+        }
+    }
 
-    qsfp->flags.volt_high_alarm = irq_flags.volt_high_alarm;
-    qsfp->flags.volt_low_alarm = irq_flags.volt_low_alarm;
-    qsfp->flags.volt_high_warn = irq_flags.volt_high_warn;
-    qsfp->flags.volt_low_warn = irq_flags.volt_low_warn;
+    if (support->rx_power_flags) {
+        ret = qsfp_read(qsfp, SFF8636_RX_FLAGS, &rf, sizeof(rf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read rx alarm warning. ret %d", ret);
+            err = true;
+        } else {
+            flags->rx1_power_high_alarm = rf.rx1_power_high_alarm;
+            flags->rx2_power_high_alarm = rf.rx2_power_high_alarm;
+            flags->rx3_power_high_alarm = rf.rx3_power_high_alarm;
+            flags->rx4_power_high_alarm = rf.rx4_power_high_alarm;
 
-    qsfp->flags.rx1_power_high_alarm = irq_flags.rx1_power_high_alarm;
-    qsfp->flags.rx2_power_high_alarm = irq_flags.rx2_power_high_alarm;
-    qsfp->flags.rx3_power_high_alarm = irq_flags.rx3_power_high_alarm;
-    qsfp->flags.rx4_power_high_alarm = irq_flags.rx4_power_high_alarm;
+            flags->rx1_power_low_alarm = rf.rx1_power_low_alarm;
+            flags->rx2_power_low_alarm = rf.rx2_power_low_alarm;
+            flags->rx3_power_low_alarm = rf.rx3_power_low_alarm;
+            flags->rx4_power_low_alarm = rf.rx4_power_low_alarm;
 
-    qsfp->flags.rx1_power_low_alarm = irq_flags.rx1_power_low_alarm;
-    qsfp->flags.rx2_power_low_alarm = irq_flags.rx2_power_low_alarm;
-    qsfp->flags.rx3_power_low_alarm = irq_flags.rx3_power_low_alarm;
-    qsfp->flags.rx4_power_low_alarm = irq_flags.rx4_power_low_alarm;
+            flags->rx1_power_high_warn = rf.rx1_power_high_warn;
+            flags->rx2_power_high_warn = rf.rx2_power_high_warn;
+            flags->rx3_power_high_warn = rf.rx3_power_high_warn;
+            flags->rx4_power_high_warn = rf.rx4_power_high_warn;
 
-    qsfp->flags.rx1_power_high_warn = irq_flags.rx1_power_high_warn;
-    qsfp->flags.rx2_power_high_warn = irq_flags.rx2_power_high_warn;
-    qsfp->flags.rx3_power_high_warn = irq_flags.rx3_power_high_warn;
-    qsfp->flags.rx4_power_high_warn = irq_flags.rx4_power_high_warn;
+            flags->rx1_power_low_warn = rf.rx1_power_low_warn;
+            flags->rx2_power_low_warn = rf.rx2_power_low_warn;
+            flags->rx3_power_low_warn = rf.rx3_power_low_warn;
+            flags->rx4_power_low_warn = rf.rx4_power_low_warn;
+        }
+    }
 
-    qsfp->flags.rx1_power_low_warn = irq_flags.rx1_power_low_warn;
-    qsfp->flags.rx2_power_low_warn = irq_flags.rx2_power_low_warn;
-    qsfp->flags.rx3_power_low_warn = irq_flags.rx3_power_low_warn;
-    qsfp->flags.rx4_power_low_warn = irq_flags.rx4_power_low_warn;
+    if (support->tx_power_flags || support->tx_bias_flags) {
+        ret = qsfp_read(qsfp, SFF8636_TX_FLAGS, &tf, sizeof(tf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read tx alarm warning. ret %d", ret);
+            err = true;
+        } else {
+            flags->tx1_power_high_alarm = tf.tx1_power_high_alarm;
+            flags->tx2_power_high_alarm = tf.tx2_power_high_alarm;
+            flags->tx3_power_high_alarm = tf.tx3_power_high_alarm;
+            flags->tx4_power_high_alarm = tf.tx4_power_high_alarm;
 
-    qsfp->flags.tx1_power_high_alarm = irq_flags.tx1_power_high_alarm;
-    qsfp->flags.tx2_power_high_alarm = irq_flags.tx2_power_high_alarm;
-    qsfp->flags.tx3_power_high_alarm = irq_flags.tx3_power_high_alarm;
-    qsfp->flags.tx4_power_high_alarm = irq_flags.tx4_power_high_alarm;
+            flags->tx1_power_low_alarm = tf.tx1_power_low_alarm;
+            flags->tx2_power_low_alarm = tf.tx2_power_low_alarm;
+            flags->tx3_power_low_alarm = tf.tx3_power_low_alarm;
+            flags->tx4_power_low_alarm = tf.tx4_power_low_alarm;
 
-    qsfp->flags.tx1_power_low_alarm = irq_flags.tx1_power_low_alarm;
-    qsfp->flags.tx2_power_low_alarm = irq_flags.tx2_power_low_alarm;
-    qsfp->flags.tx3_power_low_alarm = irq_flags.tx3_power_low_alarm;
-    qsfp->flags.tx4_power_low_alarm = irq_flags.tx4_power_low_alarm;
+            flags->tx1_power_high_warn = tf.tx1_power_high_warn;
+            flags->tx2_power_high_warn = tf.tx2_power_high_warn;
+            flags->tx3_power_high_warn = tf.tx3_power_high_warn;
+            flags->tx4_power_high_warn = tf.tx4_power_high_warn;
 
-    qsfp->flags.tx1_power_high_warn = irq_flags.tx1_power_high_warn;
-    qsfp->flags.tx2_power_high_warn = irq_flags.tx2_power_high_warn;
-    qsfp->flags.tx3_power_high_warn = irq_flags.tx3_power_high_warn;
-    qsfp->flags.tx4_power_high_warn = irq_flags.tx4_power_high_warn;
+            flags->tx1_power_low_warn = tf.tx1_power_low_warn;
+            flags->tx2_power_low_warn = tf.tx2_power_low_warn;
+            flags->tx3_power_low_warn = tf.tx3_power_low_warn;
+            flags->tx4_power_low_warn = tf.tx4_power_low_warn;
 
-    qsfp->flags.tx1_power_low_warn = irq_flags.tx1_power_low_warn;
-    qsfp->flags.tx2_power_low_warn = irq_flags.tx2_power_low_warn;
-    qsfp->flags.tx3_power_low_warn = irq_flags.tx3_power_low_warn;
-    qsfp->flags.tx4_power_low_warn = irq_flags.tx4_power_low_warn;
+            flags->tx1_bias_high_alarm = tf.tx1_bias_high_alarm;
+            flags->tx2_bias_high_alarm = tf.tx2_bias_high_alarm;
+            flags->tx3_bias_high_alarm = tf.tx3_bias_high_alarm;
+            flags->tx4_bias_high_alarm = tf.tx4_bias_high_alarm;
 
-    qsfp->flags.tx1_bias_high_alarm = irq_flags.tx1_bias_high_alarm;
-    qsfp->flags.tx2_bias_high_alarm = irq_flags.tx2_bias_high_alarm;
-    qsfp->flags.tx3_bias_high_alarm = irq_flags.tx3_bias_high_alarm;
-    qsfp->flags.tx4_bias_high_alarm = irq_flags.tx4_bias_high_alarm;
+            flags->tx1_bias_low_alarm = tf.tx1_bias_low_alarm;
+            flags->tx2_bias_low_alarm = tf.tx2_bias_low_alarm;
+            flags->tx3_bias_low_alarm = tf.tx3_bias_low_alarm;
+            flags->tx4_bias_low_alarm = tf.tx4_bias_low_alarm;
 
-    qsfp->flags.tx1_bias_low_alarm = irq_flags.tx1_bias_low_alarm;
-    qsfp->flags.tx2_bias_low_alarm = irq_flags.tx2_bias_low_alarm;
-    qsfp->flags.tx3_bias_low_alarm = irq_flags.tx3_bias_low_alarm;
-    qsfp->flags.tx4_bias_low_alarm = irq_flags.tx4_bias_low_alarm;
+            flags->tx1_bias_high_warn = tf.tx1_bias_high_warn;
+            flags->tx2_bias_high_warn = tf.tx2_bias_high_warn;
+            flags->tx3_bias_high_warn = tf.tx3_bias_high_warn;
+            flags->tx4_bias_high_warn = tf.tx4_bias_high_warn;
 
-    qsfp->flags.tx1_bias_high_warn = irq_flags.tx1_bias_high_warn;
-    qsfp->flags.tx2_bias_high_warn = irq_flags.tx2_bias_high_warn;
-    qsfp->flags.tx3_bias_high_warn = irq_flags.tx3_bias_high_warn;
-    qsfp->flags.tx4_bias_high_warn = irq_flags.tx4_bias_high_warn;
+            flags->tx1_bias_low_warn = tf.tx1_bias_low_warn;
+            flags->tx2_bias_low_warn = tf.tx2_bias_low_warn;
+            flags->tx3_bias_low_warn = tf.tx3_bias_low_warn;
+            flags->tx4_bias_low_warn = tf.tx4_bias_low_warn;
+        }
+    }
 
-    qsfp->flags.tx1_bias_low_warn = irq_flags.tx1_bias_low_warn;
-    qsfp->flags.tx2_bias_low_warn = irq_flags.tx2_bias_low_warn;
-    qsfp->flags.tx3_bias_low_warn = irq_flags.tx3_bias_low_warn;
-    qsfp->flags.tx4_bias_low_warn = irq_flags.tx4_bias_low_warn;
+    if (err) {
+    /* Enable poll in case of failure to retry */
+        qsfp->need_poll = true;
 
+    } else if (flags->rx_los | flags->tx_los | flags->tx_fault | flags->rx_cdr_lol |
+        flags->tx_cdr_lol | flags->tx_adap_eq_in_fail | flags->temp | flags->volt |
+        flags->rx_power_high_alarm | flags->rx_power_low_alarm |
+        flags->rx_power_high_warn | flags->rx_power_low_warn |
+        flags->tx_power_high_alarm | flags->tx_power_low_alarm |
+        flags->tx_power_high_warn | flags->tx_power_low_warn |
+        flags->tx_bias_high_alarm | flags->tx_bias_low_alarm |
+        flags->tx_bias_high_warn | flags->tx_bias_low_warn) {
     /* if anyone flag set then enable poll as there is no further interrupt
      * due to existing set flags
      */
-    if (qsfp->flags.rx_los | qsfp->flags.tx_los | qsfp->flags.tx_fault |
-        qsfp->flags.rx_cdr_lol | qsfp->flags.tx_cdr_lol |
-        qsfp->flags.tx_adap_eq_fault | qsfp->flags.temp | qsfp->flags.volt |
-        qsfp->flags.rx_power_high_alarm | qsfp->flags.rx_power_low_alarm |
-        qsfp->flags.rx_power_high_warn | qsfp->flags.rx_power_low_warn |
-        qsfp->flags.tx_power_high_alarm | qsfp->flags.tx_power_low_alarm |
-        qsfp->flags.tx_power_high_warn | qsfp->flags.tx_power_low_warn |
-        qsfp->flags.tx_bias_high_alarm | qsfp->flags.tx_bias_low_alarm |
-        qsfp->flags.tx_bias_high_warn | qsfp->flags.tx_bias_low_warn) {
-
         qsfp->need_poll = true;
+    } else {
+        qsfp->need_poll = false;
     }
 }
 
@@ -853,7 +950,7 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_tx_disable = sff8636_mod_tx_disable,
     .lane_tx_enable = sff8636_lane_tx_enable,
     .lane_tx_disable = sff8636_lane_tx_disable,
-    .check_features_impl = sff8636_check_feature_impl,
+    .update_features_supported = sff8636_update_features_supported,
     .module_parse_power = sff8636_module_parse_power,
     .handle_max_power_exceed = sff8636_handle_max_power_exceed,
     .mod_high_power = sff8636_mod_high_power,

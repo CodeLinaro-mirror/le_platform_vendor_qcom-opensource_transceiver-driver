@@ -23,5 +23,6 @@ int qsfp_sysfs_init(struct qsfp *qsfp);
 int qsfp_sysfs_exit(struct qsfp *qsfp);
 int module_sysfs_init(struct qsfp *qsfp);
 int module_sysfs_exit(struct qsfp *qsfp);
+extern void qsfp_fill_features_str(const struct qsfp *qsfp, char *buf, int len);
 
 #endif

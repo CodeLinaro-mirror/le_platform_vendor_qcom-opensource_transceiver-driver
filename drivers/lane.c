@@ -30,20 +30,20 @@ static int lane_tx_enable(struct lane *lane)
 {
     int ret;
 
-    if (!(lane->qsfp->features & QSFP_F_TX_DISABLE)) {
-        TRX_LOG_INFO(lane, "TX Disable not implemented");
+    if (!lane->qsfp->support.tx_disable) {
+        TRX_LOG_INFO(lane, "TX Enable/Disable not implemented");
         return 0;
     }
 
     TRX_LOG_INFO(lane, "TX Enable: %s -> Enable",
-               lane->status & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
+               lane->status.tx_disable ? "Disabled" : "Enabled");
 
     ret = lane->qsfp->spec_ops->lane_tx_enable(lane);
     if (ret < 0) {
         return ret;
     }
 
-    lane->status &= ~QSFP_F_TX_DISABLE;
+    lane->status.tx_disable = 0;
 
     return 0;
 }
@@ -52,20 +52,20 @@ static int lane_tx_disable(struct lane *lane)
 {
     int ret;
 
-    if (!(lane->qsfp->features & QSFP_F_TX_DISABLE)) {
+    if (!lane->qsfp->support.tx_disable) {
         TRX_LOG_INFO(lane, "TX Disable not implemented");
         return 0;
     }
 
     TRX_LOG_INFO(lane, "TX Disable %s -> Disable",
-               lane->status & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
+               lane->status.tx_disable ? "Disabled" : "Enabled");
 
     ret = lane->qsfp->spec_ops->lane_tx_disable(lane);
     if (ret < 0) {
         return ret;
     }
 
-    lane->status |= QSFP_F_TX_DISABLE;
+    lane->status.tx_disable = 1;
 
     return 0;
 }
@@ -79,7 +79,7 @@ static void lane_sm_link_linkup(struct lane *lane)
 
 static void lane_sm_link_check_rx_los(struct lane *lane)
 {
-    if (lane->status & QSFP_F_RX_LOS) {
+    if (lane->status.rx_los) {
         lane_sm_link_next(lane, QSFP_S_RX_LOS);
     } else {
         lane_sm_link_linkup(lane);
@@ -130,7 +130,7 @@ static void lane_sm_mod_remove(struct lane *lane)
         TRX_LOG_INFO(lane, "sfp_module_remove upstream ops called");
     }
 
-    lane->status = 0;
+    memset(&lane->status, 0, sizeof(lane->status));
 }
 
 static void lane_sm_mod_insert(struct lane *lane)
@@ -236,7 +236,7 @@ static void lane_sm_link_check_linkup(struct lane *lane)
         return;
     }
 
-    if (lane->status & QSFP_F_TX_FAULT) {
+    if (lane->status.tx_fault) {
         lane_sm_link_next(lane, QSFP_S_TX_FAULT);
     } else {
         lane_sm_link_check_rx_los(lane);
@@ -504,7 +504,7 @@ int lane_remove(struct platform_device *pdev)
         TRX_LOG_INFO(lane, "qsfp is NULL");
 
         rtnl_lock();
-        lane->status &= (~QSFP_F_PRESENT);
+        lane->status.present = 0;
         lane_sm_event(lane, QSFP_E_REMOVE);
         rtnl_unlock();
 
@@ -518,7 +518,7 @@ int lane_remove(struct platform_device *pdev)
     rtnl_lock();
     mutex_lock(&qsfp->sm_mutex);
 
-    lane->status &= (~QSFP_F_PRESENT);
+    lane->status.present = 0;
     lane_sm_event(lane, QSFP_E_REMOVE);
     qsfp->lane[lane->lane_num] = NULL;
 
