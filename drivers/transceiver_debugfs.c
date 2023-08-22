@@ -2046,6 +2046,59 @@ static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_ddm_thresholds);
 
+static const char* link_length_range_to_str(trx_link_length_range link_length_range)
+{
+    switch (link_length_range) {
+    case TRX_SR:
+        return "SR";
+    case TRX_LR:
+        return "LR";
+    case TRX_ER:
+        return "ER";
+    case TRX_ZR:
+        return "ZR";
+    case TRX_CR:
+        return "CR";
+    case TRX_CLR:
+        return "CLR";
+    case TRX_DR:
+        return "DR";
+    case TRX_BR:
+        return "BR";
+    case TRX_FR:
+        return "FR";
+    case TRX_VR:
+        return "VR";
+    default:
+        return "Unknown";
+    }
+}
+
+static int qsfp_debug_device_link_length_range_show(struct seq_file *s,
+                                                    void *data)
+{
+    struct qsfp *qsfp = s->private;
+    trx_link_length_range link_length_range;
+
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
+        return 0;
+    }
+
+    if (!qsfp->spec_ops) {
+        seq_printf(s, "Spec ops not initiazed\n");
+        return 0;
+    }
+
+    link_length_range = qsfp->spec_ops->get_link_length_range(qsfp);
+
+    seq_printf(s, "%s\n", link_length_range_to_str(link_length_range));
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_link_length_range);
+
 int create_common_debugfs_files(struct qsfp *qsfp)
 {
     struct dentry *file = NULL;
@@ -2122,6 +2175,14 @@ int create_common_debugfs_files(struct qsfp *qsfp)
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp ddm_thresholds debugfs_create_file fail,"
                         " error %ld", PTR_ERR(file));
+        goto failed_module_dir;
+    }
+
+    file = debugfs_create_file("link_length_range", 0600, qsfp->module_debugfs_dir,
+                               qsfp, &qsfp_debug_device_link_length_range_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp link_length_range debugfs_create_file fail,"
+                          " error %ld", PTR_ERR(file));
         goto failed_module_dir;
     }
 
