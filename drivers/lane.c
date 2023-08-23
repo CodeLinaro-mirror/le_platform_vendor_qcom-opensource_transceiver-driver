@@ -269,8 +269,7 @@ static void lane_sm_link(struct lane *lane, u32 event)
             lane_sm_link_linkup(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
-        } else if ((event == QSFP_E_DEV_DOWN) ||
-                   (event == QSFP_E_DEV_DETACH)) {
+        } else if (event == QSFP_E_DEV_DOWN) {
             lane_sm_link_linkdown(lane);
         }
 
@@ -281,8 +280,7 @@ static void lane_sm_link(struct lane *lane, u32 event)
             lane_sm_link_check_rx_los(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
-        } else if ((event == QSFP_E_DEV_DOWN) ||
-                   (event == QSFP_E_DEV_DETACH)) {
+        } else if (event == QSFP_E_DEV_DOWN) {
             lane_sm_link_linkdown(lane);
         }
 
@@ -298,8 +296,7 @@ static void lane_sm_link(struct lane *lane, u32 event)
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_DOWN);
-        } else if ((event == QSFP_E_DEV_DOWN) ||
-                   (event == QSFP_E_DEV_DETACH)) {
+        } else if (event == QSFP_E_DEV_DOWN) {
             /* calling lane_sm_link_upstream_linkdown() is not needed here as
              * dev down is internal event
              */
@@ -374,8 +371,9 @@ static void lane_detach(struct sfp *sfp)
 }
 
 /* Called during ifconfig up */
-void lane_start(struct lane *lane)
+static void lane_start(struct sfp *sfp)
 {
+    struct lane *lane = (struct lane*)sfp;
     struct qsfp *qsfp = lane->qsfp;
 
     if (!qsfp) {
@@ -396,8 +394,9 @@ void lane_start(struct lane *lane)
 }
 
 /* Called during ifconfig down */
-void lane_stop(struct lane *lane)
+static void lane_stop(struct sfp *sfp)
 {
+    struct lane *lane = (struct lane*)sfp;
     struct qsfp *qsfp = lane->qsfp;
 
     if (!qsfp) {
@@ -417,21 +416,11 @@ void lane_stop(struct lane *lane)
     mutex_unlock(&qsfp->sm_mutex);
 }
 
-static void lane_dummy_start(struct sfp *sfp)
-{
-    /* Called lane_start using qsfp_trx_ifconfig_notifier API */
-}
-
-static void lane_dummy_stop(struct sfp *sfp)
-{
-    /* Called lane_stop using qsfp_trx_ifconfig_notifier API */
-}
-
 const struct sfp_socket_ops lane_ops = {
     .attach = lane_attach,
     .detach = lane_detach,
-    .start = lane_dummy_start,
-    .stop = lane_dummy_stop,
+    .start = lane_start,
+    .stop = lane_stop,
     .module_info = qsfp_module_info,
     .module_eeprom = qsfp_module_eeprom,
     .module_eeprom_by_page = qsfp_module_eeprom_by_page,

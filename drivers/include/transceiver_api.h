@@ -12,12 +12,6 @@
    QSFP-28, QSFP-56, or QSFP+. */
 #define TRX_FAR_END_NOT_MANAGED (0xFF)
 
-/* Macro to denote the ifconfig up event */
-#define IFCFG_ENABLE 1
-/* Macro to denote the ifconfig down event */
-#define IFCFG_DISABLE 0
-#define MAX_ETH_LANES (4)
-
 /* Enum to identify the lane speed */
 typedef enum {
     TRX_LANE_SPEED_UNKNOWN = 0,
@@ -189,23 +183,5 @@ int qsfp_trx_get_breakoutconfig(u32 lane_phandle,
 *
 ****************************************************************/
 int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info);
-
-/***************************************************************
-*
-* Function:       qsfp_trx_ifconfig_notifier
-* Description:    API to get notification for eth interface up or down events.
-* Inputs:         value [in]   : Boolean type to get eth interface event type.
-*                                IFCFG_ENABLE   : Boolean type for ifconfig up
-*                                IFCFG_DISABLE  : Boolean type for ifconfig
-*                                                 Down
-*                 lane_phandle [in] : Array of Lane phandles of size
-*                                     MAX_ETH_LANES, default value will be
-*                                     [0, 0, 0, 0].
-*
-* Return value:   0      : Success
-*                -EINVAL : Error
-*
-****************************************************************/
-int qsfp_trx_ifconfig_notifier(bool value, u32 *lane_phandle);
 
 #endif
