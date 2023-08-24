@@ -17,7 +17,6 @@ static int sff8472_mod_probe(struct qsfp *qsfp)
      * so assume it flat mem
      */
     qsfp->module_flat_mem = 1;
-    qsfp->module_revision = id.sff8472.ext.sff8472_compliance;
 
     ret = qsfp_read(qsfp, SFF8472_ID, &id, sizeof(id.sff8472));
     if (ret < 0) {
@@ -48,30 +47,61 @@ static int sff8472_mod_probe(struct qsfp *qsfp)
     }
 
     qsfp->id = id;
+    qsfp->module_revision = id.sff8472.ext.sff8472_compliance;
 
     return 0;
 }
 
-static int sff8472_check_feature_impl(struct qsfp *qsfp)
+static int sff8472_update_features_supported(struct qsfp *qsfp)
 {
-    u8 features = qsfp->id.sff8472.ext.enhopts;
+    struct qsfp_support *support = &qsfp->support;
+    const struct sfp_eeprom_ext *ext = &qsfp->id.sff8472.ext;
+    const __be16 lol_impl = cpu_to_be16(SFP_OPTIONS_RETIMER);
+    u8 enh_flag_adv = 0;
+    int ret;
 
-    if (features & SFF8472_RX_LOS_IMPL) {
-        qsfp->features |= QSFP_F_RX_LOS;
-    } else {
-        TRX_LOG_WARN(qsfp, "RX LOS not implemented");
+    if (ext->enhopts & SFP_ENHOPTS_SOFT_RX_LOS) {
+        support->rx_los = 1;
     }
 
-    if (features & SFF8472_TX_FAULT_IMPL) {
-        qsfp->features |= QSFP_F_TX_FAULT;
-    } else {
-        TRX_LOG_WARN(qsfp, "TX Fault not implemented");
+    if (ext->enhopts & SFP_ENHOPTS_SOFT_TX_FAULT) {
+        support->tx_fault = 1;
     }
 
-    if (features & SFF8472_TX_DISABLE_IMPL) {
-        qsfp->features |= QSFP_F_TX_DISABLE;
-    } else {
-        TRX_LOG_WARN(qsfp, "TX Disable not implemented");
+    if (ext->enhopts & SFP_ENHOPTS_SOFT_TX_DISABLE) {
+        support->tx_disable = 1;
+    }
+
+    if (ext->options & lol_impl) {
+        support->rx_cdr_lol = 1;
+        support->tx_cdr_lol = 1;
+    }
+
+    if (ext->enhopts & SFP_ENHOPTS_ALARMWARN) {
+        support->temp_flags = 1;
+        support->volt_flags = 1;
+        support->rx_power_flags = 1;
+        support->tx_power_flags = 1;
+        support->tx_bias_flags = 1;
+    }
+
+    if (ext->enhopts & SFF8472_SOFT_RATE_SELECT_IMPL) {
+        support->rate_select = 1;
+    }
+
+    /* TX LOS not supported by sff8472 */
+    support->tx_los = 0;
+
+    ret = qsfp_read(qsfp, SFF8472_ENH_FLAGS_ADV, &enh_flag_adv,
+                    sizeof(enh_flag_adv));
+    if (ret < 0) {
+        /* For DAC it fails with ENOTCONN */
+        if (ret != -ENOTCONN) {
+            TRX_LOG_INFO(qsfp, "Failed to read TX adap eq in fail. ret %d", ret);
+            return ret;
+        }
+    } else if (enh_flag_adv & SFF8472_TX_ADAP_EQ_IN_FAIL_IMPL) {
+        support->tx_adap_eq_in_fail = 1;
     }
 
     return 0;
@@ -118,6 +148,102 @@ static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
     return -E_MAX_POWER_EXCEED;
 }
 
+static int sff8472_set_rate_select(const struct qsfp *qsfp)
+{
+    int ret;
+    u8 ctrl = 0;
+    u8 rate_id = 0;
+    bool rx_rs0 = false;
+    bool tx_rs1 = false;
+
+    ret = qsfp_read(qsfp, SFF8472_RATE_ID, &rate_id, sizeof(rate_id));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read rate identifier register. "
+                          "ret %d", ret);
+        return ret;
+    } else {
+        TRX_LOG_INFO(qsfp, "Rate identifier 0x%X", rate_id);
+    }
+
+    switch (rate_id) {
+    case 0x02:
+    case 0x08:
+        rx_rs0 = true;
+        break;
+
+    case 0x04:
+        tx_rs1 = true;
+        break;
+
+    case 0x01:
+    case 0x06:
+    case 0x0A:
+    case 0x0C:
+    case 0x0E:
+    case 0x10:
+        rx_rs0 = true;
+        tx_rs1 = true;
+        break;
+
+    default:
+        rx_rs0 = false;
+        tx_rs1 = false;
+        TRX_LOG_INFO(qsfp, "Unspecified or Reserved Rate identifier 0x%X", rate_id);
+        break;
+    }
+
+    if (rx_rs0) {
+        ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read status/control register. "
+                              "ret %d", ret);
+            return ret;
+        }
+
+        if (!(ctrl & SFF8472_RX_RATE_SELECT)) {
+            if (rate_id == 0x0E) {
+                TRX_LOG_WARN(qsfp, "RX Rate select not set by default");
+            }
+
+            ctrl |= SFF8472_RX_RATE_SELECT;
+
+            ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
+                                  "ret %d", ret);
+                return ret;
+            }
+        }
+    }
+
+    if (tx_rs1) {
+        ctrl = 0;
+        ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read extended status/control register. "
+                              "ret %d", ret);
+            return ret;
+        }
+
+        if (!(ctrl & SFF8472_TX_RATE_SELECT)) {
+            if (rate_id == 0x0E) {
+                TRX_LOG_WARN(qsfp, "TX Rate select not set by default");
+            }
+
+            ctrl |= SFF8472_TX_RATE_SELECT;
+
+            ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                                  "ret %d", ret);
+                return ret;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int sff8472_mod_high_power(const struct qsfp *qsfp)
 {
     int ret;
@@ -132,8 +258,8 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read extended module control."
-                        " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read extended status/control register."
+                          " ret %d", ret);
         return ret;
     }
 
@@ -141,8 +267,8 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write extended module control."
-                          " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -163,8 +289,8 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read extended module control."
-                          " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read extended status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -172,8 +298,8 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write extended module control."
-                          " ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -220,59 +346,101 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
 static void sff8472_update_flags(struct qsfp *qsfp)
 {
     int ret;
-    struct sff8472_irq_flags irq_flags = {0};
+    bool err = false;
+    struct sff8472_rxlos_txf rt = {0};
+    struct sff8472_alarm_warn aw = {0};
+    struct sff8472_cdr_lol lol = {0};
+    struct sff8472_tx_adp_eq_in_fail taeif = {0};
     const __be16 rx_los_inverted = cpu_to_be16(SFP_OPTIONS_LOS_INVERTED);
     const __be16 rx_los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
     __be16 rx_los_options;
+    struct qsfp_flags *flags = &qsfp->flags;
+    struct qsfp_support *support = &qsfp->support;
 
-    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &irq_flags, sizeof(irq_flags));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read flags. ret %d", ret);
-        /* Enable poll in case of failure to retry */
+    /* RX LOS and TX Fault set in the same register */
+    if (support->rx_los || support->tx_fault) {
+        ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &rt, sizeof(rt));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read RX los and TX fault. ret %d", ret);
+            err = true;
+        } else {
+            rx_los_options = qsfp->id.sff8472.ext.options & (rx_los_inverted | rx_los_normal);
+
+            if (rx_los_options == rx_los_normal) {
+                flags->rx_los = rt.rx_los;
+            } else if (rx_los_options == rx_los_inverted) {
+                flags->rx_los = ~rt.rx_los;
+            }
+
+            flags->tx_fault = rt.tx_fault;
+        }
+    }
+
+    /* RX and TX CDR LOL set in the same register */
+    if (support->rx_cdr_lol || support->tx_cdr_lol) {
+        ret = qsfp_read(qsfp, SFF8472_CDR_LOL, &lol, sizeof(lol));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read cdr lol register. ret %d", ret);
+            err = true;
+        } else {
+            flags->rx_cdr_lol = lol.rx_cdr_lol;
+            flags->tx_cdr_lol = lol.tx_cdr_lol;
+        }
+    }
+
+    if (support->tx_adap_eq_in_fail) {
+        ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &taeif, sizeof(taeif));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read TX adap eq fail register. ret %d", ret);
+            err = true;
+        } else {
+            flags->tx_adap_eq_in_fail = taeif.tx_adap_eq_in_fail;
+        }
+    }
+
+    if (qsfp->support.temp_flags || qsfp->support.volt_flags ||
+        qsfp->support.rx_power_flags || qsfp->support.tx_power_flags ||
+        qsfp->support.tx_bias_flags) {
+        ret = qsfp_read(qsfp, SFF8472_ALARM_WARN, &aw, sizeof(aw));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read alarm warning register. ret %d", ret);
+            err = true;
+        } else {
+            flags->temp_high_alarm = aw.temp_high_alarm | aw.laser_temp_high_alarm;
+            flags->temp_low_alarm = aw.temp_low_alarm | aw.laser_temp_low_alarm;
+            flags->temp_high_warn = aw.temp_high_warn | aw.laser_temp_high_warn;
+            flags->temp_low_warn = aw.temp_low_warn | aw.laser_temp_low_warn;
+
+            flags->volt_high_alarm = aw.volt_high_alarm;
+            flags->volt_low_alarm = aw.volt_low_alarm;
+            flags->volt_high_warn = aw.volt_high_warn;
+            flags->volt_low_warn = aw.volt_low_warn;
+
+            flags->rx1_power_high_alarm = aw.rx_power_high_alarm;
+            flags->rx1_power_low_alarm = aw.rx_power_low_alarm;
+            flags->rx1_power_high_warn = aw.rx_power_high_warn;
+            flags->rx1_power_low_warn = aw.rx_power_low_warn;
+
+            flags->tx1_power_high_alarm = aw.tx_power_high_alarm;
+            flags->tx1_power_low_alarm = aw.tx_power_low_alarm;
+            flags->tx1_power_high_warn = aw.tx_power_high_warn;
+            flags->tx1_power_low_warn = aw.tx_power_low_warn;
+
+            flags->tx1_bias_high_alarm = aw.tx_bias_high_alarm;
+            flags->tx1_bias_low_alarm = aw.tx_bias_low_alarm;
+            flags->tx1_bias_high_warn = aw.tx_bias_high_warn;
+            flags->tx1_bias_low_warn = aw.tx_bias_low_warn;
+        }
+    }
+
+    /* As SFF8472 completely rely on interrupt and polling used one time only
+     * after probe, simulation and read fail.
+     */
+    if (err) {
         qsfp->need_poll = true;
-        return;
     } else {
-        /* When read is successful disable polling */
         qsfp->need_poll = false;
     }
-
-    rx_los_options = qsfp->id.sff8472.ext.options & (rx_los_inverted | rx_los_normal);
-
-    memset(&qsfp->flags, 0, sizeof(qsfp->flags));
-
-    if (rx_los_options == rx_los_normal) {
-        qsfp->flags.rx_los = irq_flags.rx_los;
-    } else if (rx_los_options == rx_los_inverted) {
-        qsfp->flags.rx_los = ~irq_flags.rx_los;
-    }
-
-    qsfp->flags.tx_fault = irq_flags.tx_fault;
-
-    qsfp->flags.temp_high_alarm = irq_flags.temp_high_alarm | irq_flags.laser_temp_high_alarm;
-    qsfp->flags.temp_low_alarm = irq_flags.temp_low_alarm | irq_flags.laser_temp_low_alarm;
-    qsfp->flags.temp_high_warn = irq_flags.temp_high_warn | irq_flags.laser_temp_high_warn;
-    qsfp->flags.temp_low_warn = irq_flags.temp_low_warn | irq_flags.laser_temp_low_warn;
-
-    qsfp->flags.volt_high_alarm = irq_flags.volt_high_alarm;
-    qsfp->flags.volt_low_alarm = irq_flags.volt_low_alarm;
-    qsfp->flags.volt_high_warn = irq_flags.volt_high_warn;
-    qsfp->flags.volt_low_warn = irq_flags.volt_low_warn;
-
-    qsfp->flags.rx1_power_high_alarm = irq_flags.rx_power_high_alarm;
-    qsfp->flags.rx1_power_low_alarm = irq_flags.rx_power_low_alarm;
-    qsfp->flags.rx1_power_high_warn = irq_flags.rx_power_high_warn;
-    qsfp->flags.rx1_power_low_warn = irq_flags.rx_power_low_warn;
-
-    qsfp->flags.tx1_power_high_alarm = irq_flags.tx_power_high_alarm;
-    qsfp->flags.tx1_power_low_alarm = irq_flags.tx_power_low_alarm;
-    qsfp->flags.tx1_power_high_warn = irq_flags.tx_power_high_warn;
-    qsfp->flags.tx1_power_low_warn = irq_flags.tx_power_low_warn;
-
-    qsfp->flags.tx1_bias_high_alarm = irq_flags.tx_bias_high_alarm;
-    qsfp->flags.tx1_bias_low_alarm = irq_flags.tx_bias_low_alarm;
-    qsfp->flags.tx1_bias_high_warn = irq_flags.tx_bias_high_warn;
-    qsfp->flags.tx1_bias_low_warn = irq_flags.tx_bias_low_warn;
-
 }
 
 static int sff8472_module_info(struct qsfp *qsfp,
@@ -387,10 +555,11 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
         return -EINVAL;
     }
 
-    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed to read control register. ret %d", ret);
+        TRX_LOG_ERR(lane, "Failed to read status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -401,10 +570,11 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
 
     ctrl &= (~SFF8472_TX_DISABLE);
 
-    ret = qsfp_write(lane->qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_write(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed to write control register. ret %d", ret);
+        TRX_LOG_ERR(lane, "Failed to write status/control register. "
+                          "ret %d", ret);
     }
 
     return ret;
@@ -415,10 +585,11 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
     int ret;
     u8 ctrl = 0;
 
-    ret = qsfp_read(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read control register. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to read status/control register. "
+                          "ret %d", ret);
         return ret;
     }
 
@@ -429,10 +600,11 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
 
     ctrl |= SFF8472_TX_DISABLE;
 
-    ret = qsfp_write(qsfp, SFF8472_STATUS_FLAGS, &ctrl,
+    ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl,
                     sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write control register. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
+                          "ret %d", ret);
     }
 
     return ret;
@@ -460,7 +632,7 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_tx_disable = sff8472_mod_tx_disable,
     .lane_tx_enable = sff8472_lane_tx_enable,
     .lane_tx_disable = sff8472_lane_tx_disable,
-    .check_features_impl = sff8472_check_feature_impl,
+    .update_features_supported = sff8472_update_features_supported,
     .module_parse_power = sff8472_module_parse_power,
     .handle_max_power_exceed = sff8472_handle_max_power_exceed,
     .mod_high_power = sff8472_mod_high_power,
@@ -473,6 +645,7 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .get_link_length_range = sff8472_get_link_length_range,
     .get_lanes_presence = sff8472_get_lanes_presence,
     .get_breakout_config = sff8472_get_breakout_config,
+    .set_rate_select = sff8472_set_rate_select,
     .irq_delay = sff8472_irq_delay,
     .create_debugfs = sff8472_create_debugfs_files,
 };

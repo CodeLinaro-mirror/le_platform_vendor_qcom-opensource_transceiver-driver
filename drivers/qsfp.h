@@ -85,7 +85,7 @@
 
 #define QSFP_EVENT_RX_CDR_LOL "EVENT=RX_CDR_LOL"
 #define QSFP_EVENT_TX_CDR_LOL "EVENT=TX_CDR_LOL"
-#define QSFP_EVENT_TX_ADAPTIVE_EQ_FAULT "EVENT=TX_ADAPTIVE_EQ_FAULT"
+#define QSFP_EVENT_TX_ADAPTIVE_EQ_IN_FAIL "EVENT=TX_ADAPTIVE_EQ_IN_FAIL"
 
 #define QSFP_EVENT_ERROR_I2C                "EVENT=ERROR_I2C"
 #define QSFP_EVENT_ERROR_HIGH_POWER         "EVENT=ERROR_HIGH_POWER"
@@ -114,7 +114,7 @@ struct qsfp_flags {
 
     u8 rx_cdr_lol;
     u8 tx_cdr_lol;
-    u8 tx_adap_eq_fault;
+    u8 tx_adap_eq_in_fail;
 
     union {
         u8 temp:4;
@@ -305,21 +305,48 @@ struct qsfp_flags {
     };
 };
 
+struct qsfp_status {
+    u8 present:1;
+    u8 rx_los:1;
+    u8 tx_fault:1;
+    u8 tx_disable:1;
+};
+
+struct qsfp_support {
+    u8 temp_flags:1;
+    u8 volt_flags:1;
+    u8 rx_los:1;
+    u8 rx_cdr_lol:1;
+    u8 rx_power_flags:1;
+    u8 tx_disable:1;
+    u8 tx_los:1;
+    u8 tx_cdr_lol:1;
+    u8 tx_fault:1;
+    u8 tx_adap_eq_in_fail:1;
+    u8 tx_power_flags:1;
+    u8 tx_bias_flags:1;
+    u8 rate_select:1;
+};
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+struct qsfp_simulation {
+    u8 remove:1;
+    u8 flags:1;
+};
+#endif
+
 struct qsfp {
     struct device *dev;
     struct fpc *fpc;
     struct i2c_adapter *i2c;
     u32 max_power_mW;
     u32 module_power_mW;
-    /* Stores presence LOS TX Fault TX Disable status */
-    u8 status;
     u8 port_num;
     u8 i2c_address_dev0;
     u8 i2c_address_dev1;
     bool module_flat_mem;
     bool need_poll;
     struct delayed_work poll;;
-    u8 features;
     u8 module_power_class;
     u8 module_revision;
     u8 sm_mod_state;
@@ -340,10 +367,14 @@ struct qsfp {
     struct dentry *debugfs_dir;
     struct dentry *module_debugfs_dir;
     struct qsfp_flags sim_flags;
-    u8 sim;
+    struct qsfp_simulation sim;
 #endif
    struct kobject *qsfp_sysfs_dir;
+   /* Stores presence LOS TX Fault TX Disable status */
+   struct qsfp_status status;
    struct qsfp_flags flags;
+   /* Features supported/implemented */
+   struct qsfp_support support;
 };
 
 struct qsfp_spec_ops {
@@ -362,7 +393,7 @@ struct qsfp_spec_ops {
     /* Check feature like LOS,TX Fault implemented or not and
      * update features field accordingly
      */
-    int (*check_features_impl)(struct qsfp *qsfp);
+    int (*update_features_supported)(struct qsfp *qsfp);
     /* Gets power details like max power and power class */
     int (*module_parse_power)(struct qsfp *qsfp);
     /* called to handle situation of module max power is more
@@ -390,21 +421,13 @@ struct qsfp_spec_ops {
     /* Gets Far-End Implementation */
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
+    /* Set Rate select */
+    int (*set_rate_select)(const struct qsfp *qsfp);
     unsigned long (*irq_delay)(const struct qsfp *qsfp);
     int (*create_debugfs)(struct qsfp *qsfp);
 };
 
 enum {
-    QSFP_F_PRESENT      = BIT(0),
-    QSFP_F_RX_LOS       = BIT(1),
-    QSFP_F_TX_FAULT     = BIT(2),
-    QSFP_F_TX_DISABLE   = BIT(3),
-
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-    QSFP_F_SIM_REMOVE   = BIT(0),
-    QSFP_F_SIM_FLAGS    = BIT(1),
-#endif
-
     /* Events */
     QSFP_E_INSERT = 0,
     QSFP_E_REMOVE,
@@ -454,6 +477,7 @@ enum {
 #define MOD_READY_TIME          msecs_to_jiffies(300)
 
 #define QSFP_FAULT_STR_MAX (80)
+#define QSFP_FEATURE_STR_MAX (150)
 
 enum {
     SFF8024_CONNECTOR_FC1_COPPER = 0x02,

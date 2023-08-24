@@ -29,16 +29,16 @@ static ssize_t trx_state_info_show(struct device *dev,
     dev_state_to_str(qsfp->sm_dev_state),
     link_state_to_str(qsfp->sm_link_state));
 
-    if (qsfp->status & QSFP_F_PRESENT) {
+    if (qsfp->status.present) {
+        char feature_str[QSFP_FEATURE_STR_MAX] = {0};
+        qsfp_fill_features_str(qsfp, feature_str, sizeof(feature_str));
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: Yes\n"
                "Module probe attempts: %d\nRX LOS: %d\nTX Fault: %d\nPoll status:"
-               " %s\nFeatures: %s %s %s\n", PROBE_RETRY - qsfp->sm_mod_tries,
-               !!(qsfp->status & QSFP_F_RX_LOS),
-               !!(qsfp->status & QSFP_F_TX_FAULT),
+               " %s\nFeatures: %s\n", PROBE_RETRY - qsfp->sm_mod_tries,
+               qsfp->status.rx_los,
+               qsfp->status.tx_fault,
                qsfp->need_poll ? "Yes" : "No",
-               qsfp->features & QSFP_F_RX_LOS ? "RX LOS":"",
-               qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
-               qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+               feature_str);
 
     } else {
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: No\n");
@@ -52,12 +52,12 @@ static ssize_t trx_state_info_show(struct device *dev,
                dev_state_to_str(lanei->sm_dev_state),
                link_state_to_str(lanei->sm_link_state));
 
-        if (lanei->status & QSFP_F_PRESENT) {
+        if (lanei->status.present) {
             ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: Yes\n"
                    "RX LOS: %d\nTX Fault: %d\nTX Disable: %d\n",
-                   !!(lanei->status & QSFP_F_RX_LOS),
-                   !!(lanei->status & QSFP_F_TX_FAULT),
-                   !!(lanei->status & QSFP_F_TX_DISABLE));
+                   lanei->status.rx_los,
+                   lanei->status.tx_fault,
+                   lanei->status.tx_disable);
 
         } else {
             ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: No\n");
@@ -65,12 +65,12 @@ static ssize_t trx_state_info_show(struct device *dev,
     }
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-    if (qsfp->sim & QSFP_F_SIM_REMOVE) {
+    if (qsfp->sim.remove) {
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Remove: "
                                                      "Yes\n");
     }
 
-    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+    if (qsfp->sim.flags) {
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nSimulation Flags: "
                                                      "Yes\n");
     }

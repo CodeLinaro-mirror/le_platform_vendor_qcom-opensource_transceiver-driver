@@ -53,7 +53,7 @@
 
 #define SIM_RX_CDR_LOL "rx_cdr_lol"
 #define SIM_TX_CDR_LOL "tx_cdr_lol"
-#define SIM_TX_ADAP_EQ_FAULT "tx_adap_eq_fault"
+#define SIM_TX_ADAP_EQ_IN_FAIL "tx_adap_eq_in_fail"
 
 #define SIM_RX_POWER_HIGH_ALARM "rx_power_high_alarm"
 #define SIM_RX_POWER_LOW_ALARM "rx_power_low_alarm"
@@ -89,6 +89,8 @@ inline void spec_info_print(struct seq_file *s, u8 spec_id);
 extern void fpc_reset_qsfp(const struct qsfp *qsfp);
 const char *sff8472_mod_revision_to_str(u8 mod_rev_value);
 extern void qsfp_stop_poll(struct qsfp *qsfp);
+extern void qsfp_fill_features_str(const struct qsfp *qsfp, char *buf, int len);
+extern bool qsfp_atleast_one_flag_supported(const struct qsfp *qsfp);
 
 #endif
 

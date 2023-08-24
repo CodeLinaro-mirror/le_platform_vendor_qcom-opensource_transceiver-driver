@@ -609,16 +609,17 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
     mod_state_to_str(qsfp->sm_mod_state), dev_state_to_str(qsfp->sm_dev_state),
     link_state_to_str(qsfp->sm_link_state));
 
-    if (qsfp->status & QSFP_F_PRESENT) {
+    if (qsfp->status.present) {
+        char feature_str[QSFP_FEATURE_STR_MAX] = {0};
+        qsfp_fill_features_str(qsfp, feature_str, sizeof(feature_str));
+
         seq_printf(s, "Module present: Yes\n");
         seq_printf(s, "Module probe attempts: %d\n",
                    PROBE_RETRY - qsfp->sm_mod_tries);
-        seq_printf(s, "RX LOS: %d\n", !!(qsfp->status & QSFP_F_RX_LOS));
-        seq_printf(s, "TX Fault: %d\n", !!(qsfp->status & QSFP_F_TX_FAULT));
+        seq_printf(s, "RX LOS: %d\n", qsfp->status.rx_los);
+        seq_printf(s, "TX Fault: %d\n", qsfp->status.tx_fault);
         seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
-        seq_printf(s, "Features: %s %s %s\n", qsfp->features & QSFP_F_RX_LOS ? "RX_LOS":"",
-                   qsfp->features & QSFP_F_TX_FAULT ? "TX_FAULT":"",
-                   qsfp->features & QSFP_F_TX_DISABLE ? "TX_DISABLE":"");
+        seq_printf(s, "Features: %s\n", feature_str);
     } else {
         seq_printf(s, "Module present: No\n");
     }
@@ -631,21 +632,21 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
                    dev_state_to_str(lanei->sm_dev_state),
                    link_state_to_str(lanei->sm_link_state));
 
-        if (lanei->status & QSFP_F_PRESENT) {
+        if (lanei->status.present) {
             seq_printf(s, "Lane present: Yes\n");
-            seq_printf(s, "RX LOS: %d\n", !!(lanei->status & QSFP_F_RX_LOS));
-            seq_printf(s, "TX Fault: %d\n", !!(lanei->status & QSFP_F_TX_FAULT));
-            seq_printf(s, "TX Disable: %d\n", !!(lanei->status & QSFP_F_TX_DISABLE));
+            seq_printf(s, "RX LOS: %d\n", lanei->status.rx_los);
+            seq_printf(s, "TX Fault: %d\n", lanei->status.tx_fault);
+            seq_printf(s, "TX Disable: %d\n", lanei->status.tx_disable);
         } else {
             seq_printf(s, "Lane present: No\n");
         }
     }
 
-    if (qsfp->sim & QSFP_F_SIM_REMOVE) {
+    if (qsfp->sim.remove) {
         seq_printf(s, "\nSimulation Remove: Yes\n");
     }
 
-    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+    if (qsfp->sim.flags) {
         seq_printf(s, "\nSimulation Flags: Yes\n");
     }
 
@@ -688,7 +689,7 @@ static int qsfp_debug_qsfp_flags_show(struct seq_file *s,
     "High Alarm: %s\nVoltage Low Alarm: %s\nVoltage High Warning: %s\nVoltage "
     "Low Warning: %s\n\nBelow are Lane flags (LSB for lane0 and MSB for "
     "lane7)\n\n0x%02X RX LOS\n0x%02X TX Fault\n0x%02X TX LOS\n\n0x%02X RX CDR "
-    "LOL\n0x%02X TX CDR LOL\n0x%02X TX Adaptive EQ Fault\n\n0x%02X RX Power "
+    "LOL\n0x%02X TX CDR LOL\n0x%02X TX Adaptive EQ IN Fail\n\n0x%02X RX Power "
     "High Alarm\n0x%02X RX Power Low Alarm\n0x%02X RX Power High Warning\n"
     "0x%02X RX Power Low Warning\n\n0x%02X TX Power High Alarm\n0x%02X TX "
     "Power Low Alarm\n0x%02X TX Power High Warning\n0x%02X TX Power Low "
@@ -703,7 +704,7 @@ static int qsfp_debug_qsfp_flags_show(struct seq_file *s,
     (flags.volt & QSFP_VOLT_HIGH_WARN) ? "Yes" : "No",
     (flags.volt & QSFP_VOLT_LOW_WARN) ? "Yes" : "No",
     flags.rx_los, flags.tx_fault, flags.tx_los, flags.rx_cdr_lol,
-    flags.tx_cdr_lol, flags.tx_adap_eq_fault, flags.rx_power_high_alarm,
+    flags.tx_cdr_lol, flags.tx_adap_eq_in_fail, flags.rx_power_high_alarm,
     flags.rx_power_low_alarm, flags.rx_power_high_warn,
     flags.rx_power_low_warn, flags.tx_power_high_alarm,
     flags.tx_power_low_alarm, flags.tx_power_high_warn,
@@ -1839,7 +1840,7 @@ static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
     case SFF8024_ID_SFF_8472:
         sff8472_id = &qsfp->id.sff8472;
 
-        if(!(sff8472_id->ext.enhopts & SFF8472_ENHOPTS_ALARMWARN))
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
         {
             seq_printf(s, "TRX does not support alarm and warning "
                                               "threshold limits\n");
@@ -2214,13 +2215,13 @@ static ssize_t qsfp_simulation_read(struct file *file, char __user *ubuf,
     "\nVoltage Low Alarm: %s\nVoltage High Warning: %s\nVoltage Low Warning: "
     "%s\n\nBelow are Lane flags (LSB for lane0 and MSB for lane7)\n\n0x%02X RX"
     " LOS\n0x%02X TX Fault\n0x%02X TX LOS\n\n0x%02X RX CDR LOL\n0x%02X TX CDR "
-    "LOL\n0x%02X TX Adaptive EQ Fault\n\n0x%02X RX Power High Alarm\n0x%02X RX"
+    "LOL\n0x%02X TX Adaptive EQ IN Fail\n\n0x%02X RX Power High Alarm\n0x%02X RX"
     " Power Low Alarm\n0x%02X RX Power High Warning\n0x%02X RX Power Low "
     "Warning\n\n0x%02X TX Power High Alarm\n0x%02X TX Power Low Alarm\n0x%02X "
     "TX Power High Warning\n0x%02X TX Power Low Warning\n\n0x%02X TX Bias High"
     " Alarm\n0x%02X TX Bias Low Alarm\n0x%02X TX Bias High Warning\n0x%02X TX "
-    "Bias Low Warning\n\n", (qsfp->sim & QSFP_F_SIM_REMOVE) ? "Yes" : "No",
-    (qsfp->sim & QSFP_F_SIM_FLAGS) ? "Yes" : "No",
+    "Bias Low Warning\n\n", qsfp->sim.remove ? "Yes" : "No",
+    qsfp->sim.flags ? "Yes" : "No",
     (sf.temp & QSFP_TEMP_HIGH_ALARM) ? "Yes" : "No",
     (sf.temp & QSFP_TEMP_LOW_ALARM) ? "Yes" : "No",
     (sf.temp & QSFP_TEMP_HIGH_WARN) ? "Yes" : "No",
@@ -2230,7 +2231,7 @@ static ssize_t qsfp_simulation_read(struct file *file, char __user *ubuf,
     (sf.volt & QSFP_VOLT_HIGH_WARN) ? "Yes" : "No",
     (sf.volt & QSFP_VOLT_LOW_WARN) ? "Yes" : "No",
     sf.rx_los, sf.tx_fault, sf.tx_los, sf.rx_cdr_lol, sf.tx_cdr_lol,
-    sf.tx_adap_eq_fault, sf.rx_power_high_alarm, sf.rx_power_low_alarm,
+    sf.tx_adap_eq_in_fail, sf.rx_power_high_alarm, sf.rx_power_low_alarm,
     sf.rx_power_high_warn, sf.rx_power_low_warn, sf.tx_power_high_alarm,
     sf.tx_power_low_alarm, sf.tx_power_high_warn, sf.tx_power_low_warn,
     sf.tx_bias_high_alarm, sf.tx_bias_low_alarm, sf.tx_bias_high_warn,
@@ -2244,7 +2245,7 @@ static void qsfp_sim_insert(struct qsfp *qsfp)
     int ret;
 
     /* Check whether Transceiver module state present or not */
-    if (qsfp->status & QSFP_F_PRESENT) {
+    if (qsfp->status.present) {
         TRX_LOG_ERR(qsfp, "Simulated insert rejected as module "
                           "already present");
         return;
@@ -2261,7 +2262,7 @@ static void qsfp_sim_insert(struct qsfp *qsfp)
         return;
     }
 
-    qsfp->sim &= (~QSFP_F_SIM_REMOVE);
+    qsfp->sim.remove = 0;
     qsfp_module_insert_irq(qsfp);
 
     fpc_reset_qsfp(qsfp);
@@ -2271,12 +2272,12 @@ static void qsfp_sim_insert(struct qsfp *qsfp)
 
 static void qsfp_sim_remove(struct qsfp *qsfp)
 {
-    if (!(qsfp->status & QSFP_F_PRESENT)) {
+    if (!qsfp->status.present) {
         TRX_LOG_ERR(qsfp, "Simulated remove rejected as module not present");
         return;
     }
 
-    qsfp->sim |= QSFP_F_SIM_REMOVE;
+    qsfp->sim.remove = 1;
     qsfp_module_remove_irq(qsfp);
 
     TRX_LOG_INFO(qsfp, "------ SIMULATED REMOVE ------");
@@ -2284,12 +2285,12 @@ static void qsfp_sim_remove(struct qsfp *qsfp)
 
 static void qsfp_sim_flags_change(struct qsfp *qsfp)
 {
-    if (!(qsfp->status & QSFP_F_PRESENT)) {
+    if (!qsfp->status.present) {
         TRX_LOG_ERR(qsfp, "Simulated flags change rejected as module not present");
         return;
     }
 
-    qsfp->sim |= QSFP_F_SIM_FLAGS;
+    qsfp->sim.flags = 1;
 
     qsfp_stop_poll(qsfp);
 
@@ -2302,8 +2303,8 @@ static void qsfp_sim_clear(struct qsfp *qsfp)
 {
     memset(&qsfp->sim_flags, 0, sizeof(qsfp->sim_flags));
 
-    if (qsfp->sim & QSFP_F_SIM_REMOVE) {
-        qsfp->sim &= (~QSFP_F_SIM_REMOVE);
+    if (qsfp->sim.remove) {
+        qsfp->sim.remove = 0;
         qsfp_module_insert_irq(qsfp);
 
         fpc_reset_qsfp(qsfp);
@@ -2311,15 +2312,19 @@ static void qsfp_sim_clear(struct qsfp *qsfp)
         TRX_LOG_INFO(qsfp, "------ SIMULATED INSERT ------");
     }
 
-    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+    if (qsfp->sim.flags) {
 
-        qsfp->sim &= (~QSFP_F_SIM_FLAGS);
+        qsfp->sim.flags = 0;
 
+        memset(&qsfp->flags, 0, sizeof(qsfp->flags));
+
+        if (qsfp_atleast_one_flag_supported(qsfp)) {
         /* start polling to see actual hardware state which clears any
          * simulated flags
          */
-        qsfp->need_poll = true;
-        mod_delayed_work(system_wq, &qsfp->poll, 0);
+            qsfp->need_poll = true;
+            mod_delayed_work(system_wq, &qsfp->poll, 0);
+        }
     }
 
     TRX_LOG_INFO(qsfp, "------ SIMULATION CLEAR ------");
@@ -2465,10 +2470,10 @@ static ssize_t qsfp_simulation_write(struct file *file, const char __user *buf,
         flag = &qsfp->sim_flags.tx_cdr_lol;
         p += sizeof(SIM_TX_CDR_LOL) - 1;
 
-    } else if (!strncmp(request, SIM_TX_ADAP_EQ_FAULT,
-                        sizeof(SIM_TX_ADAP_EQ_FAULT) - 1)) {
-        flag = &qsfp->sim_flags.tx_adap_eq_fault;
-        p += sizeof(SIM_TX_ADAP_EQ_FAULT) - 1;
+    } else if (!strncmp(request, SIM_TX_ADAP_EQ_IN_FAIL,
+                        sizeof(SIM_TX_ADAP_EQ_IN_FAIL) - 1)) {
+        flag = &qsfp->sim_flags.tx_adap_eq_in_fail;
+        p += sizeof(SIM_TX_ADAP_EQ_IN_FAIL) - 1;
 
     } else if (!strncmp(request, SIM_RX_POWER_HIGH_ALARM,
                         sizeof(SIM_RX_POWER_HIGH_ALARM) - 1)) {
@@ -2602,7 +2607,7 @@ success:
             continue;
         }
 
-        if (lanei->status & QSFP_F_PRESENT) {
+        if (lanei->status.present) {
             if (recovery) {
                 *flag &= (~(1 << i));
             } else {

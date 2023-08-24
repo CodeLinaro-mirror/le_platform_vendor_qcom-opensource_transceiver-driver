@@ -240,34 +240,10 @@ struct cmis_temp_volt {
 
 /* Read from page 0x11 */
 struct cmis_lane_flags {
-    /* byte 135 */
-    u8 tx_failure;
-    u8 tx_los;
-    u8 tx_cdr_lol;
-    u8 tx_adap_eq_fail;
-
-    /* byte 139 */
-    u8 tx_power_high_alarm;
-    u8 tx_power_low_alarm;
-    u8 tx_power_high_warn;
-    u8 tx_power_low_warn;
-
-    /* byte 143 */
-    u8 tx_bias_high_alarm;
-    u8 tx_bias_low_alarm;
-    u8 tx_bias_high_warn;
-    u8 tx_bias_low_warn;
-
-    /* byte 147 */
-    u8 rx_los;
-    u8 rx_cdr_lol;
-
-    /* byte 149 */
-    u8 rx_power_high_alarm;
-    u8 rx_power_low_alarm;
-    u8 rx_power_high_warn;
-    u8 rx_power_low_warn;
-
+    u8 high_alarm;
+    u8 low_alarm;
+    u8 high_warn;
+    u8 low_warn;
 } __packed;
 
 struct cmis_thresholds {
@@ -333,7 +309,15 @@ enum {
     CMIS_TX_DISABLE                  = QSFP_ADDR(0, 0x10, 130),
     CMIS_PAGE10_MASKS                = QSFP_ADDR(0, 0x10, 213),
 
-    CMIS_LANE_FLAGS                  = QSFP_ADDR(0, 0x11, 135),
+    CMIS_TX_FAULT                    = QSFP_ADDR(0, 0x11, 135),
+    CMIS_TX_LOS                      = QSFP_ADDR(0, 0x11, 136),
+    CMIS_TX_CDR_LOL                  = QSFP_ADDR(0, 0x11, 137),
+    CMIS_TX_ADAP_EQ_IN_FAIL          = QSFP_ADDR(0, 0x11, 138),
+    CMIS_TX_POWER_FLAGS              = QSFP_ADDR(0, 0x11, 139),
+    CMIS_TX_BIAS_FLAGS               = QSFP_ADDR(0, 0x11, 143),
+    CMIS_RX_LOS                      = QSFP_ADDR(0, 0x11, 147),
+    CMIS_RX_CDR_LOL                  = QSFP_ADDR(0, 0x11, 148),
+    CMIS_RX_POWER_FLAGS              = QSFP_ADDR(0, 0x11, 149),
     CMIS_TX_POWER                    = QSFP_ADDR(0, 0x11, 154),
     CMIS_TX_BIAS                     = QSFP_ADDR(0, 0x11, 170),
     CMIS_RX_POWER                    = QSFP_ADDR(0, 0x11, 186),

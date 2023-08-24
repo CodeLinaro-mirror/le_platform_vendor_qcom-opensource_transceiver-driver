@@ -149,9 +149,9 @@ int qsfp_trx_get_lane_down_reason_code(u32 lane_phandle,
                (lane->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
                (lane->sm_mod_state == QSFP_MOD_ERROR_TX_ENABLE_FAIL)) {
         *reason = TRX_ERROR;
-    } else if (lane->status & QSFP_F_TX_FAULT) {
+    } else if (lane->status.tx_fault) {
         *reason = TRX_TX_FAULT;
-    } else if (lane->status & QSFP_F_RX_LOS) {
+    } else if (lane->status.rx_los) {
         *reason = TRX_RX_LOS;
     } else {
         TRX_LOG_INFO(lane, "Not able find reason for link down");
@@ -262,6 +262,47 @@ int qsfp_trx_get_type(u32 lane_phandle, trx_type* type)
     return 0;
 }
 EXPORT_SYMBOL_GPL(qsfp_trx_get_type);
+
+int qsfp_trx_ifconfig_notifier(bool value, u32 *lane_phandle)
+{
+    struct lane *lane = NULL;
+    int i = 0;
+
+    if (lane_phandle == NULL) {
+        TRX_LOG_INFO_NODEV("Failed to get lane phandle");
+        return -EINVAL;
+    }
+
+    if (!((value == IFCFG_ENABLE) ||
+          (value == IFCFG_DISABLE))) {
+        TRX_LOG_INFO_NODEV("Invalid ifconfig event: %d", value);
+        return -EINVAL;
+    }
+
+    for(i=0; i<MAX_ETH_LANES; i++) {
+        if(lane_phandle[i] != 0) {
+            lane = phandle_to_drvdata(lane_phandle[i]);
+
+            if (!lane) {
+                TRX_LOG_ERR_NODEV("Failed to get lane pointer for"
+                                          " lane_phandle[%d]", i);
+                continue;
+            }
+
+            if (value == IFCFG_ENABLE) {
+                TRX_LOG_INFO(lane, "Processing eth interface up event..");
+                lane_start(lane);
+            }
+            else {
+                TRX_LOG_INFO(lane, "Processing eth interface down event..");
+                lane_stop(lane);
+            }
+        }
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_ifconfig_notifier);
 
 /*
  * API to determine transceiver link length range
@@ -860,7 +901,7 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
 static void qsfp_update_flags(struct qsfp *qsfp)
 {
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-    if (qsfp->sim & QSFP_F_SIM_FLAGS) {
+    if (qsfp->sim.flags) {
         /* Update current state from simulated flags */
         qsfp->flags = qsfp->sim_flags;
     } else {
@@ -920,7 +961,7 @@ static void qsfp_sm_link_linkdown(struct qsfp *qsfp)
 
 static void qsfp_sm_link_check_rx_los(struct qsfp *qsfp)
 {
-    if (qsfp->status & QSFP_F_RX_LOS) {
+    if (qsfp->status.rx_los) {
         qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
     } else {
         qsfp_sm_link_linkup(qsfp);
@@ -990,11 +1031,6 @@ static int qsfp_module_tx_disable(struct qsfp *qsfp)
     int ret;
     struct lane *lanei;
 
-    if (!(qsfp->features & QSFP_F_TX_DISABLE)) {
-        TRX_LOG_INFO(qsfp, "TX Disable not implemented");
-        return 0;
-    }
-
     ret = qsfp->spec_ops->mod_tx_disable(qsfp);
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
@@ -1007,8 +1043,8 @@ static int qsfp_module_tx_disable(struct qsfp *qsfp)
             continue;
         }
         TRX_LOG_INFO(lanei, "TX Disable: %s -> Disable",
-        lanei->status & QSFP_F_TX_DISABLE ? "Disabled" : "Enabled");
-        lanei->status |= QSFP_F_TX_DISABLE;
+        lanei->status.tx_disable ? "Disabled" : "Enabled");
+        lanei->status.tx_disable = 1;
     }
 
     return 0;
@@ -1033,7 +1069,7 @@ static int qsfp_sm_mod_insert_lanes(struct qsfp *qsfp)
             continue;
         }
         if (laneinfo & 1) {
-            lanei->status |= QSFP_F_PRESENT;
+            lanei->status.present = 1;
             lane_sm_event(lanei, QSFP_E_INSERT);
         }
         laneinfo >>= 1;
@@ -1058,20 +1094,22 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         return ret;
     }
 
-    ret = qsfp->spec_ops->check_features_impl(qsfp);
+    ret = qsfp->spec_ops->update_features_supported(qsfp);
     if (ret < 0) {
-        TRX_LOG_WARN(qsfp, "Failed to read features implemented by "
+        TRX_LOG_WARN(qsfp, "Failed to read features supported by "
                            "transceiver. ret %d", ret);
         return ret;
     }
 
     /* TX disable when module inserted */
-    ret = qsfp_module_tx_disable(qsfp);
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Module TX Disable failed. ret %d", ret);
-        return ret;
-    } else {
-        TRX_LOG_INFO(qsfp, "Module TX Disable success");
+    if (qsfp->support.tx_disable) {
+        ret = qsfp_module_tx_disable(qsfp);
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Module TX Disable failed. ret %d", ret);
+            return ret;
+        } else {
+            TRX_LOG_INFO(qsfp, "Module TX Disable success");
+        }
     }
 
     ret = qsfp->spec_ops->disable_redundant_irq(qsfp);
@@ -1103,7 +1141,15 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         }
     }
 
-    module_sysfs_init(qsfp);
+    if (qsfp->support.rate_select) {
+        ret = qsfp->spec_ops->set_rate_select(qsfp);
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Rate select failed. ret %d", ret);
+            return ret;
+        } else {
+            TRX_LOG_INFO(qsfp, "Rate select success");
+        }
+    }
 
     ret = qsfp_sm_mod_insert_lanes(qsfp);
     if (ret < 0) {
@@ -1118,6 +1164,8 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
        specific to transceiver */
     qsfp->spec_ops->create_debugfs(qsfp);
 #endif
+
+    module_sysfs_init(qsfp);
 
     qsfp->spec_ops->eeprom_print(qsfp);
 
@@ -1135,27 +1183,28 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 
     for (i = 0 ; i < qsfp->num_lanes ; i++) {
         lanei = qsfp->lane[i];
-        if (lanei && (lanei->status & QSFP_F_PRESENT)) {
-            lanei->status &= (~QSFP_F_PRESENT);
+        if (lanei && (lanei->status.present)) {
+            lanei->status.present = 0;
             lane_sm_event(lanei, QSFP_E_REMOVE);
         }
     }
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     module_debugfs_exit(qsfp);
-    qsfp->sim &= QSFP_F_SIM_REMOVE;
+    /* Do not clear simulation remove */
+    qsfp->sim.flags = 0;
 #endif
 
     module_sysfs_exit(qsfp);
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     memset(&qsfp->flags, 0, sizeof(qsfp->flags));
+    memset(&qsfp->support, 0, sizeof(qsfp->support));
+    memset(&qsfp->status, 0, sizeof(qsfp->status));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
     qsfp->module_power_class = 0;
-    qsfp->features = 0;
     qsfp->spec_ops = NULL;
     qsfp->need_poll = false;
-    qsfp->status = 0;
     qsfp->module_flat_mem = 0;
 
     TRX_LOG_INFO(qsfp, "Module removed");
@@ -1194,7 +1243,7 @@ static void qsfp_sm_device(struct qsfp *qsfp, u32 event)
 
 static void qsfp_sm_link_check_linkup(struct qsfp *qsfp)
 {
-    if (qsfp->status & QSFP_F_TX_FAULT) {
+    if (qsfp->status.tx_fault) {
         qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
     } else {
         qsfp_sm_link_check_rx_los(qsfp);
@@ -1203,10 +1252,10 @@ static void qsfp_sm_link_check_linkup(struct qsfp *qsfp)
 
 static void qsfp_sm_link_check_txf_los(struct qsfp *qsfp)
 {
-    if (qsfp->status & QSFP_F_TX_FAULT) {
+    if (qsfp->status.tx_fault) {
         qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
         transceiver_led_off(qsfp, QSFP_LED2);
-    } else if (qsfp->status & QSFP_F_RX_LOS) {
+    } else if (qsfp->status.rx_los) {
         qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
         transceiver_led_off(qsfp, QSFP_LED2);
     }
@@ -1231,30 +1280,30 @@ static void qsfp_sm_link_update_txf_rxlos_status(struct qsfp *qsfp)
 
         if (lanei->sm_link_state == QSFP_S_LINK_UP) {
         /* Even if single lane is up, remove LOS and TX Fault */
-            qsfp->status &= (~QSFP_F_RX_LOS);
-            qsfp->status &= (~QSFP_F_TX_FAULT);
+            qsfp->status.rx_los = 0;
+            qsfp->status.tx_fault = 0;
             return;
         }
 
-        if (lanei->status & QSFP_F_RX_LOS) {
+        if (lanei->status.rx_los) {
             rx_los = true;
         }
 
-        if (lanei->status & QSFP_F_TX_FAULT) {
+        if (lanei->status.tx_fault) {
             tx_fault = true;
         }
     }
 
     if (rx_los) {
-        qsfp->status |= QSFP_F_RX_LOS;
+        qsfp->status.rx_los = 1;
     } else {
-        qsfp->status &= (~QSFP_F_RX_LOS);
+        qsfp->status.rx_los = 0;
     }
 
     if (tx_fault) {
-        qsfp->status |= QSFP_F_TX_FAULT;
+        qsfp->status.tx_fault = 1;
     } else {
-        qsfp->status &= (~QSFP_F_TX_FAULT);
+        qsfp->status.tx_fault = 0;
     }
 }
 
@@ -1387,7 +1436,7 @@ static void qsfp_sm_mod_error(struct qsfp *qsfp, u8 err)
 
     for (i = 0 ; i < qsfp->num_lanes ; i++) {
         lanei = qsfp->lane[i];
-        if (lanei && (lanei->status & QSFP_F_PRESENT)) {
+        if (lanei && (lanei->status.present)) {
             lane_sm_mod_error(lanei, err);
         }
     }
@@ -1435,7 +1484,7 @@ static void qsfp_insert_update_devstate(struct qsfp *qsfp)
 
     for (i = 0 ; i < qsfp->num_lanes ; i++) {
         lanei = qsfp->lane[i];
-        if (lanei && (lanei->status & QSFP_F_PRESENT)) {
+        if (lanei && (lanei->status.present)) {
             if (lanei->sm_dev_state == QSFP_DEV_UP) {
             /* Atleast one present lane is up mark QSFP device state as up */
                 new_dev_state = QSFP_DEV_UP;
@@ -1458,6 +1507,43 @@ static void qsfp_insert_update_devstate(struct qsfp *qsfp)
             TRX_LOG_INFO(qsfp, "Device state changed to Down");
             qsfp_sm_link(qsfp, QSFP_E_DEV_DOWN);
         }
+    }
+}
+
+void qsfp_fill_features_str(const struct qsfp *qsfp, char *buf, int len)
+{
+    const struct qsfp_support *sup = &qsfp->support;
+
+    scnprintf(buf, len, "%s%s%s%s%s%s%s%s%s%s%s%s%s",
+    sup->temp_flags ? "Temperature ":"", sup->volt_flags ? "Voltage ":"",
+    sup->rx_los ? "RX_LOS ":"", sup->rx_cdr_lol ? "RX_CDR_LOL ":"",
+    sup->rx_power_flags ? "RX_Power ":"", sup->tx_los ? "TX_LOS ":"",
+    sup->tx_cdr_lol ? "TX_CDR_LOL ":"", sup->tx_fault ? "TX_Fault ":"",
+    sup->tx_adap_eq_in_fail ? "TX_Adaptive_EQ_Input_Fail ":"",
+    sup->tx_power_flags ? "TX_Power ":"", sup->tx_bias_flags ? "TX_Bias ":"",
+    sup->tx_disable ? "TX_Disable ":"", sup->rate_select ? "Rate_select ":"");
+}
+
+static void qsfp_print_features_supported(const struct qsfp *qsfp)
+{
+    char feature_str[QSFP_FEATURE_STR_MAX] = {0};
+
+    qsfp_fill_features_str(qsfp, feature_str, sizeof(feature_str));
+
+    TRX_LOG_INFO(qsfp, "Features: %s", feature_str);
+}
+
+bool qsfp_atleast_one_flag_supported(const struct qsfp *qsfp)
+{
+    const struct qsfp_support *sup = &qsfp->support;
+
+    /* tx disable and rate select not considered they are not flags */
+    if (sup->temp_flags || sup->volt_flags || sup->rx_los || sup->rx_cdr_lol ||
+        sup->rx_power_flags || sup->tx_los || sup->tx_cdr_lol || sup->tx_fault ||
+        sup->tx_adap_eq_in_fail || sup->tx_power_flags || sup->tx_bias_flags) {
+        return true;
+    } else {
+        return false;
     }
 }
 
@@ -1504,6 +1590,8 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
             break;
         }
 
+        qsfp_print_features_supported(qsfp);
+
         /* Update device state as per lanes lane_presence */
         qsfp_insert_update_devstate(qsfp);
 
@@ -1515,12 +1603,13 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
         ret = qsfp_sm_mod_present(qsfp);
         if (ret < 0) {
             qsfp_sm_mod_error(qsfp, QSFP_MOD_ERROR_HPOWER);
-        } else {
+        } else if (qsfp_atleast_one_flag_supported(qsfp)) {
         /* check state if there is no initial interrupt (ex: sff8472) and
          * Needed in case interrupt called before EEPROM read and
          * in case transceiver module reset fails
          * 300ms delay added as device takes time to reach high power state
          */
+            qsfp->need_poll = true;
             mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(300));
         }
 
@@ -1532,9 +1621,9 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
             ret = qsfp_sm_mod_present(qsfp);
             if (ret < 0) {
                 qsfp_sm_mod_error(qsfp, QSFP_MOD_ERROR_HPOWER);
-            } else {
-                mod_delayed_work(system_wq, &qsfp->poll,
-                                 msecs_to_jiffies(300));
+            } else if (qsfp_atleast_one_flag_supported(qsfp)) {
+                qsfp->need_poll = true;
+                mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(300));
             }
         }
 
@@ -1590,7 +1679,7 @@ void qsfp_attach(const struct lane *lane)
 
     if (qsfp->sm_mod_state == QSFP_MOD_PRESENT) {
         /* when module inserted check whether lane is active */
-        if (lane->status & QSFP_F_PRESENT) {
+        if (lane->status.present) {
             qsfp_sm_event(qsfp, QSFP_E_DEV_ATTACH);
         } else {
             TRX_LOG_INFO(qsfp, "Lane not present, its attach event ignored");
@@ -1608,7 +1697,7 @@ void qsfp_detach(const struct lane *lane)
     struct lane *lanei;
 
     if (qsfp->sm_mod_state == QSFP_MOD_PRESENT) {
-        if (!(lane->status & QSFP_F_PRESENT)) {
+        if (!(lane->status.present)) {
             TRX_LOG_INFO(qsfp, "Lane not present, its detach event ignored");
             return;
         }
@@ -1619,7 +1708,7 @@ void qsfp_detach(const struct lane *lane)
                 continue;
             }
             /* Detach only when all present lanes in detached state */
-            if ((lanei->status & QSFP_F_PRESENT) &&
+            if ((lanei->status.present) &&
                 (lanei->sm_dev_state != QSFP_DEV_DETACHED)) {
                 detach = false;
                 break;
@@ -1648,7 +1737,7 @@ void qsfp_start(const struct lane *lane)
 
     /* DevUp event comes for each of its present lane going ifconfig up */
     if (qsfp->sm_mod_state == QSFP_MOD_PRESENT) {
-        if (lane->status & QSFP_F_PRESENT) {
+        if (lane->status.present) {
             qsfp_sm_event(qsfp, QSFP_E_DEV_UP);
         } else {
             TRX_LOG_INFO(qsfp, "Lane not present, its up event ignored");
@@ -1666,7 +1755,7 @@ void qsfp_stop(const struct lane *lane)
     struct lane *lanei;
 
     if (qsfp->sm_mod_state == QSFP_MOD_PRESENT) {
-        if (!(lane->status & QSFP_F_PRESENT)) {
+        if (!(lane->status.present)) {
             TRX_LOG_INFO(qsfp, "Lane not present, its down event ignored");
             return;
         }
@@ -1676,7 +1765,7 @@ void qsfp_stop(const struct lane *lane)
             if (!lanei) {
                 continue;
             }
-            if ((lanei->status & QSFP_F_PRESENT) &&
+            if ((lanei->status.present) &&
                 (lanei->sm_dev_state == QSFP_DEV_UP)) {
                 down = false;
                 break;
@@ -1807,8 +1896,7 @@ static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
         if (!lanei) {
             continue;
         }
-        if ((chgd & 1) && (lanei->sm_dev_state == QSFP_DEV_UP) &&
-            (lanei->status & QSFP_F_PRESENT)) {
+        if ((chgd & 1) && lanei->status.present) {
             if (new_flag & 1) {
                 kobject_uevent_env(&lanei->dev->kobj, KOBJ_CHANGE, msg);
                 TRX_LOG_INFO(lanei, "Fault Report: %s", str);
@@ -1823,10 +1911,6 @@ static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
 static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
 {
     u8 new_flag;
-
-    if (qsfp->sm_dev_state != QSFP_DEV_UP) {
-        return;
-    }
 
     new_flag = qsfp->flags.temp;
 
@@ -1882,10 +1966,6 @@ static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
 static void qsfp_volt_fault_report(const struct qsfp *qsfp, u8 chgd)
 {
     u8 new_flag;
-
-    if (qsfp->sm_dev_state != QSFP_DEV_UP) {
-        return;
-    }
 
     new_flag = qsfp->flags.volt;
 
@@ -1959,26 +2039,26 @@ static void qsfp_lane_rxlos_txf(struct qsfp *qsfp, u8 chgd_rxlos, u8 chgd_txf)
             continue;
         }
 
-        if (!(lanei->status  & QSFP_F_PRESENT)) {
+        if (!(lanei->status.present)) {
             continue;
         }
 
         if (chgd_rxlos & 1) {
             if (rx_los & 1) {
-                lanei->status |= QSFP_F_RX_LOS;
+                lanei->status.rx_los = 1;
                 lane_sm_event(lanei, QSFP_E_RX_LOS);
             } else {
-                lanei->status &= (~QSFP_F_RX_LOS);
+                lanei->status.rx_los = 0;
                 lane_sm_event(lanei, QSFP_E_RX_LOS_RECOVERY);
             }
         }
 
         if (chgd_txf & 1) {
             if (tx_fault & 1) {
-                lanei->status |= QSFP_F_TX_FAULT;
+                lanei->status.tx_fault = 1;
                 lane_sm_event(lanei, QSFP_E_TX_FAULT);
             } else {
-                lanei->status &= (~QSFP_F_TX_FAULT);
+                lanei->status.tx_fault = 0;
                 lane_sm_event(lanei, QSFP_E_TX_FAULT_RECOVERY);
             }
         }
@@ -1989,31 +2069,30 @@ static void qsfp_lane_rxlos_txf(struct qsfp *qsfp, u8 chgd_rxlos, u8 chgd_txf)
      * Do not update qsfp state
      */
     if (qsfp->sm_dev_state == QSFP_DEV_UP) {
-        u8 old_rxlos = qsfp->status & QSFP_F_RX_LOS;
-        u8 old_tx_fault = qsfp->status & QSFP_F_TX_FAULT;
+        struct qsfp_status old_status = qsfp->status;
 
         qsfp_sm_link_update_txf_rxlos_status(qsfp);
 
-        if (old_rxlos) {
-            if (!(qsfp->status & QSFP_F_RX_LOS)) {
-                qsfp->status &= (~QSFP_F_RX_LOS);
+        if (old_status.rx_los) {
+            if (!qsfp->status.rx_los) {
+                qsfp->status.rx_los = 0;
                 qsfp_sm_event(qsfp, QSFP_E_RX_LOS_RECOVERY);
             }
         } else {
-            if (qsfp->status & QSFP_F_RX_LOS) {
-                qsfp->status |= QSFP_F_RX_LOS;
+            if (qsfp->status.rx_los) {
+                qsfp->status.rx_los = 1;
                 qsfp_sm_event(qsfp, QSFP_E_RX_LOS);
             }
         }
 
-        if (old_tx_fault) {
-            if (!(qsfp->status & QSFP_F_TX_FAULT)) {
-                qsfp->status &= (~QSFP_F_TX_FAULT);
+        if (old_status.tx_fault) {
+            if (!qsfp->status.tx_fault) {
+                qsfp->status.tx_fault = 0;;
                 qsfp_sm_event(qsfp, QSFP_E_TX_FAULT_RECOVERY);
             }
         } else {
-            if (qsfp->status & QSFP_F_TX_FAULT) {
-                qsfp->status |= QSFP_F_TX_FAULT;
+            if (qsfp->status.tx_fault) {
+                qsfp->status.tx_fault = 1;
                 qsfp_sm_event(qsfp, QSFP_E_TX_FAULT);
             }
         }
@@ -2046,7 +2125,7 @@ void qsfp_check_state(struct qsfp *qsfp)
 
     chgd.rx_cdr_lol = old.rx_cdr_lol ^ qsfp->flags.rx_cdr_lol;
     chgd.tx_cdr_lol = old.tx_cdr_lol ^ qsfp->flags.tx_cdr_lol;
-    chgd.tx_adap_eq_fault = old.tx_adap_eq_fault ^ qsfp->flags.tx_adap_eq_fault;
+    chgd.tx_adap_eq_in_fail = old.tx_adap_eq_in_fail ^ qsfp->flags.tx_adap_eq_in_fail;
 
     chgd.temp = old.temp ^ qsfp->flags.temp;
     chgd.volt = old.volt ^ qsfp->flags.volt;
@@ -2234,14 +2313,14 @@ void qsfp_check_state(struct qsfp *qsfp)
         qsfp_lane_fault_report(qsfp, chgd.tx_cdr_lol, qsfp->flags.tx_cdr_lol,
                                QSFP_EVENT_TX_CDR_LOL);
     }
-    if (chgd.tx_adap_eq_fault) {
-        TRX_LOG_INFO(qsfp, "TX Adaptive EQ Fault: Current [0x%02X] Next "
-        "[0x%02X], Changed [0x%02X]", old.tx_adap_eq_fault,
-        qsfp->flags.tx_adap_eq_fault, chgd.tx_adap_eq_fault);
+    if (chgd.tx_adap_eq_in_fail) {
+        TRX_LOG_INFO(qsfp, "TX Adaptive EQ IN Fail: Current [0x%02X] Next "
+        "[0x%02X], Changed [0x%02X]", old.tx_adap_eq_in_fail,
+        qsfp->flags.tx_adap_eq_in_fail, chgd.tx_adap_eq_in_fail);
 
-        qsfp_lane_fault_report(qsfp, chgd.tx_adap_eq_fault,
-                               qsfp->flags.tx_adap_eq_fault,
-                               QSFP_EVENT_TX_ADAPTIVE_EQ_FAULT);
+        qsfp_lane_fault_report(qsfp, chgd.tx_adap_eq_in_fail,
+                               qsfp->flags.tx_adap_eq_in_fail,
+                               QSFP_EVENT_TX_ADAPTIVE_EQ_IN_FAIL);
     }
 }
 
@@ -2273,8 +2352,7 @@ void qsfp_irq(struct qsfp *qsfp)
     /* Added check as interrupt still can come in simulated case
      * it should be ignored
      */
-    if ((qsfp->sim & QSFP_F_SIM_REMOVE) ||
-        (qsfp->sim & QSFP_F_SIM_FLAGS)) {
+    if (qsfp->sim.remove || qsfp->sim.flags) {
         TRX_LOG_INFO(qsfp, "Transceiver in simulation state. IRQ ignored");
         return;
     }
@@ -2283,7 +2361,7 @@ void qsfp_irq(struct qsfp *qsfp)
     qsfp->need_poll = false;
 
     if (qsfp_set_spec_ops(qsfp) < 0) {
-        if (qsfp->status & QSFP_F_PRESENT) {
+        if (qsfp->status.present) {
             /* To make sure event wont get missed */
             TRX_LOG_ERR(qsfp, "Unable to set the spec ops. Process irq "
                               "after 1sec");
@@ -2323,7 +2401,7 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
      */
     mutex_lock(&qsfp->sm_mutex);
 
-    qsfp->status |= QSFP_F_PRESENT;
+    qsfp->status.present = 1;
     qsfp_sm_event(qsfp, QSFP_E_INSERT);
 
     mutex_unlock(&qsfp->sm_mutex);
@@ -2340,7 +2418,7 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
     rtnl_lock();
     mutex_lock(&qsfp->sm_mutex);
 
-    qsfp->status &= (~QSFP_F_PRESENT);
+    qsfp->status.present = 0;
     qsfp_sm_event(qsfp, QSFP_E_REMOVE);
 
     mutex_unlock(&qsfp->sm_mutex);

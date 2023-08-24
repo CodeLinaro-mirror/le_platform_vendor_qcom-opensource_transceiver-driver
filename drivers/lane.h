@@ -10,6 +10,7 @@
 #define LINUX_LANE_H
 
 #include "sfp.h"
+#include "qsfp.h"
 
 #define LANE_COMPATIBLE "sff,lane"
 
@@ -17,7 +18,7 @@ struct lane {
     struct device *dev;
     struct sfp_bus *sfp_bus;
     /* Stores presence RX LOS TX Fault TX Disable status */
-    u8 status;
+    struct qsfp_status status;
     u8 lane_num;
     u8 sm_mod_state;
     u8 sm_dev_state;
@@ -41,5 +42,8 @@ extern int qsfp_module_eeprom(struct sfp *sfp, struct ethtool_eeprom *ee,
 extern int qsfp_module_eeprom_by_page(struct sfp *sfp,
                      const struct ethtool_module_eeprom *page,
                      struct netlink_ext_ack *extack);
+
+void lane_start(struct lane *lane);
+void lane_stop(struct lane *lane);
 
 #endif

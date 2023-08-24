@@ -48,16 +48,25 @@
 #define FPC_ENABLE_I2C_STUCK_INTERRUPT (0xF)
 #define FPC_I2C_STUCK_STATUS_MASK (0xF0)
 
-/* Enable interrupt for QSFP input lines
- * input A (interrupt) on both rising and falling edge
- * input B (module present) on both rising and falling edge
- * input C not used, 110011
+/* Enable interrupt for QSFP and SFP cage
+ * QSFP cage :
+ * ...input A (interrupt) on both rising and falling edge
+ * ...input B (module present) on both rising and falling edge
+ *    input C not used but enabled on both rising and falling edge
+ *            to support SFP cage , (111111)
+ * SFP cage :
+ * ...input A (SFP TX_FAULT interrupt) on both rising and falling edge
+ * ...input B (module present) on both rising and falling edge
+ *    input C (SFP RX_LOS interrupt) on both rising and falling edge
+ *            (111111)
  */
-#define FPC_ENABLE_INPUT_A_B_INTERRUPT (BIT(5)|BIT(4)|BIT(1)|BIT(0))
+#define FPC_ENABLE_INPUT_A_B_C_INTERRUPT (0x3F)
 #define FPC_IN_A_INT_RISING_EDGE_MASK (BIT(0))
 #define FPC_IN_A_INT_FALLING_EDGE_MASK (BIT(1))
 #define FPC_IN_B_MOD_PRESENT_RISING_EDGE_MASK (BIT(4))
 #define FPC_IN_B_MOD_PRESENT_FALLING_EDGE_MASK (BIT(5))
+#define FPC_IN_C_INT_RISING_EDGE_MASK (BIT(2))
+#define FPC_IN_C_INT_FALLING_EDGE_MASK (BIT(3))
 
 #define FPC_LED1_ON (BIT(0))
 #define FPC_LED2_ON (BIT(2))
