@@ -95,8 +95,6 @@
 #define QSFP_EVENT_TX_ENABLE_FAIL           "EVENT=TX_ENABLE_FAIL"
 #define QSFP_EVENT_TX_ENABLE_FAIL_RECOVERY  "EVENT=TX_ENABLE_FAIL_RECOVERY"
 
-#define QSFP_EVENT_REMOVE "EVENT=REMOVE"
-
 #define QSFP_EVENT_BUF_MAX (50)
 
 struct qsfp_eeprom_id {
@@ -353,6 +351,7 @@ struct qsfp {
     u8 sm_dev_state;
     u8 sm_link_state;
     u8 sm_mod_tries;
+    u8 lane_presence;
     size_t i2c_block_size;
 
     struct delayed_work timeout;
@@ -452,6 +451,7 @@ enum {
     QSFP_MOD_REJECT_SPEC,
     QSFP_MOD_REJECT_PWR,
     QSFP_MOD_PROBE,
+    QSFP_MOD_WAITHPOWER,
     QSFP_MOD_WAITDEV,
     QSFP_MOD_PRESENT,
 
@@ -472,8 +472,8 @@ enum {
     E_MAX_POWER_EXCEED,
 };
 
-#define PROBE_RETRY             50
-#define PROBE_RETRY_TIME_GAP    msecs_to_jiffies(100)
+#define PROBE_RETRY             20
+#define PROBE_RETRY_TIME_GAP    msecs_to_jiffies(500)
 #define MOD_READY_TIME          msecs_to_jiffies(300)
 
 #define QSFP_FAULT_STR_MAX (80)
@@ -549,7 +549,7 @@ extern trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code);
 
 extern void *trx_ipc_log_buf;
 
-#define TRX_IPC_LOG_PAGES 50
+#define TRX_IPC_LOG_PAGES 100
 
 #define TRX_IPC_Log(buf, fmt, args...) \
 do {\

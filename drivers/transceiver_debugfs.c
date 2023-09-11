@@ -2377,14 +2377,19 @@ static void qsfp_sim_clear(struct qsfp *qsfp)
 
         qsfp->sim.flags = 0;
 
-        memset(&qsfp->flags, 0, sizeof(qsfp->flags));
-
         if (qsfp_atleast_one_flag_supported(qsfp)) {
         /* start polling to see actual hardware state which clears any
          * simulated flags
          */
             qsfp->need_poll = true;
             mod_delayed_work(system_wq, &qsfp->poll, 0);
+        } else {
+            qsfp->need_poll = true;
+            /* In DAC case it need to called once to get recovery of
+             * simulated flags
+             */
+            qsfp_check_state(qsfp);
+            qsfp->need_poll = false;
         }
     }
 
