@@ -586,10 +586,61 @@ static void sff8636_update_flags(struct qsfp *qsfp)
     }
 }
 
+static int sff8636_cig_mod_tx_disable(const struct qsfp *qsfp)
+{
+    u8 status = 0;
+    u8 tmp = 0;
+    int ret;
+
+    ret = qsfp_read(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret == 0) {
+        /* TX already disabled for all lanes */
+        if ((status & 0xF) == 0xF) {
+            TRX_LOG_INFO(qsfp, "TX already disabled for all lanes");
+            return 0;
+        }
+    }
+
+    status = 0xF;
+
+    ret = qsfp_write(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    msleep(CIG_TX_DISABLE_WAIT);
+
+    ret = qsfp_read(qsfp, SFF8636_TX_DISABLE, &tmp, sizeof(tmp));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (tmp != status) {
+        TRX_LOG_INFO(qsfp, "read byte not same as written");
+        return -EIO;
+    } else {
+        return 0;
+    }
+}
+
+static bool sff8636_is_cig(const struct qsfp *qsfp)
+{
+    if (strncmp(qsfp->id.sff8636.base.vendor_name, VENDOR_CIG,
+                sizeof(VENDOR_CIG)-1)) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
 {
     u8 status = 0;
     int ret;
+
+    if (sff8636_is_cig(qsfp)) {
+        return sff8636_cig_mod_tx_disable(qsfp);
+    }
 
     ret = qsfp_read(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
     if (ret == 0) {
@@ -604,10 +655,52 @@ static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
 }
 
+static int sff8636_cig_lane_tx_enable(const struct lane *lane)
+{
+    u8 status = 0;
+    u8 tmp = 0;
+    int ret;
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (!((status >> lane->lane_num) & 1)) {
+        TRX_LOG_INFO(lane, "TX already enabled");
+        return 0;
+    }
+
+    status &= (~(1 << lane->lane_num));
+
+    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    msleep(CIG_TX_DISABLE_WAIT);
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &tmp, sizeof(tmp));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (tmp != status) {
+        TRX_LOG_INFO(lane, "read byte not same as written");
+        return -EIO;
+    } else {
+        return 0;
+    }
+}
+
 static int sff8636_lane_tx_enable(const struct lane *lane)
 {
     u8 status = 0;
     int ret;
+
+    if (sff8636_is_cig(lane->qsfp)) {
+        return sff8636_cig_lane_tx_enable(lane);
+    }
 
     ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
@@ -623,10 +716,52 @@ static int sff8636_lane_tx_enable(const struct lane *lane)
     return qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
 }
 
+static int sff8636_cig_lane_tx_disable(const struct lane *lane)
+{
+    u8 status = 0;
+    u8 tmp = 0;
+    int ret;
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if ((status >> lane->lane_num) & 1) {
+        TRX_LOG_INFO(lane, "TX already enabled");
+        return 0;
+    }
+
+    status |= (1 << lane->lane_num);
+
+    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    msleep(CIG_TX_DISABLE_WAIT);
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &tmp, sizeof(tmp));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (tmp != status) {
+        TRX_LOG_INFO(lane, "read byte not same as written");
+        return -EIO;
+    } else {
+        return 0;
+    }
+}
+
 static int sff8636_lane_tx_disable(const struct lane *lane)
 {
     u8 status = 0;
     int ret;
+
+    if (sff8636_is_cig(lane->qsfp)) {
+        return sff8636_cig_lane_tx_disable(lane);
+    }
 
     ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
