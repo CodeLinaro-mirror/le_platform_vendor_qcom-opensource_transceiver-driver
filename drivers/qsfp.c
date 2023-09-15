@@ -2086,6 +2086,11 @@ void qsfp_check_state(struct qsfp *qsfp)
     struct qsfp_flags chgd;
     const struct qsfp_flags *newf;
 
+    if (qsfp_set_spec_ops(qsfp) < 0) {
+        TRX_LOG_ERR(qsfp, "Unable to set the spec ops");
+        return;
+    }
+
     /* Save previous flags */
     oldf = qsfp->flags;
 
