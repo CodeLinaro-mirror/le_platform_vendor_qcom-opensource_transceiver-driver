@@ -126,6 +126,25 @@ int fpc_is_module_present(const struct qsfp *qsfp)
     return QSFP_PRESENT;
 }
 
+static int fpc_read_qsfp_irq_status(struct fpc *fpc)
+{
+    u8 buf = 0;
+    int ret;
+    u8 i;
+
+    for (i = 0 ; i < FPC_MAX_PORTS ; i++) {
+        buf = 0;
+        ret = fpc_read(fpc, FPC_PORT_REG[FPC_INPUT_PIN_INTERRUPT_STATUS][i],
+                       &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(fpc, "Failed to read qsfp%u irq status. ret %d", i, ret);
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
 /*
  * Process QSFP presence and QSFP module interrupts
  */
@@ -622,6 +641,13 @@ static int fpc_probe(struct platform_device *pdev)
 
     TRX_LOG_INFO(fpc, "gpio_irq 0x%X fpc_irq_name %s",
                     fpc->gpio_irq, fpc_irq_name);
+
+    /* Need to read QSFP irq status register to clear any previous interrupts */
+    ret = fpc_read_qsfp_irq_status(fpc);
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "QSFP irq status read failed. ret %d", ret);
+        return -EPROBE_DEFER;
+    }
 
     ret = devm_request_threaded_irq(fpc->dev, fpc->gpio_irq,
                                     NULL, fpc_irq,
