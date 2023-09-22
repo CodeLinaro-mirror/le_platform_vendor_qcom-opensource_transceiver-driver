@@ -950,15 +950,13 @@ void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state,
 static void qsfp_sm_link_linkup(struct qsfp *qsfp)
 {
     qsfp_sm_link_next(qsfp, QSFP_S_LINK_UP);
-    transceiver_led_on(qsfp, QSFP_LED1);
-    transceiver_led_off(qsfp, QSFP_LED2);
+    transceiver_led_on(qsfp, QSFP_LED2);
 }
 
 static void qsfp_sm_link_linkdown(struct qsfp *qsfp)
 {
     qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
-    transceiver_led_off(qsfp, QSFP_LED1);
-    transceiver_led_on(qsfp, QSFP_LED2);
+    transceiver_led_off(qsfp, QSFP_LED2);
 }
 
 static void qsfp_sm_link_check_rx_los(struct qsfp *qsfp)
@@ -1256,12 +1254,10 @@ static void qsfp_sm_link_check_txf_los(struct qsfp *qsfp)
 {
     if (qsfp->status.tx_fault) {
         qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
-        transceiver_led_off(qsfp, QSFP_LED1);
-        transceiver_led_on(qsfp, QSFP_LED2);
+        transceiver_led_off(qsfp, QSFP_LED2);
     } else if (qsfp->status.rx_los) {
         qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
-        transceiver_led_off(qsfp, QSFP_LED1);
-        transceiver_led_on(qsfp, QSFP_LED2);
+        transceiver_led_off(qsfp, QSFP_LED2);
     }
 }
 
@@ -1379,13 +1375,11 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
 
         } else if (event == QSFP_E_TX_FAULT) {
             qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
-            transceiver_led_off(qsfp, QSFP_LED1);
-            transceiver_led_on(qsfp, QSFP_LED2);
+            transceiver_led_off(qsfp, QSFP_LED2);
 
         } else if (event == QSFP_E_RX_LOS) {
             qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
-            transceiver_led_off(qsfp, QSFP_LED1);
-            transceiver_led_on(qsfp, QSFP_LED2);
+            transceiver_led_off(qsfp, QSFP_LED2);
 
         } else if ((event == QSFP_E_REMOVE) || (event == QSFP_E_DEV_DOWN) ||
                    (event == QSFP_E_DEV_DETACH)) {
@@ -1406,6 +1400,8 @@ static int qsfp_sm_mod_present(struct qsfp *qsfp)
     if (ret < 0) {
         return ret;
     }
+
+    transceiver_led_on(qsfp, QSFP_LED1);
 
     qsfp_sm_mod_next(qsfp, QSFP_MOD_PRESENT, 0);
 
@@ -1636,6 +1632,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
     case QSFP_MOD_PRESENT:
         if (event == QSFP_E_DEV_DETACH) {
             qsfp_sm_mod_hpower(qsfp, false);
+            transceiver_led_off(qsfp, QSFP_LED1);
             qsfp_sm_mod_next(qsfp, QSFP_MOD_WAITDEV, 0);
         }
 
