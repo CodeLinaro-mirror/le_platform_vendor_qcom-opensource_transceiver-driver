@@ -97,7 +97,7 @@ static int sff8472_update_features_supported(struct qsfp *qsfp)
     if (ret < 0) {
         /* For DAC it fails with ENOTCONN */
         if (ret != -ENOTCONN) {
-            TRX_LOG_INFO(qsfp, "Failed to read TX adap eq in fail. ret %d", ret);
+            TRX_LOG_ERR(qsfp, "Failed to read TX adap eq in fail. ret %d", ret);
             return ret;
         }
     } else if (enh_flag_adv & SFF8472_TX_ADAP_EQ_IN_FAIL_IMPL) {
@@ -258,21 +258,12 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read extended status/control register."
-                          " ret %d", ret);
         return ret;
     }
 
     val |= SFF8472_HIGH_POWER;
 
-    ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
-                          "ret %d", ret);
-        return ret;
-    }
-
-    return 0;
+    return qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
 }
 
 static int sff8472_mod_low_power(const struct qsfp *qsfp)
@@ -289,21 +280,12 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read extended status/control register. "
-                          "ret %d", ret);
         return ret;
     }
 
     val &= ~SFF8472_HIGH_POWER;
 
-    ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
-                          "ret %d", ret);
-        return ret;
-    }
-
-    return 0;
+    return qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
 }
 
 static void sff8472_eeprom_print(const struct qsfp *qsfp)
@@ -472,7 +454,7 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
     *lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
     if (!qsfp->lane[0]) {
-        TRX_LOG_INFO(qsfp, "Unable to get the lane\n");
+        TRX_LOG_ERR(qsfp, "Unable to get the lane");
         return -EINVAL;
     }
 
@@ -495,18 +477,15 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
             (sfp_interface == PHY_INTERFACE_MODE_1000BASEX) ||
             (sfp_interface == PHY_INTERFACE_MODE_100BASEX))
     {
-        TRX_LOG_INFO(qsfp, " Unsupported SFP interface: 0x%x\n",
-                                                 sfp_interface);
+        TRX_LOG_ERR(qsfp, "Unsupported SFP interface: 0x%X", sfp_interface);
         return -EINVAL;
     }
     else
     {
-        TRX_LOG_INFO(qsfp, " Unable to get the lane speed.\n");
+        TRX_LOG_ERR(qsfp, "Unable to get the lane speed. 0x%X", sfp_interface);
         return -EINVAL;
     }
 
-    TRX_LOG_INFO(qsfp, " SFP interface: 0x%x Lane speed: 0x%X\n",
-                                     sfp_interface, *lane_speed);
     return 0;
 }
 
@@ -532,8 +511,6 @@ static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
     /* Only one lane supported by sfp */
     *laneinfo = 0x1;
 
-    TRX_LOG_INFO(qsfp, "Lane info: 0x%X", *laneinfo);
-
     return 0;
 }
 
@@ -551,33 +528,21 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
     u8 ctrl = 0;
 
     if (lane->lane_num != 0) {
-        TRX_LOG_ERR(lane, "Lane %u not supported", lane->lane_num);
         return -EINVAL;
     }
 
-    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl,
-                    sizeof(ctrl));
+    ret = qsfp_read(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed to read status/control register. "
-                          "ret %d", ret);
         return ret;
     }
 
     if (!(ctrl & SFF8472_TX_DISABLE)) {
-        TRX_LOG_INFO(lane, "TX already enabled");
         return 0;
     }
 
     ctrl &= (~SFF8472_TX_DISABLE);
 
-    ret = qsfp_write(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl,
-                    sizeof(ctrl));
-    if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed to write status/control register. "
-                          "ret %d", ret);
-    }
-
-    return ret;
+    return qsfp_write(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
 }
 
 static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
@@ -585,29 +550,18 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
     int ret;
     u8 ctrl = 0;
 
-    ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl,
-                    sizeof(ctrl));
+    ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read status/control register. "
-                          "ret %d", ret);
         return ret;
     }
 
     if (ctrl & SFF8472_TX_DISABLE) {
-        TRX_LOG_INFO(qsfp, "TX already disabled");
         return 0;
     }
 
     ctrl |= SFF8472_TX_DISABLE;
 
-    ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl,
-                    sizeof(ctrl));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
-                          "ret %d", ret);
-    }
-
-    return ret;
+    return qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
 }
 
 static int sff8472_lane_tx_disable(const struct lane *lane)
@@ -615,7 +569,6 @@ static int sff8472_lane_tx_disable(const struct lane *lane)
     if (lane->lane_num == 0) {
         return sff8472_mod_tx_disable(lane->qsfp);
     } else {
-        TRX_LOG_ERR(lane, "Lane %u not supported for SFP", lane->lane_num);
         return -EINVAL;
     }
 }

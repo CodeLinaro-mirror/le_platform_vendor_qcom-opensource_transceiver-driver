@@ -21,6 +21,9 @@
 #define SFF8636_POWER_CLASS_6 (0x02)
 #define SFF8636_POWER_CLASS_7 (0x03)
 
+#define VENDOR_CIG "CIG"
+#define CIG_TX_DISABLE_WAIT (5)
+
 enum {
     SFF8636_LOS                         = QSFP_ADDR(0, 0,   3),
     SFF8636_TX_FAULT                    = QSFP_ADDR(0, 0,   4),

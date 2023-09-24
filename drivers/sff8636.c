@@ -586,33 +586,83 @@ static void sff8636_update_flags(struct qsfp *qsfp)
     }
 }
 
+static int sff8636_cig_mod_tx_disable(const struct qsfp *qsfp)
+{
+    u8 status = 0;
+    u8 tmp = 0;
+    int ret;
+
+    ret = qsfp_read(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret == 0) {
+        /* TX already disabled for all lanes */
+        if ((status & 0xF) == 0xF) {
+            TRX_LOG_INFO(qsfp, "TX already disabled for all lanes");
+            return 0;
+        }
+    }
+
+    status = 0xF;
+
+    ret = qsfp_write(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    msleep(CIG_TX_DISABLE_WAIT);
+
+    ret = qsfp_read(qsfp, SFF8636_TX_DISABLE, &tmp, sizeof(tmp));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (tmp != status) {
+        TRX_LOG_INFO(qsfp, "read byte not same as written");
+        return -EIO;
+    } else {
+        return 0;
+    }
+}
+
+static bool sff8636_is_cig(const struct qsfp *qsfp)
+{
+    if (strncmp(qsfp->id.sff8636.base.vendor_name, VENDOR_CIG,
+                sizeof(VENDOR_CIG)-1)) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
 {
     u8 status = 0;
     int ret;
 
-    status = 0xF;
-
-    ret = qsfp_write(qsfp, SFF8636_TX_DISABLE, &status,
-                     sizeof(status));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
+    if (sff8636_is_cig(qsfp)) {
+        return sff8636_cig_mod_tx_disable(qsfp);
     }
 
-    return ret;
+    ret = qsfp_read(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret == 0) {
+        /* TX already disabled for all lanes */
+        if ((status & 0xF) == 0xF) {
+            return 0;
+        }
+    }
+
+    status = 0xF;
+
+    return qsfp_write(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
 }
 
-static int sff8636_lane_tx_enable(const struct lane *lane)
+static int sff8636_cig_lane_tx_enable(const struct lane *lane)
 {
     u8 status = 0;
+    u8 tmp = 0;
     int ret;
 
-    TRX_LOG_INFO(lane, "");
-
-    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status,
-                     sizeof(status));
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
         return ret;
     }
 
@@ -623,13 +673,85 @@ static int sff8636_lane_tx_enable(const struct lane *lane)
 
     status &= (~(1 << lane->lane_num));
 
-    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status,
-                     sizeof(status));
+    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed. ret %d", ret);
+        return ret;
     }
 
-    return ret;
+    msleep(CIG_TX_DISABLE_WAIT);
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &tmp, sizeof(tmp));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (tmp != status) {
+        TRX_LOG_INFO(lane, "read byte not same as written");
+        return -EIO;
+    } else {
+        return 0;
+    }
+}
+
+static int sff8636_lane_tx_enable(const struct lane *lane)
+{
+    u8 status = 0;
+    int ret;
+
+    if (sff8636_is_cig(lane->qsfp)) {
+        return sff8636_cig_lane_tx_enable(lane);
+    }
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (!((status >> lane->lane_num) & 1)) {
+        return 0;
+    }
+
+    status &= (~(1 << lane->lane_num));
+
+    return qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+}
+
+static int sff8636_cig_lane_tx_disable(const struct lane *lane)
+{
+    u8 status = 0;
+    u8 tmp = 0;
+    int ret;
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if ((status >> lane->lane_num) & 1) {
+        TRX_LOG_INFO(lane, "TX already enabled");
+        return 0;
+    }
+
+    status |= (1 << lane->lane_num);
+
+    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
+    if (ret < 0) {
+        return ret;
+    }
+
+    msleep(CIG_TX_DISABLE_WAIT);
+
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &tmp, sizeof(tmp));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (tmp != status) {
+        TRX_LOG_INFO(lane, "read byte not same as written");
+        return -EIO;
+    } else {
+        return 0;
+    }
 }
 
 static int sff8636_lane_tx_disable(const struct lane *lane)
@@ -637,29 +759,22 @@ static int sff8636_lane_tx_disable(const struct lane *lane)
     u8 status = 0;
     int ret;
 
-    TRX_LOG_INFO(lane, "");
+    if (sff8636_is_cig(lane->qsfp)) {
+        return sff8636_cig_lane_tx_disable(lane);
+    }
 
-    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status,
-                     sizeof(status));
+    ret = qsfp_read(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
         return ret;
     }
 
     if ((status >> lane->lane_num) & 1) {
-        TRX_LOG_INFO(lane, "TX already disabled");
         return 0;
     }
 
     status |= (1 << lane->lane_num);
 
-    ret = qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status,
-                     sizeof(status));
-    if (ret < 0) {
-        TRX_LOG_ERR(lane, "TX enable failed. ret %d", ret);
-    }
-
-    return ret;
+    return qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
 }
 
 static int sff8636_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
@@ -835,8 +950,6 @@ static int sff8636_get_lane_speed(const struct qsfp *qsfp,
      *lane_speed = TRX_LANE_SPEED_UNKNOWN;
     }
 
-    TRX_LOG_INFO(qsfp, "Lane speed: 0x%X ", *lane_speed);
-
     return 0;
 }
 
@@ -867,19 +980,15 @@ static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
 
     ret = qsfp_read(qsfp, SFF8636_CHANNEL_INFO, &channel,
                      sizeof(channel));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Channel register read failed. ret %d", ret);
-        return ret;
+    if (ret == 0) {
+        *laneinfo = ~channel;
+        /* SFF-8636 supports a maximum of four lanes, the first
+         * four bytes are required to check for lane presence.
+         */
+        *laneinfo &= 0x0F;
     }
 
-    *laneinfo = ~channel;
-    /* SFF-8636 supports a maximum of four lanes, the first
-       four bytes are required to check for lane presence. */
-    *laneinfo &= 0x0F;
-
-    TRX_LOG_INFO(qsfp, "Lane info: 0x%X", *laneinfo);
-
-    return 0;
+    return ret;
 }
 
 
@@ -903,8 +1012,6 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
         /* Using 0XFF to indicate the far-end configuration did not
            support transceivers with detachable connectors.*/
         *bout_config = TRX_FAR_END_NOT_MANAGED;
-        TRX_LOG_INFO(qsfp, "Breakout config: 0x%X ",
-                              *bout_config);
         return 0;
     }
 
@@ -922,19 +1029,16 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
 
     *bout_config = buf;
 
-    TRX_LOG_INFO(qsfp, "Breakout config: 0x%X ",
-                          *bout_config);
-
     return 0;
 }
 
 unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
 {
-    /* Delay added as we are getting interrupt for RX LOS recovery but within 30ms
-     * we are getting RX LOS so it is false RX LOS recovery event. To avoid false
-     * event we are processing interrupt after 40ms
+    /* Delay added as we are getting interrupt for RX/TX LOS recovery but within 60ms
+     * we are getting RX/TX LOS so it is false RX/TX LOS recovery event. To avoid false
+     * event we are processing interrupt after 60ms
      */
-    return msecs_to_jiffies(40);
+    return msecs_to_jiffies(60);
 }
 
 static int sff8636_set_rate_select(const struct qsfp *qsfp)

@@ -306,24 +306,17 @@ static int cmis_mod_tx_disable(const struct qsfp *qsfp)
     u8 status = 0;
     int ret;
 
-    ret = qsfp_read(qsfp, CMIS_TX_DISABLE, &status,
-                     sizeof(status));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read TX disable register. ret %d", ret);
-    } else if (status == 0xFF) {
-        TRX_LOG_INFO(qsfp, "TX already disabled");
-        return 0;
+    ret = qsfp_read(qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
+    if (ret == 0) {
+        /* TX already disabled for all lanes */
+        if (status == 0xFF) {
+            return 0;
+        }
     }
 
     status = 0xFF;
 
-    ret = qsfp_write(qsfp, CMIS_TX_DISABLE, &status,
-                     sizeof(status));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
-    }
-
-   return ret;
+    return qsfp_write(qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
 }
 
 static int cmis_lane_tx_enable(const struct lane *lane)
@@ -331,27 +324,18 @@ static int cmis_lane_tx_enable(const struct lane *lane)
     u8 status = 0;
     int ret;
 
-    ret = qsfp_read(lane->qsfp, CMIS_TX_DISABLE, &status,
-                     sizeof(status));
+    ret = qsfp_read(lane->qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
         return ret;
     }
 
     if (!((status >> lane->lane_num) & 1)) {
-        TRX_LOG_INFO(lane, "TX already enabled");
         return 0;
     }
 
     status &= (~(1 << lane->lane_num));
 
-    ret = qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status,
-                     sizeof(status));
-    if (ret < 0) {
-        TRX_LOG_ERR(lane, "failed. ret %d", ret);
-    }
-
-    return ret;
+    return qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
 }
 
 static int cmis_lane_tx_disable(const struct lane *lane)
@@ -359,27 +343,18 @@ static int cmis_lane_tx_disable(const struct lane *lane)
     u8 status = 0;
     int ret;
 
-    ret = qsfp_read(lane->qsfp, CMIS_TX_DISABLE, &status,
-                     sizeof(status));
+    ret = qsfp_read(lane->qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
     if (ret < 0) {
-        TRX_LOG_ERR(lane, "TX disable register read failed. ret %d", ret);
         return ret;
     }
 
     if ((status >> lane->lane_num) & 1) {
-        TRX_LOG_INFO(lane, "TX already disabled");
         return 0;
     }
 
     status |= (1 << lane->lane_num);
 
-    ret = qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status,
-                     sizeof(status));
-    if (ret < 0) {
-        TRX_LOG_ERR(lane, "Failed. ret %d", ret);
-    }
-
-    return ret;
+    return qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
 }
 
 static int cmis_update_features_supported(struct qsfp *qsfp)
@@ -432,7 +407,6 @@ static int cmis_mod_high_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read module controls: %d", ret);
         return ret;
     }
 
@@ -448,7 +422,6 @@ static int cmis_mod_low_power(const struct qsfp *qsfp)
 
     ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to read module controls: %d", ret);
         return ret;
     }
 
@@ -557,18 +530,12 @@ static int cmis_get_lanes_presence(const struct qsfp *qsfp,
     u8 channel = 0;
     int ret;
 
-    ret = qsfp_read(qsfp, CMIS_LANE_INFO, &channel,
-                     sizeof(channel));
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Channel register read failed, ret %d", ret);
-        return ret;
+    ret = qsfp_read(qsfp, CMIS_LANE_INFO, &channel, sizeof(channel));
+    if (ret == 0) {
+        *laneinfo = ~channel;
     }
 
-    *laneinfo = ~channel;
-
-    TRX_LOG_INFO(qsfp, "Lane info: 0x%X ", *laneinfo);
-
-    return 0;
+    return ret;
 }
 
 /*
@@ -582,9 +549,13 @@ static int cmis_get_lane_speed(const struct qsfp *qsfp,
     u8 channel = 0;
     int ret;
 
-    ret = cmis_get_lanes_presence(qsfp, &channel);
-    if (ret != 0) {
-        return ret;
+    if (qsfp->sm_mod_state >= QSFP_MOD_WAITHPOWER) {
+        channel = qsfp->lane_presence;
+    } else {
+        ret = cmis_get_lanes_presence(qsfp, &channel);
+        if (ret < 0) {
+            return ret;
+        }
     }
 
     for (lane_cnt=0;channel;++lane_cnt) {
@@ -600,8 +571,6 @@ static int cmis_get_lane_speed(const struct qsfp *qsfp,
     } else {
         *lane_speed = TRX_LANE_SPEED_UNKNOWN;
     }
-
-    TRX_LOG_INFO(qsfp, "Lane speed: 0x%X ", *lane_speed);
 
     return 0;
 }
@@ -655,8 +624,6 @@ static int cmis_get_breakout_config(const struct qsfp *qsfp,
 {
     /*  Assign breakout information to an 8-bit variable. */
     *bout_config = (trx_breakout_cfg)qsfp->id.cmis.base.breakout_config;
-
-    TRX_LOG_INFO(qsfp, "Breakout config: 0x%X ", *bout_config);
 
     return 0;
 }

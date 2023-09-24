@@ -29,45 +29,45 @@ static void lane_sm_link_upstream_linkdown(const struct lane *lane)
 static int lane_tx_enable(struct lane *lane)
 {
     int ret;
+    u8 retry = 3;
 
     if (!lane->qsfp->support.tx_disable) {
-        TRX_LOG_INFO(lane, "TX Enable/Disable not implemented");
         return 0;
     }
 
-    TRX_LOG_INFO(lane, "TX Enable: %s -> Enable",
-               lane->status.tx_disable ? "Disabled" : "Enabled");
-
-    ret = lane->qsfp->spec_ops->lane_tx_enable(lane);
-    if (ret < 0) {
-        return ret;
+    while (retry--) {
+        ret = lane->qsfp->spec_ops->lane_tx_enable(lane);
+        if (ret == 0) {
+            TRX_LOG_INFO(lane, "%s -> Enable",
+                         lane->status.tx_disable ? "Disabled" : "Enabled");
+            lane->status.tx_disable = 0;
+            break;
+        }
     }
 
-    lane->status.tx_disable = 0;
-
-    return 0;
+    return ret;
 }
 
 static int lane_tx_disable(struct lane *lane)
 {
     int ret;
+    u8 retry = 3;
 
     if (!lane->qsfp->support.tx_disable) {
-        TRX_LOG_INFO(lane, "TX Disable not implemented");
         return 0;
     }
 
-    TRX_LOG_INFO(lane, "TX Disable %s -> Disable",
-               lane->status.tx_disable ? "Disabled" : "Enabled");
-
-    ret = lane->qsfp->spec_ops->lane_tx_disable(lane);
-    if (ret < 0) {
-        return ret;
+    while (retry--) {
+        ret = lane->qsfp->spec_ops->lane_tx_disable(lane);
+        if (ret == 0) {
+            TRX_LOG_INFO(lane, "%s -> Disable",
+                         lane->status.tx_disable ? "Disabled" : "Enabled");
+            lane->status.tx_disable = 1;
+            break;
+        }
     }
 
-    lane->status.tx_disable = 1;
-
-    return 0;
+    return ret;
 }
 
 static void lane_sm_link_linkup(struct lane *lane)
@@ -119,8 +119,16 @@ static void lane_sm_device(struct lane *lane, u32 event)
 
 static void lane_sm_mod_remove(struct lane *lane)
 {
+    u8 temp = lane->sm_mod_state;
+
+    /* module state should be moved to empty first before calling sfp_link_down()
+     * as it will trigger call to qsfp_trx_get_lane_down_reason_code() from mtip
+     * driver which uses module state to get last link down reason.
+     */
+    lane_sm_mod_next(lane, QSFP_MOD_EMPTY);
+
     /* Upstream remove no need to be called in case module state in WaitDev */
-    if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
+    if (temp == QSFP_MOD_PRESENT) {
         /* This upstream linkdown can be removed after implementing custom
          * module remove for Ethernet driver as sfp_module_remove() not
          * reaching ethernet driver due to phylink framework
@@ -157,9 +165,7 @@ static void lane_sm_module(struct lane *lane, u32 event)
 {
     /* Handle remove event globally, it resets this state machine */
     if (event == QSFP_E_REMOVE) {
-        lane_sm_mod_remove(lane);
-        lane_sm_mod_next(lane, QSFP_MOD_EMPTY);
-        return;
+        return lane_sm_mod_remove(lane);
     }
 
     switch (lane->sm_mod_state) {
