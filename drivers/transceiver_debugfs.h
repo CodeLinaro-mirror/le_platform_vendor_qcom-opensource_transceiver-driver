@@ -91,6 +91,7 @@ const char *sff8472_mod_revision_to_str(u8 mod_rev_value);
 extern void qsfp_stop_poll(struct qsfp *qsfp);
 extern void qsfp_fill_features_str(const struct qsfp *qsfp, char *buf, int len);
 extern bool qsfp_atleast_one_flag_supported(const struct qsfp *qsfp);
+extern int qsfp_eth_get_link_type(u32 lane_phandle, u8* link_info);
 
 #endif
 
