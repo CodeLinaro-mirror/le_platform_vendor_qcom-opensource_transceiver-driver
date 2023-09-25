@@ -95,15 +95,14 @@ static int sff8472_update_features_supported(struct qsfp *qsfp)
     ret = qsfp_read(qsfp, SFF8472_ENH_FLAGS_ADV, &enh_flag_adv,
                     sizeof(enh_flag_adv));
     if (ret < 0) {
-        /* For DAC it fails with ENOTCONN */
-        if (ret != -ENOTCONN) {
+        /* For DAC it fails */
+        if (!qsfp->id.sff8472.base.sfp_ct_passive) {
             TRX_LOG_ERR(qsfp, "Failed to read TX adap eq in fail. ret %d", ret);
             return ret;
         }
     } else if (enh_flag_adv & SFF8472_TX_ADAP_EQ_IN_FAIL_IMPL) {
         support->tx_adap_eq_in_fail = 1;
     }
-
     return 0;
 }
 
@@ -463,7 +462,11 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
 
     sfp_interface = sfp_select_interface(qsfp->lane[0]->sfp_bus, sfp_supported);
 
-    if(sfp_interface == PHY_INTERFACE_MODE_25GBASER)
+    /* sfp_parse_support() from upstream wont consider SFF8024_ECC_100G_25GAUI_C2M_AOC
+     * so added extra check for it.
+     */
+    if ((sfp_interface == PHY_INTERFACE_MODE_25GBASER) ||
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100G_25GAUI_C2M_AOC))
     {
        *lane_speed = TRX_LANE_SPEED_25G;
     }

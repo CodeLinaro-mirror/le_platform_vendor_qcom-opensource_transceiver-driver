@@ -79,7 +79,20 @@ int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
     }
 
     if (qsfp->spec_ops) {
-        connector = qsfp->spec_ops->get_connector_type(qsfp);
+        u8 *spec_id = (u8*)&qsfp->id;
+        if ((*spec_id == SFF8024_ID_SFP) ||
+            (*spec_id == SFF8024_ID_SFF_8472)) {
+            if (qsfp->id.sff8472.base.sfp_ct_passive) {
+                *link_info = PORT_OTHER;
+            } else {
+                *link_info = PORT_FIBRE;
+            }
+
+            return 0;
+
+        } else {
+            connector = qsfp->spec_ops->get_connector_type(qsfp);
+        }
     } else {
         TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
