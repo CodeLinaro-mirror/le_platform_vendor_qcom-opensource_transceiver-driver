@@ -63,7 +63,12 @@ static struct qsfp* get_qsfp(u32 lane_phandle)
         return NULL;
     }
 
-    return lane->qsfp;
+    /* Give qsfp refernce only if lane is present */
+    if (lane->status.present) {
+        return lane->qsfp;
+    } else {
+        return NULL;
+    }
 }
 
 int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
