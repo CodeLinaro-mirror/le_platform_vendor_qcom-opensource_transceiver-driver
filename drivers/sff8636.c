@@ -201,41 +201,217 @@ static int sff8636_module_parse_power(struct qsfp *qsfp)
     return 0;
 }
 
-static int sff8636_disable_redundant_irq(const struct qsfp *qsfp)
+static void sff8636_set_lane_rx_tx_irq_mask(bool enable, u8 lanes, u8 *buf)
+{
+    if (enable) {
+        if (lanes & 0x1) {
+            buf[0] &= 0x0F;
+        }
+        if (lanes & 0x2) {
+            buf[0] &= 0xF0;
+        }
+        if (lanes & 0x4) {
+            buf[1] &= 0x0F;
+        }
+        if (lanes & 0x8) {
+            buf[1] &= 0xF0;
+        }
+    } else {
+        if (lanes & 0x1) {
+            buf[0] |= 0xF0;
+        }
+        if (lanes & 0x2) {
+            buf[0] |= 0x0F;
+        }
+        if (lanes & 0x4) {
+            buf[1] |= 0xF0;
+        }
+        if (lanes & 0x8) {
+            buf[1] |= 0x0F;
+        }
+    }
+}
+
+static int sff8636_disable_enable_lane_irq(const struct qsfp *qsfp, u8 lanes, bool enable)
 {
     int ret;
-    u8 buf1[] = {0x00, /* TX RX LOS */
-                 0x00, /* TX Adapt EQ Fault and TX Fault */
-                 0x00, /* TX RX CDR LOL */
-                 0x00, /* Temperature */
-                 0x00, /* voltage */
-                 0xFF, 0xFF}; /* vendor specific */
-    u8 buf2[] = {0x00, /* RX1-2 power high low alarm warning */
-                 0x00, /* RX3-4 power high low alarm warning */
-                 0x00, /* TX1-2 bias high low alarm warning */
-                 0x00, /* TX3-4 bias high low alarm warning */
-                 0x00, /* TX1-2 power high low alarm warning */
-                 0x00, /* TX3-4 power high low alarm warning */
-                 0xFF, 0xFF, 0xFF, 0xFF}; /* Reserved */
+    u8 buf;
+    u8 buf1[2] = {0};
+    u8 tmp;
+    const struct qsfp_support *support = &qsfp->support;
 
-    /* In case of DAC where memory is flat interrupt is not supported */
-    if (qsfp->module_flat_mem) {
+    lanes = lanes & qsfp->lane_presence;
+    if (lanes == 0) {
         return 0;
     }
 
-    ret = qsfp_write(qsfp, SFF8636_INTERRUPT_MASK,
-                     buf1, sizeof(buf1));
+    if (enable) {
+        tmp = ~((lanes << 4) | lanes);
+    } else {
+        tmp = (lanes << 4) | lanes;
+    }
+
+    if (support->rx_los | support->tx_los) {
+        ret = qsfp_read(qsfp, SFF8636_LOS_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read los irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+        if (enable) {
+            buf &= tmp;
+        } else {
+            buf |= tmp;
+        }
+
+        ret = qsfp_write(qsfp, SFF8636_LOS_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to write los irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+    }
+
+    if (support->tx_fault | support->tx_adap_eq_in_fail) {
+        ret = qsfp_read(qsfp, SFF8636_TX_FAULT_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read TX fault irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+        if (enable) {
+            buf &= tmp;
+        } else {
+            buf |= tmp;
+        }
+
+        ret = qsfp_write(qsfp, SFF8636_TX_FAULT_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to write TX fault irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+    }
+
+    if (support->rx_cdr_lol | support->tx_cdr_lol) {
+        ret = qsfp_read(qsfp, SFF8636_CDR_LOL_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read cdr lol irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+        if (enable) {
+            buf &= tmp;
+        } else {
+            buf |= tmp;
+        }
+
+        ret = qsfp_write(qsfp, SFF8636_CDR_LOL_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to write cdr lol irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+    }
+
+    if (support->rx_power_flags) {
+
+        ret = qsfp_read(qsfp, SFF8636_RX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read RX power irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+
+        sff8636_set_lane_rx_tx_irq_mask(enable, lanes, buf1);
+
+        ret = qsfp_write(qsfp, SFF8636_RX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to write RX power irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+    }
+
+    if (support->tx_power_flags) {
+        buf1[0] = buf1[1] = 0;
+        ret = qsfp_read(qsfp, SFF8636_TX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read TX power irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+
+        sff8636_set_lane_rx_tx_irq_mask(enable, lanes, buf1);
+
+        ret = qsfp_write(qsfp, SFF8636_TX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to write TX power irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+    }
+
+    if (support->tx_bias_flags) {
+        buf1[0] = buf1[1] = 0;
+        ret = qsfp_read(qsfp, SFF8636_TX_BIAS_IRQ_MASK, buf1, sizeof(buf1));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to read TX bias irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+
+        sff8636_set_lane_rx_tx_irq_mask(enable, lanes, buf1);
+
+        ret = qsfp_write(qsfp, SFF8636_TX_BIAS_IRQ_MASK, buf1, sizeof(buf1));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to write TX bias irq mask register."
+                              " ret %d", ret);
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+static int sff8636_disable_redundant_irq(const struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf = 0;
+    u8 buf1[] = {0xFF, 0xFF}; /* vendor specific */
+    u8 buf2[] = {0xFF, 0xFF, 0xFF, 0xFF}; /* Reserved */
+
+    ret = sff8636_disable_enable_lane_irq(qsfp, qsfp->lane_presence, false);
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to mask redundant interrupts. ret %d", ret);
+        TRX_LOG_ERR(qsfp, "Failed to mask lane interrupts. ret %d", ret);
         return ret;
     }
 
-    ret = qsfp_write(qsfp, SFF8636_CHANNEL_INTERRUPT_MASK,
-                     buf2, sizeof(buf2));
+    if (qsfp->support.temp_flags) {
+        ret = qsfp_write(qsfp, SFF8636_TEMPERATURE_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to mask temperature interrupts. ret %d", ret);
+            return ret;
+        }
+    }
+
+    if (qsfp->support.volt_flags) {
+        ret = qsfp_write(qsfp, SFF8636_VOLTAGE_IRQ_MASK, &buf, sizeof(buf));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to mask voltage interrupts. ret %d", ret);
+            return ret;
+        }
+    }
+
+    ret = qsfp_write(qsfp, SFF8636_VENDOR_IRQ_MASK, buf1, sizeof(buf1));
     if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Failed to mask redundant channel interrupts."
+        TRX_LOG_INFO(qsfp, "Failed to mask vendor interrupts. ret %d", ret);
+    }
+
+    ret = qsfp_write(qsfp, SFF8636_RESERVED_IRQ_MASK, buf2, sizeof(buf2));
+    if (ret < 0) {
+        TRX_LOG_INFO(qsfp, "Failed to mask reserved interrupts."
                           " ret %d", ret);
-        return ret;
     }
 
     return 0;
@@ -414,6 +590,7 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
 
 static void sff8636_update_flags(struct qsfp *qsfp)
 {
+    u8 i;
     int ret;
     bool err = false;
     struct sff8636_los los = {0};
@@ -568,8 +745,19 @@ static void sff8636_update_flags(struct qsfp *qsfp)
     if (err) {
     /* Enable poll in case of failure to retry */
         qsfp->need_poll = true;
+        return;
+    }
 
-    } else if (flags->rx_los | flags->tx_los | flags->tx_fault | flags->rx_cdr_lol |
+    for (i = 0 ; i < qsfp->num_lanes ; i++) {
+        struct lane *lanei = qsfp->lane[i];
+        /* if single lane not up then its irq were disabled so polling needed */
+        if (!lanei->status.eth_linkup) {
+            qsfp->need_poll = true;
+            return;
+        }
+    } 
+
+    if (flags->rx_los | flags->tx_los | flags->tx_fault | flags->rx_cdr_lol |
         flags->tx_cdr_lol | flags->tx_adap_eq_in_fail | flags->temp | flags->volt |
         flags->rx_power_high_alarm | flags->rx_power_low_alarm |
         flags->rx_power_high_warn | flags->rx_power_low_warn |
@@ -1058,6 +1246,7 @@ static int sff8636_set_rate_select(const struct qsfp *qsfp)
 const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
+    .disable_enable_lane_irq = sff8636_disable_enable_lane_irq,
     .update_flags = sff8636_update_flags,
     .mod_tx_disable = sff8636_mod_tx_disable,
     .lane_tx_enable = sff8636_lane_tx_enable,

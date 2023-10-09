@@ -618,6 +618,7 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
                    PROBE_RETRY - qsfp->sm_mod_tries);
         seq_printf(s, "RX LOS: %d\n", qsfp->status.rx_los);
         seq_printf(s, "TX Fault: %d\n", qsfp->status.tx_fault);
+        seq_printf(s, "ETH Linkup: %d\n", qsfp->status.eth_linkup);
         seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
         seq_printf(s, "Features: %s\n", feature_str);
     } else {
@@ -637,6 +638,7 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
             seq_printf(s, "RX LOS: %d\n", lanei->status.rx_los);
             seq_printf(s, "TX Fault: %d\n", lanei->status.tx_fault);
             seq_printf(s, "TX Disable: %d\n", lanei->status.tx_disable);
+            seq_printf(s, "ETH Linkup: %d\n", lanei->status.eth_linkup);
         } else {
             seq_printf(s, "Lane present: No\n");
         }
@@ -682,7 +684,9 @@ static int qsfp_debug_qsfp_flags_show(struct seq_file *s,
     struct qsfp *qsfp = s->private;
     struct qsfp_flags flags;
 
+    mutex_lock(&qsfp->sm_mutex);
     flags = qsfp->flags;
+    mutex_unlock(&qsfp->sm_mutex);
 
     seq_printf(s,  "Temperature High Alarm: %s\nTemperature Low Alarm: %s\n"
     "Temperature High Warning: %s\nTemperature Low Warning: %s\n\nVoltage "
@@ -2534,8 +2538,7 @@ static void qsfp_sim_clear(struct qsfp *qsfp)
         /* start polling to see actual hardware state which clears any
          * simulated flags
          */
-            qsfp->need_poll = true;
-            mod_delayed_work(system_wq, &qsfp->poll, 0);
+            qsfp_start_poll(qsfp, 0);
         } else {
             qsfp->need_poll = true;
             /* In DAC case it need to called once to get recovery of
