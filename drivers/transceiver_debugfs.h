@@ -88,6 +88,7 @@ int module_debugfs_init(struct qsfp *qsfp);
 inline void spec_info_print(struct seq_file *s, u8 spec_id);
 extern void fpc_reset_qsfp(const struct qsfp *qsfp);
 const char *sff8472_mod_revision_to_str(u8 mod_rev_value);
+extern void qsfp_start_poll(struct qsfp *qsfp, unsigned long delay);
 extern void qsfp_stop_poll(struct qsfp *qsfp);
 extern void qsfp_fill_features_str(const struct qsfp *qsfp, char *buf, int len);
 extern bool qsfp_atleast_one_flag_supported(const struct qsfp *qsfp);
