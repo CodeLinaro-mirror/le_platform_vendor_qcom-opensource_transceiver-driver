@@ -1619,7 +1619,7 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_power);
 
-static long trx_calibrate_temp(__be16 tmp_val)
+long trx_calibrate_temp(__be16 tmp_val)
 {
     long value = 0;
 
@@ -1632,7 +1632,7 @@ static long trx_calibrate_temp(__be16 tmp_val)
     return value;
 }
 
-static long trx_calibrate_vcc(__be16 vcc_val)
+long trx_calibrate_vcc(__be16 vcc_val)
 {
     long value = 0;
 
@@ -1642,7 +1642,7 @@ static long trx_calibrate_vcc(__be16 vcc_val)
     return value;
 }
 
-static long trx_calibrate_power(__be16 power_val)
+long trx_calibrate_power(__be16 power_val)
 {
     long value = 0;
 
@@ -1652,7 +1652,7 @@ static long trx_calibrate_power(__be16 power_val)
     return value;
 }
 
-static long trx_calibrate_txbias(__be16 bias_val)
+long trx_calibrate_txbias(__be16 bias_val)
 {
     long value = 0;
 
@@ -1662,7 +1662,7 @@ static long trx_calibrate_txbias(__be16 bias_val)
     return value;
 }
 
-static long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_const)
+long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_const)
 {
     long temp_val = 0;
     int16_t temp_ad = 0;
@@ -1683,7 +1683,7 @@ static long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_cons
     return temp_val;
 }
 
-static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
+long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
 {
     long vcc_val = 0;
     int16_t vcc_ad = 0;
@@ -1701,7 +1701,7 @@ static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
     return vcc_val;
 }
 
-static long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr_const)
+long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr_const)
 {
     long txpwr_val = 0;
     int16_t txpwr_ad = 0;
@@ -1719,7 +1719,7 @@ static long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr
     return txpwr_val;
 }
 
-static long trx_ext_ddm_txbias(__be16 tx_val, struct sff8472_txi_diag* txi_const)
+long trx_ext_ddm_txbias(__be16 tx_val, struct sff8472_txi_diag* txi_const)
 {
     long txi_val = 0;
     int16_t txi_ad = 0;
