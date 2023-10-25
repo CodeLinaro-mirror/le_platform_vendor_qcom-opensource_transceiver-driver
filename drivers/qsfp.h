@@ -547,6 +547,19 @@ extern trx_link_length_range qsfp_link_code_to_link_length_range(u8 link_code);
 extern trx_link_length_range qsfp_mmf_code_to_link_length_range(u8 mmf_code);
 extern trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code);
 
+
+extern const char * const link_length_range_to_str[];
+extern  const char * const link_type_to_str[];
+extern  const char * const reasoncode_to_str[];
+extern  const char * const trxspeed_to_str[];
+extern  const char * const trxtype_to_str[];
+
+#define LINK_LENGTH_RANGE_MAX_INDEX (11)
+#define LANE_SPEED_MAX_INDEX (6)
+#define TRX_TYPE_MAX_INDEX (5)
+#define REASON_CODE_MAX_INDEX (4)
+#define LINK_TYPE_MAX_INDEX (256)
+
 extern void *trx_ipc_log_buf;
 
 #define TRX_IPC_LOG_PAGES 100

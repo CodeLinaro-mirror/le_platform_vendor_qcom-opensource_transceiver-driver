@@ -4,7 +4,7 @@
  */
 #include "transceiver_debugfs.h"
 #include "lane.h"
-
+#include "qsfp.h"
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
@@ -1619,7 +1619,7 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_tx_power);
 
-static long trx_calibrate_temp(__be16 tmp_val)
+long trx_calibrate_temp(__be16 tmp_val)
 {
     long value = 0;
 
@@ -1632,7 +1632,7 @@ static long trx_calibrate_temp(__be16 tmp_val)
     return value;
 }
 
-static long trx_calibrate_vcc(__be16 vcc_val)
+long trx_calibrate_vcc(__be16 vcc_val)
 {
     long value = 0;
 
@@ -1642,7 +1642,7 @@ static long trx_calibrate_vcc(__be16 vcc_val)
     return value;
 }
 
-static long trx_calibrate_power(__be16 power_val)
+long trx_calibrate_power(__be16 power_val)
 {
     long value = 0;
 
@@ -1652,7 +1652,7 @@ static long trx_calibrate_power(__be16 power_val)
     return value;
 }
 
-static long trx_calibrate_txbias(__be16 bias_val)
+long trx_calibrate_txbias(__be16 bias_val)
 {
     long value = 0;
 
@@ -1662,7 +1662,7 @@ static long trx_calibrate_txbias(__be16 bias_val)
     return value;
 }
 
-static long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_const)
+long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_const)
 {
     long temp_val = 0;
     int16_t temp_ad = 0;
@@ -1683,7 +1683,7 @@ static long trx_ext_temp_ddm(__be16 tmp_val, struct sff8472_temp_diag* temp_cons
     return temp_val;
 }
 
-static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
+long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
 {
     long vcc_val = 0;
     int16_t vcc_ad = 0;
@@ -1701,7 +1701,7 @@ static long trx_ext_vcc_ddm(__be16 svcc_val, struct sff8472_vcc_diag* vcc_const)
     return vcc_val;
 }
 
-static long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr_const)
+long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr_const)
 {
     long txpwr_val = 0;
     int16_t txpwr_ad = 0;
@@ -1719,7 +1719,7 @@ static long trx_ext_ddm_power(__be16 power_val, struct sff8472_txpwr_diag* txpwr
     return txpwr_val;
 }
 
-static long trx_ext_ddm_txbias(__be16 tx_val, struct sff8472_txi_diag* txi_const)
+long trx_ext_ddm_txbias(__be16 tx_val, struct sff8472_txi_diag* txi_const)
 {
     long txi_val = 0;
     int16_t txi_ad = 0;
@@ -2046,34 +2046,6 @@ static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_ddm_thresholds);
 
-static const char* link_length_range_to_str(trx_link_length_range link_length_range)
-{
-    switch (link_length_range) {
-    case TRX_SR:
-        return "SR";
-    case TRX_LR:
-        return "LR";
-    case TRX_ER:
-        return "ER";
-    case TRX_ZR:
-        return "ZR";
-    case TRX_CR:
-        return "CR";
-    case TRX_CLR:
-        return "CLR";
-    case TRX_DR:
-        return "DR";
-    case TRX_BR:
-        return "BR";
-    case TRX_FR:
-        return "FR";
-    case TRX_VR:
-        return "VR";
-    default:
-        return "Unknown";
-    }
-}
-
 static int qsfp_debug_device_link_length_range_show(struct seq_file *s,
                                                     void *data)
 {
@@ -2093,11 +2065,184 @@ static int qsfp_debug_device_link_length_range_show(struct seq_file *s,
 
     link_length_range = qsfp->spec_ops->get_link_length_range(qsfp);
 
-    seq_printf(s, "%s\n", link_length_range_to_str(link_length_range));
+    if (link_length_range >= LINK_LENGTH_RANGE_MAX_INDEX) {
+        seq_printf(s, "Unknown\n");
+    }
+    else {
+        seq_printf(s, "%s\n", link_length_range_to_str[link_length_range]);
+    }
 
     return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_link_length_range);
+
+static int qsfp_debug_device_dbg_info_show(struct seq_file *s,
+                                                    void *data)
+{
+    struct qsfp *qsfp = s->private;
+    u8 *spec_id = (u8*)&qsfp->id;
+    int ret = 0;
+    u8 val = 0;
+    u8 link_info = 0;
+    trx_lane_down_reason_code_type reason = 0;
+    trx_lane_speed trx_speed = 0;
+    trx_type trx_type_info = 0;
+    trx_lane_cfg laneinfo = 0;
+    trx_breakout_cfg bout_config = 0;
+    trx_link_length_range link_length_range = 0;
+
+    u32 lane_phandle = qsfp->lane[0]->dev->of_node->phandle;
+
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        seq_printf(s, "QSFP transceiver not inserted\n");
+        return 0;
+    }
+
+    if (!qsfp->spec_ops) {
+        seq_printf(s, "Spec ops not initiazed\n");
+        return 0;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        /* As power class 1 is the highest we can not push module for
+         * further high or low power class
+         */
+        if(qsfp->module_power_class == 1) {
+            seq_printf(s, "Module Power state: Power class 1\n");
+        }
+        else {
+            ret = qsfp_read(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
+            if (ret == 0) {
+                if(val & SFF8472_HIGH_POWER)
+                    seq_printf(s, "Module Power state: High Power\n");
+                else
+                    seq_printf(s, "Module Power state: Low Power\n");
+            }
+            else
+                seq_printf(s, "Module Power state: QSFP read error\n");
+        }
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* As power class 1 is the highest we can not push module for
+         * further high or low power class
+         */
+        if(qsfp->module_power_class == 1) {
+            seq_printf(s, "Module Power state: Power class 1\n");
+        }
+        else {
+            ret = qsfp_read(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
+            if (ret == 0) {
+                if(val & BIT(0) && val & BIT(2))
+                    seq_printf(s, "Module Power state: High Power\n");
+                else if(val & BIT(0) && val & BIT(1))
+                    seq_printf(s, "Module Power state: Low Power\n");
+                else
+                    seq_printf(s, "Module Power state: Unknown\n");
+            }
+            else
+                seq_printf(s, "Module Power state: QSFP read error\n");
+        }
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &val, sizeof(val));
+        if (ret == 0) {
+            if(~(val & BIT(4))  && ~(val & BIT(6)))
+                seq_printf(s, "Module Power state: High Power\n");
+            else if(val & CMIS_LOW_POWER_REQ_SW)
+                seq_printf(s, "Module Power state: Low Power\n");
+            else
+                seq_printf(s, "Module Power state: Unknown\n");
+        }
+        else
+            seq_printf(s, "Module Power state: QSFP read error\n");
+        break;
+    default:
+        spec_info_print(s, *spec_id);
+    }
+
+    ret = qsfp_eth_get_link_type(lane_phandle, &link_info);
+    if(ret == 0) {
+        if (link_info >= LINK_TYPE_MAX_INDEX) {
+            seq_printf(s, "Link Info: Unknown\n");
+        }
+        else {
+            seq_printf(s, "Link Info: %s\n", link_type_to_str[link_info]);
+        }
+    }
+    else
+        seq_printf(s, "Link Info: Unknown\n");
+
+    ret = qsfp_trx_get_lane_down_reason_code(lane_phandle,&reason);
+    if(ret == 0) {
+        if (reason >= REASON_CODE_MAX_INDEX) {
+            seq_printf(s, "Lane Down reason code: Unknown\n");
+        }
+        else {
+            seq_printf(s, "Lane Down reason code: %s\n",
+                             reasoncode_to_str[reason]);
+        }
+    }
+    else
+        seq_printf(s, "Lane Down reason code: Unknown\n");
+
+    ret = qsfp_trx_get_lane_speed(lane_phandle, &trx_speed);
+    if(ret == 0) {
+        if (trx_speed >= LANE_SPEED_MAX_INDEX) {
+            seq_printf(s, "Lane Speed: Unknown\n");
+        }
+        else {
+            seq_printf(s, "Lane Speed: %s\n", trxspeed_to_str[trx_speed]);
+        }
+    }
+    else
+        seq_printf(s, "Lane Speed: Unknown\n");
+
+    ret = qsfp_trx_get_type(lane_phandle, &trx_type_info);
+    if(ret == 0) {
+        if (trx_type_info >= TRX_TYPE_MAX_INDEX) {
+            seq_printf(s, "Transceiver Type: Unknown\n");
+        }
+        else {
+            seq_printf(s, "Transceiver Type: %s\n", trxtype_to_str[trx_type_info]);
+        }
+    }
+    else
+        seq_printf(s, "Transceiver Type: Unknown\n");
+
+    ret = qsfp_trx_get_laneconfig(lane_phandle, &laneinfo);
+    if(ret == 0) {
+        seq_printf(s, "lane Config: 0x%x\n", laneinfo);
+    }
+    else
+        seq_printf(s, "lane Config: Unknown\n");
+
+    ret = qsfp_trx_get_breakoutconfig(lane_phandle, &bout_config);
+    if(ret == 0) {
+        seq_printf(s, "Breakout Config: 0x%x\n", bout_config);
+    }
+    else
+        seq_printf(s, "Breakout Config: Unknown\n");
+
+    ret = qsfp_trx_get_link_length_range(lane_phandle, &link_length_range);
+    if(ret == 0) {
+        if (link_length_range >= LINK_LENGTH_RANGE_MAX_INDEX) {
+            seq_printf(s, "Link Length Range: Unknown\n");
+        }
+        else {
+            seq_printf(s, "Link Length Range: %s\n",
+                       link_length_range_to_str[link_length_range]);
+        }
+    }
+    else
+        seq_printf(s, "Link Length Range: Unknown\n");
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_device_dbg_info);
 
 int create_common_debugfs_files(struct qsfp *qsfp)
 {
@@ -2182,6 +2327,14 @@ int create_common_debugfs_files(struct qsfp *qsfp)
                                qsfp, &qsfp_debug_device_link_length_range_fops);
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp link_length_range debugfs_create_file fail,"
+                          " error %ld", PTR_ERR(file));
+        goto failed_module_dir;
+    }
+
+    file = debugfs_create_file("dbg_info", 0600, qsfp->module_debugfs_dir,
+                               qsfp, &qsfp_debug_device_dbg_info_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp dbg_info debugfs_create_file fail,"
                           " error %ld", PTR_ERR(file));
         goto failed_module_dir;
     }

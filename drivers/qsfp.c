@@ -63,7 +63,12 @@ static struct qsfp* get_qsfp(u32 lane_phandle)
         return NULL;
     }
 
-    return lane->qsfp;
+    /* Give qsfp refernce only if lane is present */
+    if (lane->status.present) {
+        return lane->qsfp;
+    } else {
+        return NULL;
+    }
 }
 
 int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
@@ -79,7 +84,20 @@ int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
     }
 
     if (qsfp->spec_ops) {
-        connector = qsfp->spec_ops->get_connector_type(qsfp);
+        u8 *spec_id = (u8*)&qsfp->id;
+        if ((*spec_id == SFF8024_ID_SFP) ||
+            (*spec_id == SFF8024_ID_SFF_8472)) {
+            if (qsfp->id.sff8472.base.sfp_ct_passive) {
+                *link_info = PORT_OTHER;
+            } else {
+                *link_info = PORT_FIBRE;
+            }
+
+            return 0;
+
+        } else {
+            connector = qsfp->spec_ops->get_connector_type(qsfp);
+        }
     } else {
         TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
         return -EINVAL;
@@ -132,6 +150,12 @@ int qsfp_trx_get_lane_down_reason_code(u32 lane_phandle,
 {
     struct lane *lane;
 
+    if(reason == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
+
     lane = phandle_to_drvdata(lane_phandle);
     if (!lane) {
         /* There is chance that Lane/QSFP/FPC probe not yet
@@ -170,6 +194,12 @@ int qsfp_eth_get_link_type(u32 lane_phandle, u8* link_info)
 {
     struct qsfp *qsfp;
 
+    if(link_info == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
+
     qsfp = get_qsfp(lane_phandle);
 
     return qsfp_get_link_type(qsfp, link_info);
@@ -192,6 +222,12 @@ int qsfp_trx_get_lane_speed(u32 lane_phandle, trx_lane_speed* lane_speed)
 {
     struct qsfp *qsfp;
     int ret = -EINVAL;
+
+    if(lane_speed == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
 
     qsfp = get_qsfp(lane_phandle);
     if (!qsfp) {
@@ -219,6 +255,12 @@ int qsfp_trx_get_type(u32 lane_phandle, trx_type* type)
 {
     struct qsfp *qsfp;
     u8 tansceivertype;
+
+    if(type == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
 
     qsfp = get_qsfp(lane_phandle);
     if (!qsfp) {
@@ -307,6 +349,12 @@ int qsfp_trx_get_link_length_range(u32 lane_phandle,
                                    trx_link_length_range* link_length_range)
 {
     struct qsfp *qsfp;
+
+    if(link_length_range == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
 
     qsfp = get_qsfp(lane_phandle);
     if (!qsfp) {
@@ -499,6 +547,12 @@ int qsfp_trx_get_laneconfig(u32 lane_phandle, trx_lane_cfg* laneinfo)
 {
     struct qsfp *qsfp;
 
+    if(laneinfo == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
+
     qsfp = get_qsfp(lane_phandle);
     if (!qsfp) {
         /* There is chance that Lane/QSFP/FPC probe not yet
@@ -526,6 +580,12 @@ int qsfp_trx_get_breakoutconfig(u32 lane_phandle,
 {
     struct qsfp *qsfp;
     int ret = -EINVAL;
+
+    if(bout_config == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid input argument");
+        return -EINVAL;
+    }
 
     qsfp = get_qsfp(lane_phandle);
     if (!qsfp) {
@@ -597,6 +657,52 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info)
     return ret;
 }
 EXPORT_SYMBOL_GPL(qsfp_trx_get_info);
+
+const char * const link_length_range_to_str[] = {
+    [TRX_SR] = "SR",
+    [TRX_LR] = "LR",
+    [TRX_ER] = "ER",
+    [TRX_ZR] = "ZR",
+    [TRX_CR] = "CR",
+    [TRX_CLR] = "CLR",
+    [TRX_DR] = "DR",
+    [TRX_BR] = "BR",
+    [TRX_FR] = "FR",
+    [TRX_VR] = "VR",
+};
+
+const char * const link_type_to_str[] = {
+    [PORT_OTHER] = "DAC",
+    [PORT_DA] = "DAC",
+    [PORT_FIBRE] = "FIBER",
+    [PORT_TP] = "TP",
+    [PORT_BNC] = "BNC",
+};
+
+const char * const reasoncode_to_str[] = {
+    [TRX_LOCAL_PLUGOUT] = "LOCAL_PLUGOUT",
+    [TRX_TX_FAULT] = "TX_FAULT",
+    [TRX_RX_LOS] = "RX_LOS",
+    [TRX_ERROR] = "ERROR",
+};
+
+const char * const trxspeed_to_str[] = {
+    [TRX_LANE_SPEED_UNKNOWN] = "UNKNOWN",
+    [TRX_LANE_SPEED_2_5G] = "2.5 GBPS",
+    [TRX_LANE_SPEED_10G] = "10 GBPS",
+    [TRX_LANE_SPEED_25G] = "25 GBPS",
+    [TRX_LANE_SPEED_25G] = "25 GBPS",
+    [TRX_LANE_SPEED_50G] = "50 GBPS",
+    [TRX_LANE_SPEED_100G] = "100 GBPS",
+};
+
+const char * const trxtype_to_str[] = {
+    [TRX_UNKNOWN] = "UNKNOWN",
+    [TRX_UNSUPPORTED] = "UNSUPPORTED",
+    [TRX_SFP] = "SFP",
+    [TRX_QSFP_PLS_QSFP28_QSFP56] = "QSFP_PLS_QSFP28_QSFP56",
+    [TRX_QSFPDD] = "QSFPDD",
+};
 
 static const char  * const mod_state_strings[] = {
     [QSFP_MOD_EMPTY] = "Empty",

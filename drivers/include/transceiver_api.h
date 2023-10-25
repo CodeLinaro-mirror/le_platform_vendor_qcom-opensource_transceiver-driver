@@ -208,4 +208,19 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info);
 ****************************************************************/
 int qsfp_trx_ifconfig_notifier(bool value, u32 *lane_phandle);
 
+/***************************************************************
+*
+* Function:       qsfp_trx_get_link_length_range
+* Description:    API to get QSFP TRX link length range information.
+* Inputs:         lane_phandle [in] : Lane phandle to get the QSFP structure.
+*                 link_length_range [out] : Supported transceiver link length
+*                                           range information.
+*
+* Return value:   0                : Success
+*                -EINVAL | -EAGAIN : Error
+*
+****************************************************************/
+int qsfp_trx_get_link_length_range(u32 lane_phandle,
+                                   trx_link_length_range* link_length_range);
+
 #endif
