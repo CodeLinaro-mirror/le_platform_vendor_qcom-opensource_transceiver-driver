@@ -866,7 +866,6 @@ static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
 
     /* Assume that SFF-8636 does not support 50GBPS and that this
        feature should be revisited if such a transceiver is discovered. */
-    case 0x0C ... 0x0D:
     case 0x4A:
     case 0x45:
     case 0x39:
@@ -894,7 +893,7 @@ static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
     /* Total transceiver speed supported was 100 GBPS. As per SFF-8636,
        the supported number of lanes was 4, so each lane supports 25 GBPS. */
     case 0x01 ... 0x08:
-    case 0x0B:
+    case 0x0B ... 0x0D:
     case 0x16 ... 0x1B:
     case 0x20 ... 0x21:
     case 0x25 ... 0x2F:
@@ -933,22 +932,30 @@ static int sff8636_get_lane_speed(const struct qsfp *qsfp,
                                   trx_lane_speed* lane_speed)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
+    trx_lane_speed speed, ext_spec_speed = TRX_LANE_SPEED_UNKNOWN;
 
-    /* Check ethernet compliance codes page 00h byte 131 */
-    if (id->base.ecom_extended == 0x1) {
-        *lane_speed = sff8024_link_codes_to_speed(id->ext.link_codes);
-    } else if ((id->base.e10g_base_lrm == 0x1) ||
+    if ((id->base.e10g_base_lrm == 0x1) ||
              (id->base.e10g_base_lr == 0x1)  ||
              (id->base.e10g_base_sr == 0x1)) {
-         *lane_speed = TRX_LANE_SPEED_2_5G;
-    } else if ((id->base.e40g_base_cr4 == 0x1) ||
+         speed = TRX_LANE_SPEED_2_5G;
+    }
+
+    if ((id->base.e40g_base_cr4 == 0x1) ||
           (id->base.e40g_base_sr4 == 0x1) ||
           (id->base.e40g_base_lr4 == 0x1) ||
           (id->base.e40g_active == 0x1)) {
-        *lane_speed = TRX_LANE_SPEED_10G;
-    } else {
-     *lane_speed = TRX_LANE_SPEED_UNKNOWN;
+        speed = TRX_LANE_SPEED_10G;
     }
+
+   /* Check ethernet compliance codes page 00h byte 131 */
+   if (id->base.ecom_extended == 0x1) {
+        ext_spec_speed = sff8024_link_codes_to_speed(id->ext.link_codes);
+    }
+
+    if(ext_spec_speed > speed)
+        *lane_speed = ext_spec_speed;
+    else
+        *lane_speed = speed;
 
     return 0;
 }
