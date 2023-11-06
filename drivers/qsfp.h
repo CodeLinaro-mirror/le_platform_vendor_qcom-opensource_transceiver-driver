@@ -344,7 +344,7 @@ struct qsfp {
     u8 i2c_address_dev1;
     bool module_flat_mem;
     bool need_poll;
-    struct delayed_work poll;;
+    struct delayed_work poll;
     u8 module_power_class;
     u8 module_revision;
     u8 sm_mod_state;
