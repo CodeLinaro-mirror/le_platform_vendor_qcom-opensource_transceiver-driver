@@ -932,7 +932,8 @@ static int sff8636_get_lane_speed(const struct qsfp *qsfp,
                                   trx_lane_speed* lane_speed)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
-    trx_lane_speed speed, ext_spec_speed = TRX_LANE_SPEED_UNKNOWN;
+    trx_lane_speed speed = TRX_LANE_SPEED_UNKNOWN;
+    trx_lane_speed ext_spec_speed = TRX_LANE_SPEED_UNKNOWN;
 
     if ((id->base.e10g_base_lrm == 0x1) ||
              (id->base.e10g_base_lr == 0x1)  ||
