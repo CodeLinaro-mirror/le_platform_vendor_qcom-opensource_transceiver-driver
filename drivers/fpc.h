@@ -107,6 +107,7 @@ struct fpc {
     int gpio_irq;
     u8 i2c_address;
     u8 instance_num;
+    struct delayed_work irq;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;

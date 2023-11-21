@@ -224,7 +224,7 @@ void fpc_enable_i2c_stuck_interrupt(const struct fpc *fpc)
 /*
  * Check i2c errors SCL,SDA stuck condition and logs error message
  */
-static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
+static int fpc_read_i2c_stuck_status(const struct fpc *fpc)
 {
     int ret;
     u8 buf = 0;
@@ -233,6 +233,7 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
                    sizeof(buf));
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Failed to read SCL stuck status. ret %d", ret);
+        return ret;
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
         u8 i;
         struct qsfp *qsfp;
@@ -244,6 +245,7 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
             if (buf & 1) {
                 qsfp = fpc->qsfp[i];
                 if (!qsfp) {
+                    TRX_LOG_ERR(fpc, "qsfp null for port %u", i);
                     continue;
                 }
 
@@ -283,6 +285,7 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
                    sizeof(buf));
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Failed to read SDA stuck status. ret %d", ret);
+        return ret;
     } else if (buf & FPC_I2C_STUCK_STATUS_MASK) {
         u8 i;
         struct qsfp *qsfp;
@@ -294,6 +297,7 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
             if (buf & 1) {
                 qsfp = fpc->qsfp[i];
                 if (!qsfp) {
+                    TRX_LOG_ERR(fpc, "qsfp null for port %u", i);
                     continue;
                 }
 
@@ -327,6 +331,8 @@ static void fpc_read_i2c_stuck_status(const struct fpc *fpc)
             }
         }
     }
+
+    return 0;
 }
 
 /*
@@ -351,29 +357,69 @@ int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp)
 static irqreturn_t fpc_irq(int irq, void *data)
 {
     struct fpc *fpc = data;
-    u8 port_interrupt = 0, port_num;
-    int ret;
 
-    fpc_read_i2c_stuck_status(fpc);
+    TRX_LOG_INFO(fpc, "");
 
-    /* Reads aggregated interrupt status */
-    ret = fpc_read(fpc, FPC_INTERRUPT_STATUS_REGISTER,
-                   &port_interrupt, sizeof(port_interrupt));
-    if (ret < 0) {
-        TRX_LOG_ERR(fpc, "Fail to read FPC interrupt status. ret %d", ret);
-        return IRQ_HANDLED;
-    }
+    /* Wait for current execution to complete */
+    cancel_delayed_work_sync(&fpc->irq);
 
-    TRX_LOG_INFO(fpc, "Aggregated Interrupt status 0x%X", port_interrupt);
-
-    for (port_num = 0 ; port_num < FPC_MAX_PORTS ; port_num++) {
-        if (port_interrupt & 1) {
-            fpc_qsfp_irq(fpc->qsfp[port_num]);
-        }
-        port_interrupt >>= 1;
-    }
+    /* Schedule fpc irq task */
+    mod_delayed_work(system_wq, &fpc->irq, 0);
 
     return IRQ_HANDLED;
+}
+
+static void fpc_irq_task(struct work_struct *work)
+{
+    struct fpc *fpc = container_of(work, struct fpc, irq.work);
+    struct qsfp *qsfp;
+    u8 port_irq = 0;
+    u8 i, tmp;
+    int ret;
+
+    while (1) {
+        /* Reads aggregated interrupt status */
+        ret = fpc_read(fpc, FPC_INTERRUPT_STATUS_REGISTER,
+                       &port_irq, sizeof(port_irq));
+        if (ret < 0) {
+            TRX_LOG_ERR(fpc, "Fail to read FPC interrupt status. ret %d", ret);
+            mod_delayed_work(system_wq, &fpc->irq, msecs_to_jiffies(500));
+            return;
+        }
+
+        TRX_LOG_INFO(fpc, "Aggregated Interrupt status 0x%X", port_irq);
+
+        /* Return when all irq got processed */
+        if ((port_irq & 0xF) == 0) {
+            return;
+        }
+
+        for (i = 0, tmp = port_irq ; i < FPC_MAX_PORTS ; i++, tmp >>= 1) {
+            if (!(tmp & 1)) {
+                continue;
+            }
+
+            qsfp = fpc->qsfp[i];
+            if (!qsfp) {
+                TRX_LOG_ERR(fpc, "qsfp null for port %u", i);
+                continue;
+            }
+
+            ret = fpc_qsfp_irq(qsfp);
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Fail to read QSFP interrupt status. ret %d", ret);
+                mod_delayed_work(system_wq, &fpc->irq, msecs_to_jiffies(500));
+                return;
+            }
+        }
+
+        ret = fpc_read_i2c_stuck_status(fpc);
+        if (ret < 0) {
+            TRX_LOG_ERR(fpc, "Fail to read FPC i2c stuck register. ret %d", ret);
+            mod_delayed_work(system_wq, &fpc->irq, msecs_to_jiffies(500));
+            return;
+        }
+    }
 }
 
 /*
@@ -415,6 +461,8 @@ static void fpc_cleanup(void *data)
 
     TRX_LOG_INFO(fpc, "");
 
+    cancel_delayed_work_sync(&fpc->irq);
+
     if (fpc->instance_num < FPC_MAX_INSTANCES) {
         fpc_global[fpc->instance_num] = NULL;
     }
@@ -433,6 +481,7 @@ static struct fpc *fpc_alloc(struct device *dev)
     }
 
     fpc->dev = dev;
+    INIT_DELAYED_WORK(&fpc->irq, fpc_irq_task);
 
     for (i = 0 ; i < FPC_MAX_PORTS ; i++)
            fpc->qsfp[i] = NULL;
