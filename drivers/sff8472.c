@@ -322,6 +322,11 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
     TRX_LOG_INFO(qsfp, "vendor sn %.*s",
                        (int)sizeof(id->ext.vendor_sn),
                        id->ext.vendor_sn);
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: SFP Vendor %.*s PN %.*s SN %.*s",
+    qsfp->port_num, (int)sizeof(id->base.vendor_name), id->base.vendor_name,
+    (int)sizeof(id->base.vendor_pn), id->base.vendor_pn,
+    (int)sizeof(id->ext.vendor_sn), id->ext.vendor_sn);
 }
 
 static void sff8472_update_flags(struct qsfp *qsfp)

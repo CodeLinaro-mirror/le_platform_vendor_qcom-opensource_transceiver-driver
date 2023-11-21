@@ -616,4 +616,30 @@ do {\
     } \
 } while (0)
 
+#define TRX_MAX_DIAG_LOG_MSG_SIZE 512
+
+#define TRX_QXDM_LOG_INFO(p, fmt, args...) \
+do {\
+  char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+  char *msg[] = {buf, NULL}; \
+  snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_LOG_MSG_INFO="fmt, ## args); \
+  kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+} while (0)
+
+#define TRX_QXDM_LOG_ERROR(p, fmt, args...) \
+do {\
+  char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+  char *msg[] = {buf, NULL}; \
+  snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_LOG_MSG_ERROR="fmt, ## args); \
+  kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+} while (0)
+
+#define TRX_QXDM_LOG_DEBUG(p, fmt, args...) \
+do {\
+  char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+  char *msg[] = {buf, NULL}; \
+  snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_LOG_MSG_DEBUG="fmt, ## args); \
+  kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+} while (0)
+
 #endif

@@ -276,6 +276,8 @@ static int fpc_read_i2c_stuck_status(const struct fpc *fpc)
 
                 kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_scl_stuck);
                 TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_scl_stuck[0]);
+                TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver I2C clock "
+                                         "line stuck", qsfp->port_num);
             }
         }
     }
@@ -328,6 +330,8 @@ static int fpc_read_i2c_stuck_status(const struct fpc *fpc)
 
                 kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_sda_stuck);
                 TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_sda_stuck[0]);
+                TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver I2C data "
+                                         "line stuck", qsfp->port_num);
             }
         }
     }
@@ -726,6 +730,7 @@ static int fpc_probe(struct platform_device *pdev)
     }
 
     TRX_LOG_INFO(fpc, "Success");
+    TRX_QXDM_LOG_INFO(fpc, "FPC402 instance %u init successful", fpc->instance_num);
 
     return 0;
 }

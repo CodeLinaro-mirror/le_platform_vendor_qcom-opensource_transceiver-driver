@@ -505,6 +505,11 @@ static void cmis_eeprom_print(const struct qsfp *qsfp)
     id->ext.rx_dis_autosquelch_sup, id->ext.rx_los_sup,	id->ext.rx_cdr_lol_sup,
     id->ext.rx_cdr_sup,	id->ext.rx_cdr_bypass_sup, id->ext.rx_ampl_ctrl_sup,
     id->ext.rx_eq_ctrl_sup);
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: QSFP-DD Vendor %.*s PN %.*s SN %.*s",
+    qsfp->port_num, (int)sizeof(id->base.vendor_name), id->base.vendor_name,
+    (int)sizeof(id->base.vendor_pn), id->base.vendor_pn,
+    (int)sizeof(id->base.vendor_sn), id->base.vendor_sn);
 }
 
 static int cmis_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)

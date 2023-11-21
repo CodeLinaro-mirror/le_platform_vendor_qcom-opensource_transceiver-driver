@@ -243,6 +243,8 @@ static void lane_sm_link_check_linkup(struct lane *lane)
     ret = lane_tx_enable(lane);
     if (ret < 0) {
         TRX_LOG_ERR(lane, "TX Enable failed. ret %d", ret);
+        TRX_QXDM_LOG_ERROR(lane, "Port-%u: Lane-%u: TX enable failed",
+                                 lane->qsfp->port_num, lane->lane_num);
         lane_sm_mod_error(lane, QSFP_MOD_ERROR_TX_ENABLE_FAIL);
         return;
     }

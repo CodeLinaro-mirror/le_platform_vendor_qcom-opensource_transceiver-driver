@@ -402,6 +402,8 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
             if (lane->sm_dev_state == QSFP_DEV_UP) {
                 lanes |= (1 << lane->lane_num);
                 lane_stop(lane);
+                TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Ifconfig Down",
+                qsfp->port_num, lane->lane_num);
             } else {
                 TRX_LOG_INFO(lane, "Ignoring repeated ifconfig down event");
             }
@@ -410,6 +412,8 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
         case TRX_IFCONFIG_UP:
             if (lane->sm_dev_state == QSFP_DEV_UP) {
                 TRX_LOG_INFO(lane, "Ignoring repeated ifconfig up event");
+                TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Ifconfig Up",
+                qsfp->port_num, lane->lane_num);
             } else {
                 lanes |= (1 << lane->lane_num);
                 lane_start(lane);
@@ -421,6 +425,8 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
                 lanes |= (1 << lane->lane_num);
                 lane->status.eth_linkup = 0;
                 lane_sm_event(lane, QSFP_E_ETH_DOWN);
+                TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Link Down",
+                qsfp->port_num, lane->lane_num);
             } else {
                 TRX_LOG_INFO(lane, "Ignoring repeated eth down event");
             }
@@ -433,6 +439,8 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
                 lanes |= (1 << lane->lane_num);
                 lane->status.eth_linkup = 1;
                 lane_sm_event(lane, QSFP_E_ETH_UP);
+                TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Link Up",
+                qsfp->port_num, lane->lane_num);
             }
             break;
         }
@@ -1166,6 +1174,8 @@ static int qsfp_set_spec_ops(struct qsfp *qsfp)
 
     default:
         TRX_LOG_WARN(qsfp, "Unsupported spec id 0x%02X", *spec_id);
+        TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Unsupported specification id 0x%X",
+                                 qsfp->port_num, *spec_id);
         return -E_UNSUPPORTED_SPEC;
     }
 
@@ -1658,11 +1668,14 @@ static void qsfp_sm_mod_error(struct qsfp *qsfp, u8 err)
         char *msg_i2c[] = {QSFP_EVENT_ERROR_I2C, NULL};
         kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_i2c);
         TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_i2c[0]);
-
+        TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver init failed due to "
+                                 "I2C error", qsfp->port_num);
     } else if (err == QSFP_MOD_ERROR_HPOWER) {
         char *msg_hpow[] = {QSFP_EVENT_ERROR_HIGH_POWER, NULL};
         kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_hpow);
         TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_hpow[0]);
+        TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver init failed due to "
+        "error in switching to high power", qsfp->port_num);
     }
 
     for (i = 0 ; i < qsfp->num_lanes ; i++) {
@@ -1762,6 +1775,7 @@ static void qsfp_print_features_supported(const struct qsfp *qsfp)
     qsfp_fill_features_str(qsfp, feature_str, sizeof(feature_str));
 
     TRX_LOG_INFO(qsfp, "Features: %s", feature_str);
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Features: %s", qsfp->port_num, feature_str);
 }
 
 bool qsfp_atleast_one_flag_supported(const struct qsfp *qsfp)
@@ -1798,6 +1812,8 @@ static void qsfp_sm_mod_present(struct qsfp *qsfp)
         if (lanei && (lane_presence & 1)) {
             lanei->status.present = 1;
             lane_sm_event(lanei, QSFP_E_INSERT);
+            TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Insert event",
+                              qsfp->port_num, lanei->lane_num);
         }
         lane_presence >>= 1;
     }
@@ -1813,6 +1829,8 @@ static void qsfp_sm_mod_present(struct qsfp *qsfp)
 
     /* Update device state as per lanes lane_presence */
     qsfp_insert_update_devstate(qsfp);
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver init successful", qsfp->port_num);
 }
 
 /* This state machine tracks the insert/remove state of the module, probes
@@ -1852,6 +1870,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
             break;
         } else if (ret == -E_MAX_POWER_EXCEED) {
             qsfp_sm_mod_next(qsfp, QSFP_MOD_REJECT_PWR, 0);
+            TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Max power exceeded", qsfp->port_num);
             break;
         } else if (ret < 0) {
             qsfp_sm_mod_error(qsfp, QSFP_MOD_ERROR_I2C);
@@ -2144,8 +2163,16 @@ static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
     struct lane *lanei;
     char *msg[] = {str, NULL};
     char *msg_recovery[] = {rstr, NULL};
+    bool rx_los = false;
+    bool tx_fault = false;
 
     scnprintf(rstr, QSFP_FAULT_STR_MAX, "%s_RECOVERY", str);
+
+    if (!strncmp(str, QSFP_EVENT_RX_LOS, sizeof(QSFP_EVENT_RX_LOS))) {
+        rx_los = true;
+    } else if (!strncmp(str, QSFP_EVENT_TX_FAULT, sizeof(QSFP_EVENT_TX_FAULT))) {
+        tx_fault = true;
+    }
 
     for (i = 0 ; i < qsfp->num_lanes ; i++, chgd >>= 1, new_flag >>= 1) {
         lanei = qsfp->lane[i];
@@ -2159,9 +2186,24 @@ static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
             if (new_flag & 1) {
                 kobject_uevent_env(&lanei->dev->kobj, KOBJ_CHANGE, msg);
                 TRX_LOG_INFO(lanei, "Fault Report: %s", str);
+                if (rx_los) {
+                    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Lane-%u: RX LOS detected",
+                                      qsfp->port_num, lanei->lane_num);
+                } else if (tx_fault) {
+                    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Lane-%u: TX Fault detected",
+                                      qsfp->port_num, lanei->lane_num);
+                }
+
             } else {
                 kobject_uevent_env(&lanei->dev->kobj, KOBJ_CHANGE, msg_recovery);
                 TRX_LOG_INFO(lanei, "Fault Report Recovery: %s", rstr);
+                if (rx_los) {
+                    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Lane-%u: RX LOS recovered",
+                                      qsfp->port_num, lanei->lane_num);
+                } else if (tx_fault) {
+                    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Lane-%u: TX Fault recovered",
+                                      qsfp->port_num, lanei->lane_num);
+                }
             }
         }
     }
@@ -2178,10 +2220,12 @@ static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_high_alarm[] = {QSFP_EVENT_TEMP_HIGH_ALARM, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_alarm[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature high alarm", qsfp->port_num);
         } else {
             char *msg_high_alarm_recovery[] = {QSFP_EVENT_TEMP_HIGH_ALARM_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_alarm_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature high alarm recovery", qsfp->port_num);
         }
     }
 
@@ -2190,10 +2234,12 @@ static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_low_alarm[] = {QSFP_EVENT_TEMP_LOW_ALARM, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_alarm[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature low alarm", qsfp->port_num);
         } else {
             char *msg_low_alarm_recovery[] = {QSFP_EVENT_TEMP_LOW_ALARM_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_alarm_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature low alarm recovery", qsfp->port_num);
         }
     }
 
@@ -2202,10 +2248,12 @@ static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_high_warn[] = {QSFP_EVENT_TEMP_HIGH_WARN, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_warn[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature high warning", qsfp->port_num);
         } else {
             char *msg_high_warn_recovery[] = {QSFP_EVENT_TEMP_HIGH_WARN_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_warn_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature high warning recovery", qsfp->port_num);
         }
     }
 
@@ -2214,10 +2262,12 @@ static void qsfp_temp_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_low_warn[] = {QSFP_EVENT_TEMP_LOW_WARN, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_warn[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature low warning", qsfp->port_num);
         } else {
             char *msg_low_warn_recovery[] = {QSFP_EVENT_TEMP_LOW_WARN_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_warn_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Temperature low warning recovery", qsfp->port_num);
         }
     }
 }
@@ -2233,10 +2283,12 @@ static void qsfp_volt_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_high_alarm[] = {QSFP_EVENT_VOLT_HIGH_ALARM, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_alarm[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage high alarm", qsfp->port_num);
         } else {
             char *msg_high_alarm_recovery[] = {QSFP_EVENT_VOLT_HIGH_ALARM_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_alarm_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_alarm_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage high alarm recovery", qsfp->port_num);
         }
     }
 
@@ -2245,10 +2297,12 @@ static void qsfp_volt_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_low_alarm[] = {QSFP_EVENT_VOLT_LOW_ALARM, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_alarm[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage low alarm", qsfp->port_num);
         } else {
             char *msg_low_alarm_recovery[] = {QSFP_EVENT_VOLT_LOW_ALARM_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_alarm_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_alarm_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage low alarm recovery", qsfp->port_num);
         }
     }
 
@@ -2257,10 +2311,12 @@ static void qsfp_volt_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_high_warn[] = {QSFP_EVENT_VOLT_HIGH_WARN, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_high_warn[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage high warning", qsfp->port_num);
         } else {
             char *msg_high_warn_recovery[] = {QSFP_EVENT_VOLT_HIGH_WARN_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_high_warn_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_high_warn_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage high warning recovery", qsfp->port_num);
         }
     }
 
@@ -2269,10 +2325,12 @@ static void qsfp_volt_fault_report(const struct qsfp *qsfp, u8 chgd)
             char *msg_low_warn[] = {QSFP_EVENT_VOLT_LOW_WARN, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn);
             TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_low_warn[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage low warning", qsfp->port_num);
         } else {
             char *msg_low_warn_recovery[] = {QSFP_EVENT_VOLT_LOW_WARN_RECOVERY, NULL};
             kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_low_warn_recovery);
             TRX_LOG_INFO(qsfp, "Fault Report Recovery: %s", msg_low_warn_recovery[0]);
+            TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Voltage low warning recovery", qsfp->port_num);
         }
     }
 }
@@ -2700,6 +2758,8 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
     qsfp_sm_event(qsfp, QSFP_E_INSERT);
 
     mutex_unlock(&qsfp->sm_mutex);
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver inserted", qsfp->port_num);
 }
 
 void qsfp_module_remove_irq(struct qsfp *qsfp)
@@ -2716,6 +2776,8 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
 
     mutex_unlock(&qsfp->sm_mutex);
     rtnl_unlock();
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver removed", qsfp->port_num);
 }
 
 /*
@@ -2942,7 +3004,8 @@ int qsfp_probe(struct platform_device *pdev)
         TRX_LOG_INFO(qsfp, "QSFP present during probe");
         qsfp_module_insert_irq(qsfp);
     } else {
-        TRX_LOG_INFO(qsfp, "QSFP Port Empty during probe");
+        TRX_LOG_INFO(qsfp, "QSFP Port Empty during bootup");
+        TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Empty during bootup", qsfp->port_num);
     }
 
     ret = fpc_enable_qsfp_interrupt(qsfp);

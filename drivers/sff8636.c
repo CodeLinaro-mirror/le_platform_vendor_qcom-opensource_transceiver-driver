@@ -586,6 +586,10 @@ static void sff8636_eeprom_print(const struct qsfp *qsfp)
     "baud_rate_nominal 0x%X    cc_ext 0x%X", id->ext.diagmon,
     id->ext.enh_options, id->ext.baud_rate_nominal, id->ext.cc_ext);
 
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: QSFP Vendor %.*s PN %.*s SN %.*s",
+    qsfp->port_num, (int)sizeof(id->base.vendor_name), id->base.vendor_name,
+    (int)sizeof(id->base.vendor_pn), id->base.vendor_pn,
+    (int)sizeof(id->ext.vendor_sn), id->ext.vendor_sn);
 }
 
 static void sff8636_update_flags(struct qsfp *qsfp)
