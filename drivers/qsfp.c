@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7 &
@@ -220,12 +220,12 @@ EXPORT_SYMBOL_GPL(qsfp_trx_get_lane_type);
 /*
  * API to determine lane supported speed
  */
-int qsfp_trx_get_lane_speed(u32 lane_phandle, trx_lane_speed* lane_speed)
+int qsfp_trx_get_lane_speed(u32 lane_phandle, trx_speed_mask *speed_mask)
 {
     struct qsfp *qsfp;
     int ret = -EINVAL;
 
-    if(lane_speed == NULL)
+    if(speed_mask == NULL)
     {
         TRX_LOG_ERR_NODEV("Invalid input argument");
         return -EINVAL;
@@ -241,7 +241,7 @@ int qsfp_trx_get_lane_speed(u32 lane_phandle, trx_lane_speed* lane_speed)
     }
 
     if (qsfp->spec_ops) {
-        ret = qsfp->spec_ops->get_lane_speed(qsfp, lane_speed);
+        ret = qsfp->spec_ops->get_lane_speed(qsfp, speed_mask);
     } else {
         TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
     }
@@ -345,59 +345,132 @@ static const char * const eth_event_to_str[] = {
     [TRX_ETH_LINK_UP] = "ETH_LINK_UP",
 };
 
-int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
-                            u8 num_lanes)
+static int qsfp_configure_speed(struct qsfp* qsfp, trx_speed_mask lane_cfg_speed)
+{
+    int ret;
+
+    if(!qsfp)
+    {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    if (!qsfp->spec_ops) {
+        TRX_LOG_ERR(qsfp, "spec_ops is NULL.");
+        return 0;
+    }
+
+    if (!qsfp->support.rate_select)
+    {
+        TRX_LOG_INFO(qsfp, "Rate select was not supported ");
+        return 0;
+    }
+
+    if(lane_cfg_speed == TRX_LANE_SPEED_UNKNOWN)
+    {
+        TRX_LOG_ERR(qsfp, "Invalid Lane config speed mask: %02X", lane_cfg_speed);
+        return -EINVAL;
+    }
+
+    if(lane_cfg_speed == qsfp->lane_max_speed)
+    {
+        ret = qsfp->spec_ops->set_rate_select(qsfp, true);
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Max Rate select failed, ret %d", ret);
+            return ret;
+        }
+    }
+    else if(lane_cfg_speed == qsfp->lane_min_speed)
+    {
+        ret = qsfp->spec_ops->set_rate_select(qsfp, false);
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Min Rate select failed, ret %d", ret);
+            return ret;
+        }
+    }
+    else
+    {
+        TRX_LOG_ERR(qsfp, "Invalid Lane config speed mask: %02X max supported"
+                          " speed: %02X Min supported speed: %02x",
+                          lane_cfg_speed, qsfp->lane_max_speed, qsfp->lane_min_speed);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
 {
     struct lane *lane = NULL;
     struct qsfp *qsfp;
     u8 lanes = 0;
     u8 i;
+    int ret;
 
-    if (!((event >= TRX_IFCONFIG_DOWN) && (event <= TRX_ETH_LINK_UP))) {
-        TRX_LOG_ERR_NODEV("Invalid Event %d", event);
+    if(eth_notifier == NULL)
+    {
+        TRX_LOG_ERR_NODEV("Invalid eth notifier event %d", eth_notifier->event);
         return -EINVAL;
     }
-    if (!num_lanes) {
+
+    if (!((eth_notifier->event >= TRX_IFCONFIG_DOWN) && (eth_notifier->event <= TRX_ETH_LINK_UP))) {
+        TRX_LOG_ERR_NODEV("Invalid Event %d", eth_notifier->event);
+        return -EINVAL;
+    }
+    if (!eth_notifier->num_lanes) {
         TRX_LOG_INFO_NODEV("Number of lanes zero for Event %s",
-                           eth_event_to_str[event]);
+                           eth_event_to_str[eth_notifier->event]);
         return -EINVAL;
     }
 
-    if (lane_phandle == NULL) {
+    if (eth_notifier->lane_phandle == NULL) {
         TRX_LOG_ERR_NODEV("lane phandle is NULL. Event %s lanes %u",
-                          eth_event_to_str[event], num_lanes);
+                          eth_event_to_str[eth_notifier->event], eth_notifier->num_lanes);
         return -EINVAL;
     }
 
-    lane = phandle_to_drvdata(lane_phandle[0]);
+    lane = phandle_to_drvdata(eth_notifier->lane_phandle[0]);
     if (!lane) {
         TRX_LOG_ERR_NODEV("Failed to get lane pointer for first lane_phandle "
-        "0x%x. Event %s lanes %u", lane_phandle[0], eth_event_to_str[event],
-        num_lanes);
+        "0x%x. Event %s lanes %u", eth_notifier->lane_phandle[0], eth_event_to_str[eth_notifier->event],
+        eth_notifier->num_lanes);
         return -EINVAL;
     }
 
     qsfp = lane->qsfp;
     if (!qsfp) {
         TRX_LOG_ERR(lane, "qsfp is NULL. Event %s lanes %u",
-                          eth_event_to_str[event], num_lanes);
+                          eth_event_to_str[eth_notifier->event], eth_notifier->num_lanes);
         return -EINVAL;
     }
 
     mutex_lock(&qsfp->sm_mutex);
 
-    TRX_LOG_INFO(qsfp, "Event %s lanes %u ", eth_event_to_str[event], num_lanes);
+    TRX_LOG_INFO(qsfp, "Event %s lanes %u speed: %02x", eth_event_to_str[eth_notifier->event],
+                                         eth_notifier->num_lanes,eth_notifier->eth_cfg_speed);
 
-    for (i = 0 ; i < num_lanes ; i++) {
+    if(eth_notifier->event == TRX_IFCONFIG_UP)
+    {
+        ret = qsfp_configure_speed(qsfp, eth_notifier->eth_cfg_speed);
+        if(ret < 0)
+        {
+            mutex_unlock(&qsfp->sm_mutex);
+            TRX_LOG_ERR(qsfp, "Configure speed fail, Event %s lanes %u speed %02x",
+                          eth_event_to_str[eth_notifier->event], eth_notifier->num_lanes,
+                          eth_notifier->eth_cfg_speed);
+            return -EINVAL;
+        }
+    }
 
-        lane = phandle_to_drvdata(lane_phandle[i]);
+    for (i = 0 ; i < eth_notifier->num_lanes ; i++) {
+
+        lane = phandle_to_drvdata(eth_notifier->lane_phandle[i]);
         if (!lane) {
             TRX_LOG_ERR(qsfp, "Failed to get lane pointer for "
-                              "lane_phandle[%u] %u", i, lane_phandle[i]);
+                              "lane_phandle[%u] %u", i, eth_notifier->lane_phandle[i]);
             continue;
         }
 
-        switch (event) {
+        switch (eth_notifier->event) {
         case TRX_IFCONFIG_DOWN:
             if (lane->sm_dev_state == QSFP_DEV_UP) {
                 lanes |= (1 << lane->lane_num);
@@ -446,20 +519,20 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
         }
     }
 
-    if (lane == 0) {
+    if (lanes == 0) {
         mutex_unlock(&qsfp->sm_mutex);
-        TRX_LOG_INFO(qsfp, "Ignoring repeated %s event", eth_event_to_str[event]);
+        TRX_LOG_INFO(qsfp, "Ignoring repeated %s event", eth_event_to_str[eth_notifier->event]);
         return 0;
     }
 
     if (!qsfp->spec_ops) {
         mutex_unlock(&qsfp->sm_mutex);
         TRX_LOG_ERR(qsfp, "spec_ops is NULL. Event %s lanes %u",
-                          eth_event_to_str[event], num_lanes);
+            eth_event_to_str[eth_notifier->event], eth_notifier->num_lanes);
         return 0;
     }
 
-    if (event == TRX_IFCONFIG_UP) {
+    if (eth_notifier->event == TRX_IFCONFIG_UP) {
     /* Disable irq as eth link up started */
         if (qsfp->spec_ops->disable_enable_lane_irq &&
             qsfp_atleast_one_flag_supported(qsfp)) {
@@ -468,7 +541,7 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
             qsfp_start_poll(qsfp, 0);
         }
 
-    } else if (event == TRX_ETH_LINK_DOWN) {
+    } else if (eth_notifier->event == TRX_ETH_LINK_DOWN) {
         bool qsfp_eth_linkup = false;
 
         /* Disable irq as eth link up in progress */
@@ -495,7 +568,7 @@ int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle,
             qsfp_sm_event(qsfp, QSFP_E_ETH_DOWN);
         }
 
-    } else if (event == TRX_ETH_LINK_UP) {
+    } else if (eth_notifier->event == TRX_ETH_LINK_UP) {
     /* Enable irq as eth link up successful */
         if (qsfp_atleast_one_flag_supported(qsfp)) {
             /* Read flags to clear it */
@@ -795,15 +868,15 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info)
     int ret = -EINVAL;
 
     /* Local variables to get data */
-    trx_lane_speed trx_speed_t = 0;
+    trx_speed_mask speed_mask_t = 0;
     trx_type trx_type_t = 0;
     trx_lane_cfg trx_laneinfo_t = 0;
     trx_breakout_cfg trx_bout_config_t = 0;
     trx_link_length_range trx_link_length_range_t = 0;
 
-    ret = qsfp_trx_get_lane_speed(lane_phandle, &trx_speed_t);
+    ret = qsfp_trx_get_lane_speed(lane_phandle, &speed_mask_t);
     if (ret == 0) {
-        trx_info->trx_speed = trx_speed_t;
+        trx_info->speed_mask = speed_mask_t;
     } else {
         return ret;
     }
@@ -864,16 +937,6 @@ const char * const reasoncode_to_str[] = {
     [TRX_TX_FAULT] = "TX_FAULT",
     [TRX_RX_LOS] = "RX_LOS",
     [TRX_ERROR] = "ERROR",
-};
-
-const char * const trxspeed_to_str[] = {
-    [TRX_LANE_SPEED_UNKNOWN] = "UNKNOWN",
-    [TRX_LANE_SPEED_2_5G] = "2.5 GBPS",
-    [TRX_LANE_SPEED_10G] = "10 GBPS",
-    [TRX_LANE_SPEED_25G] = "25 GBPS",
-    [TRX_LANE_SPEED_25G] = "25 GBPS",
-    [TRX_LANE_SPEED_50G] = "50 GBPS",
-    [TRX_LANE_SPEED_100G] = "100 GBPS",
 };
 
 const char * const trxtype_to_str[] = {
@@ -1330,6 +1393,55 @@ static int qsfp_module_tx_disable(struct qsfp *qsfp)
     return 0;
 }
 
+static int qsfp_module_parse_speed(struct qsfp* qsfp)
+{
+    int bit_pos;
+    trx_speed_mask speed_mask = TRX_LANE_SPEED_UNKNOWN;
+    qsfp->lane_min_speed = TRX_LANE_SPEED_UNKNOWN;
+    qsfp->lane_max_speed  = TRX_LANE_SPEED_UNKNOWN;
+
+    if (qsfp->spec_ops) {
+        qsfp->spec_ops->get_lane_speed(qsfp, &speed_mask);
+    }
+    else
+    {
+        TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
+    }
+
+    if(speed_mask == TRX_LANE_SPEED_UNKNOWN)
+    {
+      TRX_LOG_WARN(qsfp, "Unable to find Transceiver supported speeds");
+      return -EINVAL;
+    }
+
+    /* Calculate minimum transceiver supported speed */
+    for(bit_pos = 0; bit_pos < 7; bit_pos++ )
+    {
+        if(speed_mask & (1 << bit_pos))
+        {
+            qsfp->lane_min_speed |= BIT(bit_pos);
+            break;
+        }
+    }
+
+    /* Calculate maximum transceiver supported speed */
+    for(bit_pos= 7; bit_pos >= 0; bit_pos--)
+    {
+        if(speed_mask & (1 << bit_pos))
+        {
+            qsfp->lane_max_speed |= BIT(bit_pos);
+            break;
+        }
+    }
+
+    if(qsfp->lane_min_speed == qsfp->lane_max_speed)
+    {
+        qsfp->lane_min_speed = TRX_LANE_SPEED_UNKNOWN;
+    }
+
+    return 0;
+}
+
 static int qsfp_sm_mod_probe(struct qsfp *qsfp)
 {
     int ret;
@@ -1377,8 +1489,14 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         }
     }
 
+    ret = qsfp_module_parse_speed(qsfp);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "spec module parse speed failed. ret %d", ret);
+        return ret;
+    }
+
     if (qsfp->support.rate_select) {
-        ret = qsfp->spec_ops->set_rate_select(qsfp);
+        ret = qsfp->spec_ops->set_rate_select(qsfp, true);
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Rate select failed. ret %d", ret);
             return ret;
@@ -1451,6 +1569,8 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->need_poll = false;
     qsfp->module_flat_mem = 0;
     qsfp->lane_presence = 0;
+    qsfp->lane_min_speed = 0;
+    qsfp->lane_max_speed = 0;
 
     TRX_LOG_INFO(qsfp, "Module removed");
 }
@@ -2824,6 +2944,8 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->debugfs_dir = NULL;
     qsfp->module_debugfs_dir = NULL;
     qsfp->qsfp_sysfs_dir = NULL;
+    qsfp->lane_min_speed = 0;
+    qsfp->lane_max_speed = 0;
 
     return qsfp;
 }

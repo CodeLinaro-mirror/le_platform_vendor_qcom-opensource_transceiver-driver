@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/qsfp.c?h=cex7
@@ -1121,35 +1121,31 @@ static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
  * or ethernet compliance codes page 00h, byte 131.
  */
 static int sff8636_get_lane_speed(const struct qsfp *qsfp,
-                                  trx_lane_speed* lane_speed)
+                                  trx_speed_mask *speed_mask)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
-    trx_lane_speed speed = TRX_LANE_SPEED_UNKNOWN;
-    trx_lane_speed ext_spec_speed = TRX_LANE_SPEED_UNKNOWN;
+
+    trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
     if ((id->base.e10g_base_lrm == 0x1) ||
              (id->base.e10g_base_lr == 0x1)  ||
              (id->base.e10g_base_sr == 0x1)) {
-         speed = TRX_LANE_SPEED_2_5G;
+         lane_speed |= TRX_LANE_SPEED_10G;
     }
 
     if ((id->base.e40g_base_cr4 == 0x1) ||
           (id->base.e40g_base_sr4 == 0x1) ||
           (id->base.e40g_base_lr4 == 0x1) ||
           (id->base.e40g_active == 0x1)) {
-        speed = TRX_LANE_SPEED_10G;
+        lane_speed |= TRX_LANE_SPEED_10G;
     }
 
    /* Check ethernet compliance codes page 00h byte 131 */
    if (id->base.ecom_extended == 0x1) {
-        ext_spec_speed = sff8024_link_codes_to_speed(id->ext.link_codes);
+        lane_speed |= sff8024_link_codes_to_speed(id->ext.link_codes);
     }
 
-    if(ext_spec_speed > speed)
-        *lane_speed = ext_spec_speed;
-    else
-        *lane_speed = speed;
-
+    *speed_mask = (trx_speed_mask)lane_speed;
     return 0;
 }
 
@@ -1241,7 +1237,7 @@ unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
     return msecs_to_jiffies(60);
 }
 
-static int sff8636_set_rate_select(const struct qsfp *qsfp)
+static int sff8636_set_rate_select(const struct qsfp *qsfp, bool enable)
 {
     /* SFF8636 supports Rate select however it is not supported by our driver */
     return 0;
