@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -336,5 +336,7 @@ enum {
 
 #define CMIS_MMF_ENCODING (1)
 #define CMIS_SMF_ENCODING (2)
+#define CMIS_CR_ENCODING  (3)
+
 
 #endif

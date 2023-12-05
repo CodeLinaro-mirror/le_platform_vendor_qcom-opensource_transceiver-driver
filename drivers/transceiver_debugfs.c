@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include "transceiver_debugfs.h"
 #include "lane.h"
@@ -2109,7 +2109,8 @@ static int qsfp_debug_device_dbg_info_show(struct seq_file *s,
     u8 val = 0;
     u8 link_info = 0;
     trx_lane_down_reason_code_type reason = 0;
-    trx_lane_speed trx_speed = 0;
+
+    trx_speed_mask speed_mask = 0;
     trx_type trx_type_info = 0;
     trx_lane_cfg laneinfo = 0;
     trx_breakout_cfg bout_config = 0;
@@ -2213,14 +2214,25 @@ static int qsfp_debug_device_dbg_info_show(struct seq_file *s,
     else
         seq_printf(s, "Lane Down reason code: Unknown\n");
 
-    ret = qsfp_trx_get_lane_speed(lane_phandle, &trx_speed);
-    if(ret == 0) {
-        if (trx_speed >= LANE_SPEED_MAX_INDEX) {
-            seq_printf(s, "Lane Speed: Unknown\n");
+    ret = qsfp_trx_get_lane_speed(lane_phandle, &speed_mask);
+    if ((ret == 0) && (speed_mask != TRX_LANE_SPEED_UNKNOWN)) {
+        seq_printf(s, "Lane Speed: ");
+        if (speed_mask & TRX_LANE_SPEED_2_5G) {
+            seq_printf(s, "2.5 GBPS ");
         }
-        else {
-            seq_printf(s, "Lane Speed: %s\n", trxspeed_to_str[trx_speed]);
+        if (speed_mask & TRX_LANE_SPEED_10G) {
+            seq_printf(s, "10 GBPS ");
         }
+        if (speed_mask & TRX_LANE_SPEED_25G) {
+            seq_printf(s, "25 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_50G) {
+            seq_printf(s, "50 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_100G) {
+            seq_printf(s, "100 GBPS");
+        }
+        seq_printf(s, "\n");
     }
     else
         seq_printf(s, "Lane Speed: Unknown\n");
@@ -2263,6 +2275,56 @@ static int qsfp_debug_device_dbg_info_show(struct seq_file *s,
     }
     else
         seq_printf(s, "Link Length Range: Unknown\n");
+
+    seq_printf(s, "Maximum Lane Speed: ");
+    speed_mask = qsfp->lane_max_speed;
+
+    if (speed_mask != TRX_LANE_SPEED_UNKNOWN)
+    {
+        if (speed_mask & TRX_LANE_SPEED_2_5G) {
+            seq_printf(s, "2.5 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_10G) {
+            seq_printf(s, "10 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_25G) {
+            seq_printf(s, "25 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_50G) {
+            seq_printf(s, "50 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_100G) {
+            seq_printf(s, "100 GBPS");
+        }
+        seq_printf(s, "\n");
+    }
+    else
+        seq_printf(s, "UNKNOWN\n");
+
+    seq_printf(s, "Minimum Lane Speed: ");
+    speed_mask = qsfp->lane_min_speed;
+
+    if (speed_mask != TRX_LANE_SPEED_UNKNOWN)
+    {
+        if (speed_mask & TRX_LANE_SPEED_2_5G) {
+            seq_printf(s, "2.5 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_10G) {
+            seq_printf(s, "10 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_25G) {
+            seq_printf(s, "25 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_50G) {
+            seq_printf(s, "50 GBPS ");
+        }
+        if (speed_mask & TRX_LANE_SPEED_100G) {
+            seq_printf(s, "100 GBPS");
+        }
+        seq_printf(s, "\n");
+    }
+    else
+        seq_printf(s, "UNKNOWN\n");
 
     return 0;
 }
