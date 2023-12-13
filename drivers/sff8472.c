@@ -471,7 +471,9 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
      * so added extra check for it.
      */
     if ((sfp_interface == PHY_INTERFACE_MODE_25GBASER) ||
-        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100G_25GAUI_C2M_AOC))
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100G_25GAUI_C2M_AOC) ||
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100GBASE_LR4_25GBASE_LR) ||
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100GBASE_ER4_25GBASE_ER))
     {
        *lane_speed = TRX_LANE_SPEED_25G;
     }
