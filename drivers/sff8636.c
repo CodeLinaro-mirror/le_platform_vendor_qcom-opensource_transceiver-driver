@@ -235,7 +235,7 @@ static void sff8636_set_lane_rx_tx_irq_mask(bool enable, u8 lanes, u8 *buf)
 static int sff8636_disable_enable_lane_irq(const struct qsfp *qsfp, u8 lanes, bool enable)
 {
     int ret;
-    u8 buf;
+    u8 buf = 0;
     u8 buf1[2] = {0};
     u8 tmp;
     const struct qsfp_support *support = &qsfp->support;
