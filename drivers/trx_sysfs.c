@@ -613,6 +613,10 @@ static ssize_t trx_temperature_show(struct device *dev,
         }
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.temp_flags) {
+            return scnprintf(buf, PAGE_SIZE, "TRX temperature measurement not "
+                             "supported on non-DDM transceiver devices.\n");
+        }
         /* Page 00h Bytes 22-23 */
         ret = qsfp_read(qsfp, SFF8636_TEMPERATURE, &tempc,
                                            sizeof(tempc));
@@ -708,6 +712,10 @@ static ssize_t trx_supply_voltage_show(struct device *dev,
         }
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.volt_flags) {
+            return scnprintf(buf, PAGE_SIZE,"TRX supply voltage measurement "
+                             "not supported on non-DDM transceiver devices.\n");
+        }
         /* Page 00h Bytes 26-27 */
         ret = qsfp_read(qsfp, SFF8636_SUPPLY_VOLTAGE, &supply_voltage_t,
                               sizeof(supply_voltage_t));
@@ -815,6 +823,10 @@ static ssize_t trx_rx_power_show(struct device *dev,
         }
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.rx_power_flags) {
+            return scnprintf(buf, PAGE_SIZE, "TRX optical rx power measurement"
+                           " not supported on non-DDM transceiver devices.\n");
+        }
         /* Page 00h Bytes 34-41 */
         ret = qsfp_read(qsfp, SFF8636_RX_POWER, rx_power,
                               sizeof(rx_power));
@@ -959,6 +971,10 @@ static ssize_t trx_tx_bias_current_show(struct device *dev,
         }
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.tx_bias_flags) {
+            return scnprintf(buf, PAGE_SIZE,"TRX tx bias current measurement"
+                         " not supported on non-DDM transceiver devices.\n");
+        }
         /* Page 00h Bytes 42-49 */
         ret = qsfp_read(qsfp, SFF8636_TX_BIAS, tx_bias,
                               sizeof(tx_bias));
@@ -1312,6 +1328,70 @@ ssize_t calc_external_calib_ddm_sys(struct qsfp *qsfp, char *buf,
     trx_ext_ddm_txbias(ddm_limits->bias_low_warn, &txi_ext_cal));
 }
 
+static inline ssize_t spec_info_print(char *buf, u8 spec_id)
+{
+    if (spec_id == 0x00) {
+        return scnprintf(buf, PAGE_SIZE, "Specification Identifier {0x%02X}\n"
+                                         "Unknown module\n",spec_id);
+    } else {
+        return scnprintf(buf, PAGE_SIZE, "Specification Identifier {0x%02X}\n"
+                        "%s Transceiver module is not supported\n",
+                        spec_id, mod_identifier_to_str(spec_id));
+    }
+}
+
+static ssize_t trx_vendor_info_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp= dev_get_drvdata(dev);
+    struct sfp_eeprom_id *sff8472_id;
+    struct sff8636_eeprom_id *sff8636_id;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing  */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return scnprintf(buf, PAGE_SIZE, "QSFP transceiver not inserted\n");
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+
+        return scnprintf(buf, PAGE_SIZE, "vendor name: %.*s\nvendor pn: %.*s\n"
+        "vendor rev: %.*s\nvendor sn: %.*s\n",
+        (int)sizeof(sff8472_id->base.vendor_name), sff8472_id->base.vendor_name,
+        (int)sizeof(sff8472_id->base.vendor_pn), sff8472_id->base.vendor_pn,
+        (int)sizeof(sff8472_id->base.vendor_rev), sff8472_id->base.vendor_rev,
+        (int)sizeof(sff8472_id->ext.vendor_sn), sff8472_id->ext.vendor_sn);
+
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        sff8636_id = &qsfp->id.sff8636;
+
+        return scnprintf(buf, PAGE_SIZE, "vendor name: %.*s\nvendor pn: %.*s\n"
+        "vendor rev: %.*s\nvendor sn: %.*s\n",
+        (int)sizeof(sff8636_id->base.vendor_name), sff8636_id->base.vendor_name,
+        (int)sizeof(sff8636_id->base.vendor_pn), sff8636_id->base.vendor_pn,
+        (int)sizeof(sff8636_id->base.vendor_rev), sff8636_id->base.vendor_rev,
+        (int)sizeof(sff8636_id->ext.vendor_sn), sff8636_id->ext.vendor_sn);
+
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        return scnprintf(buf, PAGE_SIZE, "vendor name: %.*s\nvendor pn: %.*s\n"
+        "vendor rev: %.*s\nvendor sn: %.*s\n",
+        (int)sizeof(cmis_id->base.vendor_name), cmis_id->base.vendor_name,
+        (int)sizeof(cmis_id->base.vendor_pn), cmis_id->base.vendor_pn,
+        (int)sizeof(cmis_id->base.vendor_rev), cmis_id->base.vendor_rev,
+        (int)sizeof(cmis_id->base.vendor_sn), cmis_id->base.vendor_sn);
+
+    default:
+        return spec_info_print(buf, *spec_id);
+    }
+}
+
 /* Function to export transceiver ddm threshold values information to Sysfs.
  */
 static ssize_t trx_ddm_thresholds_show(struct device *dev,
@@ -1517,7 +1597,7 @@ static DEVICE_ATTR(rx_power, S_IRUGO, trx_rx_power_show, NULL);
 static DEVICE_ATTR(tx_bias_current, S_IRUGO, trx_tx_bias_current_show, NULL);
 static DEVICE_ATTR(tx_power, S_IRUGO, trx_tx_power_show, NULL);
 static DEVICE_ATTR(ddm_thresholds, S_IRUGO, trx_ddm_thresholds_show, NULL);
-
+static DEVICE_ATTR(vendor_info, S_IRUGO, trx_vendor_info_show, NULL);
 
 /* Transceiver port static attributes */
 static struct attribute *trx_attrs[] = {
@@ -1536,6 +1616,7 @@ static struct attribute *trx_module_attrs[] = {
     &dev_attr_tx_bias_current.attr,
     &dev_attr_tx_power.attr,
     &dev_attr_ddm_thresholds.attr,
+    &dev_attr_vendor_info.attr,
     NULL
 };
 

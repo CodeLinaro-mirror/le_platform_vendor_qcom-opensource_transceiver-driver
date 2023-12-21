@@ -946,6 +946,11 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.temp_flags) {
+            seq_printf(s, "TRX temperature measurement not supported  on "
+                          "non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 22-23 */
         ret = qsfp_read(qsfp, SFF8636_TEMPERATURE, &tempc,
                                sizeof(tempc));
@@ -1049,6 +1054,11 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.volt_flags) {
+            seq_printf(s, "TRX supply voltage measurement not supported on"
+                          " non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 26-27 */
         ret = qsfp_read(qsfp, SFF8636_SUPPLY_VOLTAGE, &supply_voltage_t,
                               sizeof(supply_voltage_t));
@@ -1163,6 +1173,11 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.rx_power_flags) {
+            seq_printf(s, "TRX optical rx power measurement"
+                          " not supported on non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 34-41 */
         ret = qsfp_read(qsfp, SFF8636_RX_POWER, rx_power,
                               sizeof(rx_power));
@@ -1319,6 +1334,11 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.tx_bias_flags) {
+            seq_printf(s, "TRX tx bias current measurement"
+                          " not supported on non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 42-49 */
         ret = qsfp_read(qsfp, SFF8636_TX_BIAS, tx_bias,
                               sizeof(tx_bias));
