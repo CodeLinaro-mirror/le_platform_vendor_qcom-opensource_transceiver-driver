@@ -273,6 +273,10 @@ static void lane_sm_link(struct lane *lane, u32 event)
             }
         } else if (event == QSFP_E_ETH_UP) {
             lane_sm_link_next(lane, QSFP_S_LINK_UP);
+        } else if ((event == QSFP_E_DEV_DOWN) ||
+                   (event == QSFP_E_DEV_DETACH)) {
+            /* Handle tx disable in case of link down state */
+            lane_sm_link_linkdown(lane);
         }
 
         break;
