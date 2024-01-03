@@ -271,6 +271,20 @@ static void lane_sm_link(struct lane *lane, u32 event)
             if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
                 lane_sm_link_check_linkup(lane);
             }
+        } else if (event == QSFP_E_TX_FAULT) {
+            /* if device is ifconfig up then only send
+             * link down and change lane link state */
+            if (lane->sm_dev_state == QSFP_DEV_UP) {
+                lane_sm_link_upstream_linkdown(lane);
+                lane_sm_link_next(lane, QSFP_S_TX_FAULT);
+           }
+        } else if (event == QSFP_E_RX_LOS) {
+            /* if device is ifconfig up then only send
+             * link down and change lane link state */
+            if (lane->sm_dev_state == QSFP_DEV_UP) {
+                lane_sm_link_upstream_linkdown(lane);
+                lane_sm_link_next(lane, QSFP_S_RX_LOS);
+            }
         } else if (event == QSFP_E_ETH_UP) {
             lane_sm_link_next(lane, QSFP_S_LINK_UP);
         } else if ((event == QSFP_E_DEV_DOWN) ||
@@ -284,7 +298,8 @@ static void lane_sm_link(struct lane *lane, u32 event)
     case QSFP_S_RX_LOS:
         if (event == QSFP_E_TX_FAULT) {
             lane_sm_link_next(lane, QSFP_S_TX_FAULT);
-        } else if (event == QSFP_E_RX_LOS_RECOVERY) {
+        } else if ((event == QSFP_E_RX_LOS_RECOVERY) ||
+                   (event == QSFP_E_ETH_UP)) {
             lane_sm_link_linkup(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
@@ -296,7 +311,8 @@ static void lane_sm_link(struct lane *lane, u32 event)
         break;
 
     case QSFP_S_TX_FAULT:
-        if (event == QSFP_E_TX_FAULT_RECOVERY) {
+        if ((event == QSFP_E_TX_FAULT_RECOVERY) ||
+            (event == QSFP_E_ETH_UP)) {
             lane_sm_link_check_rx_los(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
@@ -315,7 +331,6 @@ static void lane_sm_link(struct lane *lane, u32 event)
             lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_RX_LOS);
         } else if (event == QSFP_E_REMOVE) {
-            lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_DOWN);
         } else if ((event == QSFP_E_DEV_DOWN) ||
                    (event == QSFP_E_DEV_DETACH)) {

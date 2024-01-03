@@ -1234,15 +1234,7 @@ void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state,
 static void qsfp_sm_link_linkup(struct qsfp *qsfp)
 {
     qsfp_sm_link_next(qsfp, QSFP_S_LINK_UP);
-    transceiver_led_on(qsfp, QSFP_LED1);
-    transceiver_led_off(qsfp, QSFP_LED2);
-}
-
-static void qsfp_sm_link_linkdown(struct qsfp *qsfp)
-{
-    qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
-    transceiver_led_off(qsfp, QSFP_LED1);
-    transceiver_led_on(qsfp, QSFP_LED2);
+    set_linkup_leds(qsfp);
 }
 
 static void qsfp_sm_link_check_rx_los(struct qsfp *qsfp)
@@ -1252,7 +1244,7 @@ static void qsfp_sm_link_check_rx_los(struct qsfp *qsfp)
     } else if (qsfp->status.eth_linkup) {
         qsfp_sm_link_linkup(qsfp);
     } else {
-        qsfp_sm_link_linkdown(qsfp);
+        qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
     }
 }
 
@@ -1507,12 +1499,10 @@ static void qsfp_sm_link_check_txf_los(struct qsfp *qsfp)
 {
     if (qsfp->status.tx_fault) {
         qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
-        transceiver_led_off(qsfp, QSFP_LED1);
-        transceiver_led_on(qsfp, QSFP_LED2);
+        set_linkdown_leds(qsfp);
     } else if (qsfp->status.rx_los) {
         qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
-        transceiver_led_off(qsfp, QSFP_LED1);
-        transceiver_led_on(qsfp, QSFP_LED2);
+        set_linkdown_leds(qsfp);
     }
 }
 
@@ -1567,19 +1557,29 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
     /* The main state machine */
     switch (qsfp->sm_link_state) {
     case QSFP_S_DOWN:
-        if (event == QSFP_E_REVISIT) {
+        if (event == QSFP_E_INSERT) {
+            set_linkdown_leds(qsfp);
+
+        } else if (event == QSFP_E_REVISIT) {
             qsfp_sm_link_update_txf_rxlos_status(qsfp);
             /* if device is ifconfig up then only try to make it up */
             if ((qsfp->sm_dev_state == QSFP_DEV_UP) &&
                 (qsfp->sm_mod_state == QSFP_MOD_PRESENT)) {
                 qsfp_sm_link_check_linkup(qsfp);
             }
+
         } else if ((event == QSFP_E_DEV_UP) || (event == QSFP_E_ETH_UP)) {
             qsfp_sm_link_update_txf_rxlos_status(qsfp);
             /* if module present then only try to make it up */
             if (qsfp->sm_mod_state == QSFP_MOD_PRESENT) {
                 qsfp_sm_link_check_linkup(qsfp);
             }
+
+        } else if (event == QSFP_E_TX_FAULT) {
+            qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
+
+        } else if (event == QSFP_E_RX_LOS) {
+            qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
         }
 
         break;
@@ -1589,16 +1589,19 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
             qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
 
         } else if (event == QSFP_E_RX_LOS_RECOVERY) {
-            qsfp_sm_link_linkup(qsfp);
+            qsfp_sm_link_check_rx_los(qsfp);
 
-        } else if (event == QSFP_E_DEV_UP) {
+        } else if ((event == QSFP_E_DEV_UP) || (event == QSFP_E_ETH_UP)) {
             qsfp_sm_link_update_txf_rxlos_status(qsfp);
             /* DevUp event comes for each of its lane going ifconfig up */
             qsfp_sm_link_check_linkup(qsfp);
 
-        } else if ((event == QSFP_E_REMOVE) || (event == QSFP_E_DEV_DOWN) ||
-                   (event == QSFP_E_DEV_DETACH)) {
+        } else if (event == QSFP_E_REMOVE) {
+            qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
+
+        } else if ((event == QSFP_E_DEV_DOWN) || (event == QSFP_E_DEV_DETACH)) {
             /* DevDown event comes if all of its lane going ifconfig down */
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
         }
         /* No need to handle LaneDown because if in RX LOS then there is no TX
@@ -1612,12 +1615,16 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
         if (event == QSFP_E_TX_FAULT_RECOVERY) {
             qsfp_sm_link_check_rx_los(qsfp);
 
-        } else if ((event == QSFP_E_DEV_UP) || (event == QSFP_E_LANE_DOWN)) {
+        } else if ((event == QSFP_E_DEV_UP) || (event == QSFP_E_LANE_DOWN) ||
+                   (event == QSFP_E_ETH_UP)) {
             qsfp_sm_link_update_txf_rxlos_status(qsfp);
             qsfp_sm_link_check_linkup(qsfp);
 
-        } else if ((event == QSFP_E_REMOVE) || (event == QSFP_E_DEV_DOWN) ||
-                   (event == QSFP_E_DEV_DETACH)) {
+        } else if (event == QSFP_E_REMOVE) {
+            qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
+
+        } else if ((event == QSFP_E_DEV_DOWN) || (event == QSFP_E_DEV_DETACH)) {
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
             qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
         }
 
@@ -1630,17 +1637,22 @@ static void qsfp_sm_link(struct qsfp *qsfp, u32 event)
 
         } else if (event == QSFP_E_TX_FAULT) {
             qsfp_sm_link_next(qsfp, QSFP_S_TX_FAULT);
-            transceiver_led_off(qsfp, QSFP_LED1);
-            transceiver_led_on(qsfp, QSFP_LED2);
+            set_linkdown_leds(qsfp);
 
         } else if (event == QSFP_E_RX_LOS) {
             qsfp_sm_link_next(qsfp, QSFP_S_RX_LOS);
-            transceiver_led_off(qsfp, QSFP_LED1);
-            transceiver_led_on(qsfp, QSFP_LED2);
+            set_linkdown_leds(qsfp);
 
-        } else if ((event == QSFP_E_REMOVE) || (event == QSFP_E_DEV_DOWN) ||
-                   (event == QSFP_E_DEV_DETACH) ||(event == QSFP_E_ETH_DOWN)) {
-            qsfp_sm_link_linkdown(qsfp);
+        } else if (event == QSFP_E_REMOVE) {
+            qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
+
+        } else if (event == QSFP_E_ETH_DOWN) {
+            qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
+            set_linkdown_leds(qsfp);
+
+        } else if ((event == QSFP_E_DEV_DOWN) || (event == QSFP_E_DEV_DETACH)) {
+            qsfp_sm_link_update_txf_rxlos_status(qsfp);
+            qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
         }
         /* No need to handle DevUp event as it wont change current state */
 

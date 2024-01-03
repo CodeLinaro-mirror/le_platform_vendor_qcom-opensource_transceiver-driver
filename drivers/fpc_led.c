@@ -461,3 +461,16 @@ int mod_link_codes_to_speed(unsigned short mod_link_codes, u16* max_data_speed)
 
     return SUCCESS;
 }
+
+void set_linkup_leds(struct qsfp *qsfp)
+{
+    transceiver_led_on(qsfp, QSFP_LED1);
+    transceiver_led_off(qsfp, QSFP_LED2);
+}
+
+void set_linkdown_leds(struct qsfp *qsfp)
+{
+
+    transceiver_led_off(qsfp, QSFP_LED1);
+    transceiver_led_on(qsfp, QSFP_LED2);
+}
