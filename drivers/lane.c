@@ -74,7 +74,12 @@ static void lane_sm_link_linkup(struct lane *lane)
 {
     sfp_link_up(lane->sfp_bus);
     TRX_LOG_INFO(lane, "sfp_link_up upstream ops called");
-    lane_sm_link_next(lane, QSFP_S_LINK_UP);
+
+    if (lane->status.eth_linkup) {
+        lane_sm_link_next(lane, QSFP_S_LINK_UP);
+    } else {
+        lane_sm_link_next(lane, QSFP_S_DOWN);
+    }
 }
 
 static void lane_sm_link_check_rx_los(struct lane *lane)
@@ -238,6 +243,8 @@ static void lane_sm_link_check_linkup(struct lane *lane)
     ret = lane_tx_enable(lane);
     if (ret < 0) {
         TRX_LOG_ERR(lane, "TX Enable failed. ret %d", ret);
+        TRX_QXDM_LOG_ERROR(lane, "Port-%u: Lane-%u: TX enable failed",
+                                 lane->qsfp->port_num, lane->lane_num);
         lane_sm_mod_error(lane, QSFP_MOD_ERROR_TX_ENABLE_FAIL);
         return;
     }
@@ -264,6 +271,26 @@ static void lane_sm_link(struct lane *lane, u32 event)
             if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
                 lane_sm_link_check_linkup(lane);
             }
+        } else if (event == QSFP_E_TX_FAULT) {
+            /* if device is ifconfig up then only send
+             * link down and change lane link state */
+            if (lane->sm_dev_state == QSFP_DEV_UP) {
+                lane_sm_link_upstream_linkdown(lane);
+                lane_sm_link_next(lane, QSFP_S_TX_FAULT);
+           }
+        } else if (event == QSFP_E_RX_LOS) {
+            /* if device is ifconfig up then only send
+             * link down and change lane link state */
+            if (lane->sm_dev_state == QSFP_DEV_UP) {
+                lane_sm_link_upstream_linkdown(lane);
+                lane_sm_link_next(lane, QSFP_S_RX_LOS);
+            }
+        } else if (event == QSFP_E_ETH_UP) {
+            lane_sm_link_next(lane, QSFP_S_LINK_UP);
+        } else if ((event == QSFP_E_DEV_DOWN) ||
+                   (event == QSFP_E_DEV_DETACH)) {
+            /* Handle tx disable in case of link down state */
+            lane_sm_link_linkdown(lane);
         }
 
         break;
@@ -271,7 +298,8 @@ static void lane_sm_link(struct lane *lane, u32 event)
     case QSFP_S_RX_LOS:
         if (event == QSFP_E_TX_FAULT) {
             lane_sm_link_next(lane, QSFP_S_TX_FAULT);
-        } else if (event == QSFP_E_RX_LOS_RECOVERY) {
+        } else if ((event == QSFP_E_RX_LOS_RECOVERY) ||
+                   (event == QSFP_E_ETH_UP)) {
             lane_sm_link_linkup(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
@@ -283,7 +311,8 @@ static void lane_sm_link(struct lane *lane, u32 event)
         break;
 
     case QSFP_S_TX_FAULT:
-        if (event == QSFP_E_TX_FAULT_RECOVERY) {
+        if ((event == QSFP_E_TX_FAULT_RECOVERY) ||
+            (event == QSFP_E_ETH_UP)) {
             lane_sm_link_check_rx_los(lane);
         } else if (event == QSFP_E_REMOVE) {
             lane_sm_link_next(lane, QSFP_S_DOWN);
@@ -302,7 +331,6 @@ static void lane_sm_link(struct lane *lane, u32 event)
             lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_RX_LOS);
         } else if (event == QSFP_E_REMOVE) {
-            lane_sm_link_upstream_linkdown(lane);
             lane_sm_link_next(lane, QSFP_S_DOWN);
         } else if ((event == QSFP_E_DEV_DOWN) ||
                    (event == QSFP_E_DEV_DETACH)) {
@@ -310,8 +338,9 @@ static void lane_sm_link(struct lane *lane, u32 event)
              * dev down is internal event
              */
             lane_sm_link_linkdown(lane);
+        } else if (event == QSFP_E_ETH_DOWN) {
+            lane_sm_link_next(lane, QSFP_S_DOWN);
         }
-
         break;
     }
 }
@@ -392,13 +421,10 @@ void lane_start(struct lane *lane)
     /* rtnl_lock should not taken as it is already acquired by
      * phylink before calling this callback function
      */
-    mutex_lock(&qsfp->sm_mutex);
 
     lane_sm_event(lane, QSFP_E_DEV_UP);
 
     qsfp_start(lane);
-
-    mutex_unlock(&qsfp->sm_mutex);
 }
 
 /* Called during ifconfig down */
@@ -414,13 +440,10 @@ void lane_stop(struct lane *lane)
     /* rtnl_lock should not taken as it is already acquired by
      * phylink before calling this callback function
      */
-    mutex_lock(&qsfp->sm_mutex);
 
     lane_sm_event(lane, QSFP_E_DEV_DOWN);
 
     qsfp_stop(lane);
-
-    mutex_unlock(&qsfp->sm_mutex);
 }
 
 static void lane_dummy_start(struct sfp *sfp)

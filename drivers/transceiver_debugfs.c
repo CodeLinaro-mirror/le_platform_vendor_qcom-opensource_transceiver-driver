@@ -618,6 +618,7 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
                    PROBE_RETRY - qsfp->sm_mod_tries);
         seq_printf(s, "RX LOS: %d\n", qsfp->status.rx_los);
         seq_printf(s, "TX Fault: %d\n", qsfp->status.tx_fault);
+        seq_printf(s, "ETH Linkup: %d\n", qsfp->status.eth_linkup);
         seq_printf(s, "Poll status: %s\n", qsfp->need_poll ? "Yes" : "No");
         seq_printf(s, "Features: %s\n", feature_str);
     } else {
@@ -637,6 +638,7 @@ static int qsfp_debug_qsfp_state_info_show(struct seq_file *s, void *data)
             seq_printf(s, "RX LOS: %d\n", lanei->status.rx_los);
             seq_printf(s, "TX Fault: %d\n", lanei->status.tx_fault);
             seq_printf(s, "TX Disable: %d\n", lanei->status.tx_disable);
+            seq_printf(s, "ETH Linkup: %d\n", lanei->status.eth_linkup);
         } else {
             seq_printf(s, "Lane present: No\n");
         }
@@ -682,7 +684,9 @@ static int qsfp_debug_qsfp_flags_show(struct seq_file *s,
     struct qsfp *qsfp = s->private;
     struct qsfp_flags flags;
 
+    mutex_lock(&qsfp->sm_mutex);
     flags = qsfp->flags;
+    mutex_unlock(&qsfp->sm_mutex);
 
     seq_printf(s,  "Temperature High Alarm: %s\nTemperature Low Alarm: %s\n"
     "Temperature High Warning: %s\nTemperature Low Warning: %s\n\nVoltage "
@@ -942,6 +946,11 @@ static int qsfp_debug_device_temperature_show(struct seq_file *s, void *data)
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.temp_flags) {
+            seq_printf(s, "TRX temperature measurement not supported  on "
+                          "non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 22-23 */
         ret = qsfp_read(qsfp, SFF8636_TEMPERATURE, &tempc,
                                sizeof(tempc));
@@ -1045,6 +1054,11 @@ static int qsfp_debug_device_Supply_Voltage_show(struct seq_file *s,
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.volt_flags) {
+            seq_printf(s, "TRX supply voltage measurement not supported on"
+                          " non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 26-27 */
         ret = qsfp_read(qsfp, SFF8636_SUPPLY_VOLTAGE, &supply_voltage_t,
                               sizeof(supply_voltage_t));
@@ -1159,6 +1173,11 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.rx_power_flags) {
+            seq_printf(s, "TRX optical rx power measurement"
+                          " not supported on non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 34-41 */
         ret = qsfp_read(qsfp, SFF8636_RX_POWER, rx_power,
                               sizeof(rx_power));
@@ -1315,6 +1334,11 @@ static int qsfp_debug_device_tx_bias_show(struct seq_file *s, void *data)
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.tx_bias_flags) {
+            seq_printf(s, "TRX tx bias current measurement"
+                          " not supported on non-DDM transceiver devices.\n");
+            return 0;
+        }
         /* Page 00h Bytes 42-49 */
         ret = qsfp_read(qsfp, SFF8636_TX_BIAS, tx_bias,
                               sizeof(tx_bias));
@@ -2534,8 +2558,7 @@ static void qsfp_sim_clear(struct qsfp *qsfp)
         /* start polling to see actual hardware state which clears any
          * simulated flags
          */
-            qsfp->need_poll = true;
-            mod_delayed_work(system_wq, &qsfp->poll, 0);
+            qsfp_start_poll(qsfp, 0);
         } else {
             qsfp->need_poll = true;
             /* In DAC case it need to called once to get recovery of

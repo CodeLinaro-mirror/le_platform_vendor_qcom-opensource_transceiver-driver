@@ -322,6 +322,11 @@ static void sff8472_eeprom_print(const struct qsfp *qsfp)
     TRX_LOG_INFO(qsfp, "vendor sn %.*s",
                        (int)sizeof(id->ext.vendor_sn),
                        id->ext.vendor_sn);
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: SFP Vendor %.*s PN %.*s SN %.*s",
+    qsfp->port_num, (int)sizeof(id->base.vendor_name), id->base.vendor_name,
+    (int)sizeof(id->base.vendor_pn), id->base.vendor_pn,
+    (int)sizeof(id->ext.vendor_sn), id->ext.vendor_sn);
 }
 
 static void sff8472_update_flags(struct qsfp *qsfp)
@@ -466,7 +471,9 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
      * so added extra check for it.
      */
     if ((sfp_interface == PHY_INTERFACE_MODE_25GBASER) ||
-        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100G_25GAUI_C2M_AOC))
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100G_25GAUI_C2M_AOC) ||
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100GBASE_LR4_25GBASE_LR) ||
+        (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100GBASE_ER4_25GBASE_ER))
     {
        *lane_speed = TRX_LANE_SPEED_25G;
     }

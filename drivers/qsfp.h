@@ -308,6 +308,7 @@ struct qsfp_status {
     u8 rx_los:1;
     u8 tx_fault:1;
     u8 tx_disable:1;
+    u8 eth_linkup:1;
 };
 
 struct qsfp_support {
@@ -381,6 +382,7 @@ struct qsfp_spec_ops {
     int (*mod_probe)(struct qsfp *qsfp);
     /* Disable uninterested interrupts */
     int (*disable_redundant_irq)(const struct qsfp *qsfp);
+    int (*disable_enable_lane_irq)(const struct qsfp *qsfp, u8 lane, bool enable);
     /* Updates module current flags LOS,TX Fault, alarms, warning etc */
     void (*update_flags)(struct qsfp *qsfp);
     /* Disable TX for whole transceiver module */
@@ -435,6 +437,8 @@ enum {
     QSFP_E_LANE_DOWN,
     QSFP_E_DEV_DOWN,
     QSFP_E_DEV_UP,
+    QSFP_E_ETH_UP,
+    QSFP_E_ETH_DOWN,
     QSFP_E_TX_FAULT,
     QSFP_E_TX_FAULT_RECOVERY,
     QSFP_E_RX_LOS,
@@ -610,6 +614,32 @@ do {\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s: " fmt, __func__, ## args); \
     } \
+} while (0)
+
+#define TRX_MAX_DIAG_LOG_MSG_SIZE 512
+
+#define TRX_QXDM_LOG_INFO(p, fmt, args...) \
+do {\
+  char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+  char *msg[] = {buf, NULL}; \
+  snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_LOG_MSG_INFO="fmt, ## args); \
+  kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+} while (0)
+
+#define TRX_QXDM_LOG_ERROR(p, fmt, args...) \
+do {\
+  char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+  char *msg[] = {buf, NULL}; \
+  snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_LOG_MSG_ERROR="fmt, ## args); \
+  kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+} while (0)
+
+#define TRX_QXDM_LOG_DEBUG(p, fmt, args...) \
+do {\
+  char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+  char *msg[] = {buf, NULL}; \
+  snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_LOG_MSG_DEBUG="fmt, ## args); \
+  kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
 } while (0)
 
 #endif

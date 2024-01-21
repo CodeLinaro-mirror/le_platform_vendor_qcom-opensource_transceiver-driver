@@ -405,6 +405,13 @@ static int cmis_mod_high_power(const struct qsfp *qsfp)
     int ret;
     u8 mod_ctrl = 0;
 
+    /* As power class 1 is the highest we can not push module for
+     * further high power class
+     */
+    if (qsfp->module_power_class == 1) {
+        return 0;
+    }
+
     ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
         return ret;
@@ -419,6 +426,13 @@ static int cmis_mod_low_power(const struct qsfp *qsfp)
 {
     int ret;
     u8 mod_ctrl = 0;
+
+    /* As power class 1 is the highest we can not push module for
+     * further high power class
+     */
+    if (qsfp->module_power_class == 1) {
+        return 0;
+    }
 
     ret = qsfp_read(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
     if (ret < 0) {
@@ -505,6 +519,11 @@ static void cmis_eeprom_print(const struct qsfp *qsfp)
     id->ext.rx_dis_autosquelch_sup, id->ext.rx_los_sup,	id->ext.rx_cdr_lol_sup,
     id->ext.rx_cdr_sup,	id->ext.rx_cdr_bypass_sup, id->ext.rx_ampl_ctrl_sup,
     id->ext.rx_eq_ctrl_sup);
+
+    TRX_QXDM_LOG_INFO(qsfp, "Port-%u: QSFP-DD Vendor %.*s PN %.*s SN %.*s",
+    qsfp->port_num, (int)sizeof(id->base.vendor_name), id->base.vendor_name,
+    (int)sizeof(id->base.vendor_pn), id->base.vendor_pn,
+    (int)sizeof(id->base.vendor_sn), id->base.vendor_sn);
 }
 
 static int cmis_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)

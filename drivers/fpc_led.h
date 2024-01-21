@@ -114,4 +114,7 @@ extern int fpc_write(const struct fpc *, u8, void *, size_t);
 
 extern const u8 FPC_PORT_REG[][FPC_MAX_PORTS];
 
+void set_linkup_leds(struct qsfp *qsfp);
+void set_linkdown_leds(struct qsfp *qsfp);
+
 #endif
