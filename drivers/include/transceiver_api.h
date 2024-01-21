@@ -12,17 +12,11 @@
    QSFP-28, QSFP-56, or QSFP+. */
 #define TRX_FAR_END_NOT_MANAGED (0xFF)
 
-/* Enum to identify the PHY event */
-typedef enum {
-    /* ifconfig down */
-    TRX_IFCONFIG_DOWN,
-    /* ifconfig up */
-    TRX_IFCONFIG_UP,
-    /* Ethernet link down */
-    TRX_ETH_LINK_DOWN,
-    /* Ethernet link up */
-    TRX_ETH_LINK_UP,
-} trx_phy_event;
+/* Macro to denote the ifconfig up event */
+#define IFCFG_ENABLE 1
+/* Macro to denote the ifconfig down event */
+#define IFCFG_DISABLE 0
+#define MAX_ETH_LANES (4)
 
 /* Enum to identify the lane speed */
 typedef enum {
@@ -198,22 +192,21 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info);
 
 /***************************************************************
 *
-* Function:       qsfp_trx_eth_event_notifier
-* Description:    API to get notification for eth interface events.
-* Inputs:         event [in]   : Type of eth interface event.
-*                                TRX_IFCONFIG_DOWN : ifconfig Down
-*                                TRX_IFCONFIG_UP   : ifconfig Up
-*                                TRX_ETH_LINK_DOWN : Ethernet link down
-*                                TRX_ETH_LINK_UP   : Ethernet link up
-*                 lane_phandle [in] : Array of Lane phandles of size num_lanes
-*                 num_lanes [in] : Number of lanes having the event or
-*                                  size of lane_phandle  
+* Function:       qsfp_trx_ifconfig_notifier
+* Description:    API to get notification for eth interface up or down events.
+* Inputs:         value [in]   : Boolean type to get eth interface event type.
+*                                IFCFG_ENABLE   : Boolean type for ifconfig up
+*                                IFCFG_DISABLE  : Boolean type for ifconfig
+*                                                 Down
+*                 lane_phandle [in] : Array of Lane phandles of size
+*                                     MAX_ETH_LANES, default value will be
+*                                     [0, 0, 0, 0].
 *
 * Return value:   0      : Success
 *                -EINVAL : Error
 *
 ****************************************************************/
-int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle, u8 num_lanes);
+int qsfp_trx_ifconfig_notifier(bool value, u32 *lane_phandle);
 
 /***************************************************************
 *

@@ -33,11 +33,12 @@ static ssize_t trx_state_info_show(struct device *dev,
         char feature_str[QSFP_FEATURE_STR_MAX] = {0};
         qsfp_fill_features_str(qsfp, feature_str, sizeof(feature_str));
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: Yes\n"
-               "Module probe attempts: %d\nRX LOS: %d\nTX Fault: %d\nETH "
-               "Linkup: %d\nPoll status: %s\nFeatures: %s\n",
-               PROBE_RETRY - qsfp->sm_mod_tries, qsfp->status.rx_los,
-               qsfp->status.tx_fault, qsfp->status.eth_linkup,
-               qsfp->need_poll ? "Yes" : "No", feature_str);
+               "Module probe attempts: %d\nRX LOS: %d\nTX Fault: %d\nPoll status:"
+               " %s\nFeatures: %s\n", PROBE_RETRY - qsfp->sm_mod_tries,
+               qsfp->status.rx_los,
+               qsfp->status.tx_fault,
+               qsfp->need_poll ? "Yes" : "No",
+               feature_str);
 
     } else {
         ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Module present: No\n");
@@ -53,9 +54,10 @@ static ssize_t trx_state_info_show(struct device *dev,
 
         if (lanei->status.present) {
             ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: Yes\n"
-                   "RX LOS: %d\nTX Fault: %d\nTX Disable: %d\nETH Linkup: %d\n",
-                   lanei->status.rx_los, lanei->status.tx_fault,
-                   lanei->status.tx_disable, lanei->status.eth_linkup);
+                   "RX LOS: %d\nTX Fault: %d\nTX Disable: %d\n",
+                   lanei->status.rx_los,
+                   lanei->status.tx_fault,
+                   lanei->status.tx_disable);
 
         } else {
             ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Lane present: No\n");

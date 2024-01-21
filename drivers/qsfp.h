@@ -308,7 +308,6 @@ struct qsfp_status {
     u8 rx_los:1;
     u8 tx_fault:1;
     u8 tx_disable:1;
-    u8 eth_linkup:1;
 };
 
 struct qsfp_support {
@@ -382,7 +381,6 @@ struct qsfp_spec_ops {
     int (*mod_probe)(struct qsfp *qsfp);
     /* Disable uninterested interrupts */
     int (*disable_redundant_irq)(const struct qsfp *qsfp);
-    int (*disable_enable_lane_irq)(const struct qsfp *qsfp, u8 lane, bool enable);
     /* Updates module current flags LOS,TX Fault, alarms, warning etc */
     void (*update_flags)(struct qsfp *qsfp);
     /* Disable TX for whole transceiver module */
@@ -437,8 +435,6 @@ enum {
     QSFP_E_LANE_DOWN,
     QSFP_E_DEV_DOWN,
     QSFP_E_DEV_UP,
-    QSFP_E_ETH_UP,
-    QSFP_E_ETH_DOWN,
     QSFP_E_TX_FAULT,
     QSFP_E_TX_FAULT_RECOVERY,
     QSFP_E_RX_LOS,

@@ -39,21 +39,13 @@ enum {
     SFF8636_TX_POWER                    = QSFP_ADDR(0, 0,  50),
     SFF8636_TX_DISABLE                  = QSFP_ADDR(0, 0,  86),
     SFF8636_POWER_ENABLE                = QSFP_ADDR(0, 0,  93),
-    SFF8636_LOS_IRQ_MASK                = QSFP_ADDR(0, 0, 100),
-    SFF8636_TX_FAULT_IRQ_MASK           = QSFP_ADDR(0, 0, 101),
-    SFF8636_CDR_LOL_IRQ_MASK            = QSFP_ADDR(0, 0, 102),
-    SFF8636_TEMPERATURE_IRQ_MASK        = QSFP_ADDR(0, 0, 103),
-    SFF8636_VOLTAGE_IRQ_MASK            = QSFP_ADDR(0, 0, 104),
-    SFF8636_VENDOR_IRQ_MASK             = QSFP_ADDR(0, 0, 105),
+    SFF8636_INTERRUPT_MASK              = QSFP_ADDR(0, 0, 100),
     SFF8636_CLS8_MAX_POWER              = QSFP_ADDR(0, 0, 107),
     SFF8636_FREE_SIDE_PROP              = QSFP_ADDR(0, 0, 110),
     SFF8636_CHANNEL_INFO                = QSFP_ADDR(0, 0, 113),
     SFF8636_ID                          = QSFP_ADDR(0, 0, 128),
     SFF8636_DDM_TH                      = QSFP_ADDR(0, 3, 128),
-    SFF8636_RX_POWER_IRQ_MASK           = QSFP_ADDR(0, 3, 242),
-    SFF8636_TX_BIAS_IRQ_MASK            = QSFP_ADDR(0, 3, 244),
-    SFF8636_TX_POWER_IRQ_MASK           = QSFP_ADDR(0, 3, 246),
-    SFF8636_RESERVED_IRQ_MASK           = QSFP_ADDR(0, 3, 248),
+    SFF8636_CHANNEL_INTERRUPT_MASK      = QSFP_ADDR(0, 3, 242),
 };
 
 enum {
