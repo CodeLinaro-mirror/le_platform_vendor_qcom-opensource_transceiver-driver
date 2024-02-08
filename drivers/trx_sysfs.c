@@ -20,6 +20,11 @@ static ssize_t trx_state_info_show(struct device *dev,
     ssize_t ret;
     u8 i;
 
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
     /* Locking necessary to make sure all states fetched once */
     mutex_lock(&qsfp->sm_mutex);
 
@@ -91,6 +96,11 @@ static ssize_t trx_led_on_off_show(struct device *dev,
     u8 lbuff = 0;
     int ret = 0;
     u8 modesel = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
 
     ret = fpc_read(qsfp->fpc,
                    FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
@@ -165,6 +175,12 @@ static ssize_t trx_led_on_off_store(struct device *dev,
     int led_num = 0;
     int led_state = 0;
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
     ret = trx_sysfs_validate_and_copy_buf(buf_local, sizeof(buf_local),
                      buf, count);
     if (ret != 0) {
@@ -224,6 +240,11 @@ static ssize_t trx_led_blink_set_show(struct device *dev,
     u8 lbuff = 0;
     int ret = 0;
     u8 modesel = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
 
     ret = fpc_read(qsfp->fpc,
                    FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
@@ -344,6 +365,12 @@ static ssize_t trx_led_blink_set_store(struct device *dev,
     char led_pwm_val_buff[10] = {0};
 
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
     ret = trx_sysfs_validate_and_copy_buf(buf_local, sizeof(buf_local),
                      buf, count);
     if (ret != 0) {
@@ -402,6 +429,11 @@ static ssize_t trx_led_brightness_set_show(struct device *dev,
     u8 lbuff = 0;
     int ret = 0;
     u8 modesel = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
 
     ret = fpc_read(qsfp->fpc,
                    FPC_PORT_REG[FPC_LED_MODE_SELECT][qsfp->port_num],
@@ -509,6 +541,12 @@ static ssize_t trx_led_brightness_set_store(struct device *dev,
     char led_pwm_val_buff[10] = {0};
 
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
     ret = trx_sysfs_validate_and_copy_buf(buf_local, sizeof(buf_local),
                      buf, count);
     if (ret != 0) {
@@ -565,11 +603,18 @@ static ssize_t trx_temperature_show(struct device *dev,
 {
     struct qsfp *qsfp= dev_get_drvdata(dev);
     struct cmis_eeprom_id *cmis_id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
     struct sfp_eeprom_id *id;
     char temperature_data[75] = {0};
     int16_t tempc = 0;
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing. */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -664,10 +709,17 @@ static ssize_t trx_supply_voltage_show(struct device *dev,
     struct qsfp *qsfp= dev_get_drvdata(dev);
     struct cmis_eeprom_id *cmis_id;
     struct sfp_eeprom_id *id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
     char voltage_data[75] = {0};
     u16 supply_voltage_t = 0;
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing. */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -766,7 +818,7 @@ static ssize_t trx_rx_power_show(struct device *dev,
     struct qsfp *qsfp= dev_get_drvdata(dev);
     struct cmis_eeprom_id *cmis_id;
     struct sfp_eeprom_id *sff8472_id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
     char rx_power_data[500] ={0};
     u16 rx_power_t[4] = {0};
     u8  rx_power[8] = {0};
@@ -774,6 +826,13 @@ static ssize_t trx_rx_power_show(struct device *dev,
     u16 cmis_rx_power_t[8] = {0};
     u8  cmis_rx_power[16] = {0};
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing. */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -913,7 +972,7 @@ static ssize_t trx_tx_bias_current_show(struct device *dev,
     struct qsfp *qsfp= dev_get_drvdata(dev);
     struct cmis_eeprom_id *cmis_id;
     struct sfp_eeprom_id *sff8472_id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
     char tx_bias_current_data[500] = {0};
     u32 tx_bias_current_t[4] = {0};
     u16 tx_bias_current = 0;
@@ -923,6 +982,13 @@ static ssize_t trx_tx_bias_current_show(struct device *dev,
     u32 cmis_tx_bias_current_t[8] = {0};
     u8 cmis_tx_bias_multiplier = 1;
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing. */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -1122,7 +1188,7 @@ static ssize_t trx_tx_power_show(struct device *dev,
     struct sff8636_eeprom_id *id;
     struct cmis_eeprom_id *cmis_id;
     struct sfp_eeprom_id *sff8472_id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
     char tx_power_data[500] = {0};
     u16 tx_power_t[4] = {0};
     u8  tx_power[8] = {0};
@@ -1131,6 +1197,13 @@ static ssize_t trx_tx_power_show(struct device *dev,
     u8  cmis_tx_power[16] = {0};
     u16 cmis_tx_power_t[8] = {0};
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing  */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -1347,7 +1420,14 @@ static ssize_t trx_vendor_info_show(struct device *dev,
     struct sfp_eeprom_id *sff8472_id;
     struct sff8636_eeprom_id *sff8636_id;
     struct cmis_eeprom_id *cmis_id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing  */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -1399,11 +1479,18 @@ static ssize_t trx_ddm_thresholds_show(struct device *dev,
 {
     struct qsfp *qsfp= dev_get_drvdata(dev);
     struct sfp_eeprom_id *sff8472_id;
-    u8 *spec_id = (u8*)&qsfp->id;
+    u8 *spec_id;
     struct sff8472_ddm_thresholds ddm_limits = {0};
     struct sff8636_ddm_thresholds sff8636_ddm_limits = {0};
     struct cmis_thresholds cmis_ddm_limits = {0};
     int ret = 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
 
     /* Ensure that the transceiver is inserted before processing  */
     if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
@@ -1635,6 +1722,12 @@ int qsfp_sysfs_init(struct qsfp *qsfp)
 {
     int ret = 0;
 
+    if(!qsfp->qsfp_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "qsfp_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
     ret = sysfs_create_group(qsfp->qsfp_sysfs_dir, &trx_attr_group);
     if(ret != 0) {
         TRX_LOG_ERR(qsfp, "SysFS trx attr group create failure\n");
@@ -1649,6 +1742,12 @@ int qsfp_sysfs_init(struct qsfp *qsfp)
  */
 int qsfp_sysfs_exit(struct qsfp *qsfp)
 {
+    if(!qsfp->qsfp_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "qsfp_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
     sysfs_remove_group(qsfp->qsfp_sysfs_dir, &trx_attr_group);
     return 0;
 }
@@ -1659,6 +1758,12 @@ int qsfp_sysfs_exit(struct qsfp *qsfp)
 int module_sysfs_init(struct qsfp *qsfp)
 {
     int ret = 0;
+
+    if(!qsfp->qsfp_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "qsfp_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
 
     ret = sysfs_create_group(qsfp->qsfp_sysfs_dir, &trx_module_attr_group);
     if(ret != 0) {
@@ -1674,6 +1779,12 @@ int module_sysfs_init(struct qsfp *qsfp)
  */
 int module_sysfs_exit(struct qsfp *qsfp)
 {
+    if(!qsfp->qsfp_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "qsfp_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
     sysfs_remove_group(qsfp->qsfp_sysfs_dir, &trx_module_attr_group);
     return 0;
 }

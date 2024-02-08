@@ -2821,9 +2821,10 @@ static struct qsfp *qsfp_alloc(struct device *dev)
      */
     qsfp->i2c_block_size = 16;
     qsfp->need_poll = false;
-
     qsfp->debugfs_dir = NULL;
     qsfp->module_debugfs_dir = NULL;
+    qsfp->qsfp_sysfs_dir = NULL;
+
     return qsfp;
 }
 
@@ -2837,6 +2838,37 @@ static void qsfp_cleanup(void *data)
     cancel_delayed_work_sync(&qsfp->timeout);
 
     kfree(qsfp);
+}
+
+int qsfp_probe_cleanup(struct qsfp* qsfp)
+{
+    int i= 0;
+
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    cancel_delayed_work_sync(&qsfp->poll);
+    cancel_delayed_work_sync(&qsfp->timeout);
+
+    for (i = 0 ; i < qsfp->num_lanes ; i++) {
+        struct lane *lanei = qsfp->lane[i];
+        if (lanei->sfp_bus) {
+            TRX_LOG_INFO(lanei, "sfp unregister socket");
+            sfp_unregister_socket(lanei->sfp_bus);
+            lanei->sfp_bus = NULL;
+        }
+    }
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+    module_debugfs_exit(qsfp);
+    qsfp_debugfs_exit(qsfp);
+#endif
+    module_sysfs_exit(qsfp);
+    qsfp_sysfs_exit(qsfp);
+
+    return 0;
 }
 
 /*
@@ -2890,48 +2922,6 @@ int qsfp_probe(struct platform_device *pdev)
     if (!qsfp->fpc) {
         TRX_LOG_INFO(qsfp, "Unable to get FPC handler");
         return -EPROBE_DEFER;
-    }
-
-    /* get the number of lanes */
-    if (!of_get_property(pdev->dev.of_node, "lanes", &lane_entries)) {
-        TRX_LOG_ERR(qsfp, "Unable to read lanes");
-        return -ENODEV;
-    }
-
-    qsfp->num_lanes = lane_entries/(sizeof(u32));
-
-    if (qsfp->num_lanes > MAX_LANES) {
-        TRX_LOG_ERR(qsfp, "Number of lanes %u is more than max %u allowed",
-                          qsfp->num_lanes, MAX_LANES);
-        return -EINVAL;
-    }
-
-    TRX_LOG_INFO(qsfp, "Number of Lanes %u", qsfp->num_lanes);
-    /* Parse through list of lanes */
-    for (i = 0; i < qsfp->num_lanes; i++) {
-        ret = of_property_read_u32_index(pdev->dev.of_node, "lanes", i,
-                                         &phandle);
-        if (ret < 0) {
-            TRX_LOG_ERR(qsfp, "Fail to get phandle for Lane%u", i);
-            return -EPROBE_DEFER;
-        }
-
-        lanei = phandle_to_drvdata(phandle);
-        if (!lanei) {
-            TRX_LOG_ERR(qsfp, "Fail to get drvdata from phandle %u for "
-                               "Lane%u\n", phandle, i);
-            return -EPROBE_DEFER;
-        }
-        lanei->qsfp = qsfp;
-        lanei->lane_num = i;
-        lanei->sfp_bus = sfp_register_socket(lanei->dev, (struct sfp*)lanei,
-                                        &lane_ops);
-        if (!lanei->sfp_bus) {
-            TRX_LOG_ERR(qsfp, "Socket register failed");
-            return -ENOMEM;
-        }
-        qsfp->lane[i] = lanei;
-        TRX_LOG_INFO(qsfp, "lane: %s index: %u", dev_name(lanei->dev), i);
     }
 
     ret = qsfp_i2c_configure(qsfp);
@@ -2997,12 +2987,59 @@ int qsfp_probe(struct platform_device *pdev)
     qsfp->i2c_address_dev0 >>= 1;
     qsfp->i2c_address_dev1 >>= 1;
 
-    if (qsfp->fpc->qsfp[qsfp->port_num]) {
-        TRX_LOG_ERR(qsfp, "QSFP port number %u already used", qsfp->port_num);
-        return -EINVAL;
-    } else {
-        qsfp->fpc->qsfp[qsfp->port_num] = qsfp;
+    qsfp->fpc->qsfp[qsfp->port_num] = qsfp;
+
+
+    /* Changed position of lane parsing to avoid sfp socket register in case
+     * of probe failures during device tree parsing */
+
+    /* get the number of lanes */
+    if (!of_get_property(pdev->dev.of_node, "lanes", &lane_entries)) {
+        TRX_LOG_ERR(qsfp, "Unable to read lanes");
+        return -ENODEV;
     }
+
+    qsfp->num_lanes = lane_entries/(sizeof(u32));
+
+    if (qsfp->num_lanes > MAX_LANES) {
+        TRX_LOG_ERR(qsfp, "Number of lanes %u is more than max %u allowed",
+                          qsfp->num_lanes, MAX_LANES);
+        return -EINVAL;
+    }
+
+    TRX_LOG_INFO(qsfp, "Number of Lanes %u", qsfp->num_lanes);
+
+    /* Parse through list of lanes */
+    for (i = 0; i < qsfp->num_lanes; i++) {
+        ret = of_property_read_u32_index(pdev->dev.of_node, "lanes", i,
+                                         &phandle);
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "Fail to get phandle for Lane%u", i);
+            return -EPROBE_DEFER;
+        }
+
+        lanei = phandle_to_drvdata(phandle);
+        if (!lanei) {
+            TRX_LOG_ERR(qsfp, "Fail to get drvdata from phandle %u for "
+                               "Lane%u\n", phandle, i);
+            return -EPROBE_DEFER;
+        }
+        lanei->qsfp = qsfp;
+        lanei->lane_num = i;
+        lanei->sfp_bus = sfp_register_socket(lanei->dev, (struct sfp*)lanei,
+                                        &lane_ops);
+        if (!lanei->sfp_bus) {
+            TRX_LOG_ERR(qsfp, "Socket register failed");
+            return -ENOMEM;
+        }
+        qsfp->lane[i] = lanei;
+        TRX_LOG_INFO(qsfp, "lane: %s index: %u", dev_name(lanei->dev), i);
+    }
+
+    qsfp->qsfp_sysfs_dir = &pdev->dev.kobj;
+
+    qsfp_debugfs_init(qsfp);
+    qsfp_sysfs_init(qsfp);
 
     /* During probe if QSFP module already inserted then we are not getting
      * interrupt for same so we are reading Module Present GPIO line to know
@@ -3011,7 +3048,8 @@ int qsfp_probe(struct platform_device *pdev)
     ret = fpc_is_module_present(qsfp);
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "fpc_is_module_present failed. ret %d", ret);
-        return -EPROBE_DEFER;
+        ret = -EPROBE_DEFER;
+        goto probe_cleanup;
     } else if (ret == QSFP_PRESENT) {
         TRX_LOG_INFO(qsfp, "QSFP present during probe");
         qsfp_module_insert_irq(qsfp);
@@ -3023,13 +3061,9 @@ int qsfp_probe(struct platform_device *pdev)
     ret = fpc_enable_qsfp_interrupt(qsfp);
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Enable QSFP interrupt failed. ret %d", ret);
-        return -EPROBE_DEFER;
+        ret =  -EPROBE_DEFER;
+        goto probe_cleanup;
     }
-
-    qsfp_debugfs_init(qsfp);
-
-    qsfp->qsfp_sysfs_dir = &pdev->dev.kobj;
-    qsfp_sysfs_init(qsfp);
 
     transceiver_led_off(qsfp, QSFP_LED1 | QSFP_LED2);
 
@@ -3039,6 +3073,9 @@ int qsfp_probe(struct platform_device *pdev)
     TRX_LOG_INFO(qsfp, "Success");
 
     return 0;
+probe_cleanup:
+    qsfp_probe_cleanup(qsfp);
+    return ret;
 }
 
 int qsfp_remove(struct platform_device *pdev)
