@@ -408,7 +408,7 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
 
     if(eth_notifier == NULL)
     {
-        TRX_LOG_ERR_NODEV("Invalid eth notifier event %d", eth_notifier->event);
+        TRX_LOG_ERR_NODEV("eth notifier is NULL");
         return -EINVAL;
     }
 
