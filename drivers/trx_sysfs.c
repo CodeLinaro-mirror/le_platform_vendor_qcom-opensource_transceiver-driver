@@ -1749,6 +1749,7 @@ int qsfp_sysfs_exit(struct qsfp *qsfp)
     }
 
     sysfs_remove_group(qsfp->qsfp_sysfs_dir, &trx_attr_group);
+    TRX_LOG_INFO(qsfp, "SysFS trx_attr cleanup\n");
     return 0;
 }
 
@@ -1786,5 +1787,6 @@ int module_sysfs_exit(struct qsfp *qsfp)
     }
 
     sysfs_remove_group(qsfp->qsfp_sysfs_dir, &trx_module_attr_group);
+    TRX_LOG_INFO(qsfp, "SysFS module_attr cleanup\n");
     return 0;
 }

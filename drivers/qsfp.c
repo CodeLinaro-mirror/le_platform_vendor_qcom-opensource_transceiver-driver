@@ -3217,6 +3217,10 @@ int qsfp_remove(struct platform_device *pdev)
     qsfp_debugfs_exit(qsfp);
 #endif
 
+    /* Manage the cleanup of module sysfs attributes
+       During driver remove.
+    */
+    module_sysfs_exit(qsfp);
     qsfp_sysfs_exit(qsfp);
 
     mutex_lock(&qsfp->sm_mutex);
