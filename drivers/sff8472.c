@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 #include "qsfp.h"
 #include "lane.h"
 #include "transceiver_debugfs.h"
-#include <linux/phylink.h>
 
 static int sff8472_mod_probe(struct qsfp *qsfp)
 {
@@ -148,7 +147,7 @@ static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
     return -E_MAX_POWER_EXCEED;
 }
 
-static int sff8472_set_rate_select(const struct qsfp *qsfp, bool enable)
+static int sff8472_set_rate_select(const struct qsfp *qsfp)
 {
     int ret;
     u8 ctrl = 0;
@@ -200,45 +199,18 @@ static int sff8472_set_rate_select(const struct qsfp *qsfp, bool enable)
             return ret;
         }
 
-        if(enable)
-        {
-            if (!(ctrl & SFF8472_RX_RATE_SELECT))
-            {
-                if (rate_id == 0x0E) {
-                    TRX_LOG_WARN(qsfp, "RX Rate select not set by default");
-                }
-
-                ctrl |= SFF8472_RX_RATE_SELECT;
-
-                ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
-                if (ret < 0) {
-                    TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
-                                      "ret %d", ret);
-                    return ret;
-                }
+        if (!(ctrl & SFF8472_RX_RATE_SELECT)) {
+            if (rate_id == 0x0E) {
+                TRX_LOG_WARN(qsfp, "RX Rate select not set by default");
             }
-            else
-            {
-                TRX_LOG_WARN(qsfp, "RX Rate select was already set: 0x%X", ctrl);
-            }
-        }
-        else
-        {
-            if (ctrl & SFF8472_TX_RATE_SELECT)
-            {
-                ctrl &= (~SFF8472_RX_RATE_SELECT);
 
-                ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
-                if (ret < 0)
-                {
-                    TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
-                                      "ret %d", ret);
-                    return ret;
-                }
-            }
-            else
-            {
-                TRX_LOG_WARN(qsfp, "RX Rate select was already Reset: 0x%X", ctrl);
+            ctrl |= SFF8472_RX_RATE_SELECT;
+
+            ret = qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed to write status/control register. "
+                                  "ret %d", ret);
+                return ret;
             }
         }
     }
@@ -252,45 +224,18 @@ static int sff8472_set_rate_select(const struct qsfp *qsfp, bool enable)
             return ret;
         }
 
-        if(enable)
-        {
-            if (!(ctrl & SFF8472_TX_RATE_SELECT))
-            {
-                if (rate_id == 0x0E) {
-                    TRX_LOG_WARN(qsfp, "TX Rate select not set by default");
-                }
-
-                ctrl |= SFF8472_TX_RATE_SELECT;
-
-                ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
-                if (ret < 0) {
-                    TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
-                                      "ret %d", ret);
-                    return ret;
-                }
+        if (!(ctrl & SFF8472_TX_RATE_SELECT)) {
+            if (rate_id == 0x0E) {
+                TRX_LOG_WARN(qsfp, "TX Rate select not set by default");
             }
-            else
-            {
-                TRX_LOG_WARN(qsfp, "TX Rate select was already set: 0x%X", ctrl);
-            }
-        }
-        else
-        {
-            if (ctrl & SFF8472_TX_RATE_SELECT)
-            {
 
-                ctrl &= (~SFF8472_TX_RATE_SELECT);
+            ctrl |= SFF8472_TX_RATE_SELECT;
 
-                ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
-                if (ret < 0) {
-                    TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
-                                      "ret %d", ret);
-                    return ret;
-                }
-            }
-            else
-            {
-                TRX_LOG_WARN(qsfp, "TX Rate select was already Reset: 0x%X", ctrl);
+            ret = qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &ctrl, sizeof(ctrl));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed to write extended status/control register. "
+                                  "ret %d", ret);
+                return ret;
             }
         }
     }
@@ -505,13 +450,12 @@ static u8 sff8472_get_connector_type(const struct qsfp *qsfp)
 }
 
 static int sff8472_get_lane_speed(const struct qsfp *qsfp,
-                                  trx_speed_mask *speed_mask)
+                                  trx_lane_speed* lane_speed)
 {
     phy_interface_t sfp_interface = PHY_INTERFACE_MODE_NA;
     __ETHTOOL_DECLARE_LINK_MODE_MASK(sfp_supported) = { 0, };
 
-    const struct sfp_eeprom_id *id = &qsfp->id.sff8472;
-    trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
+    *lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
     if (!qsfp->lane[0]) {
         TRX_LOG_ERR(qsfp, "Unable to get the lane");
@@ -521,52 +465,37 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
     sfp_parse_support(qsfp->lane[0]->sfp_bus, &qsfp->id.sff8472,
                       sfp_supported);
 
+    sfp_interface = sfp_select_interface(qsfp->lane[0]->sfp_bus, sfp_supported);
+
     /* sfp_parse_support() from upstream wont consider SFF8024_ECC_100G_25GAUI_C2M_AOC
      * so added extra check for it.
      */
-    if (phylink_test(sfp_supported, 25000baseCR_Full) ||
-        phylink_test(sfp_supported, 25000baseKR_Full) ||
-        phylink_test(sfp_supported, 25000baseSR_Full) ||
+    if ((sfp_interface == PHY_INTERFACE_MODE_25GBASER) ||
         (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100G_25GAUI_C2M_AOC) ||
         (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100GBASE_LR4_25GBASE_LR) ||
         (qsfp->id.sff8472.base.extended_cc == SFF8024_ECC_100GBASE_ER4_25GBASE_ER))
     {
-        lane_speed |= TRX_LANE_SPEED_25G;
+       *lane_speed = TRX_LANE_SPEED_25G;
     }
-
-    if (phylink_test(sfp_supported, 10000baseCR_Full) ||
-        phylink_test(sfp_supported, 10000baseSR_Full) ||
-        phylink_test(sfp_supported, 10000baseLR_Full) ||
-        phylink_test(sfp_supported, 10000baseLRM_Full) ||
-        phylink_test(sfp_supported, 10000baseER_Full) ||
-        phylink_test(sfp_supported, 10000baseT_Full)) {
-        lane_speed |= TRX_LANE_SPEED_10G;
+    else if(sfp_interface == PHY_INTERFACE_MODE_10GBASER)
+    {
+        *lane_speed = TRX_LANE_SPEED_10G;
     }
-
-    if (lane_speed == TRX_LANE_SPEED_UNKNOWN) {
-        sfp_interface = sfp_select_interface(qsfp->lane[0]->sfp_bus, sfp_supported);
-        if ((sfp_interface == PHY_INTERFACE_MODE_5GBASER) ||
+    else if((sfp_interface == PHY_INTERFACE_MODE_5GBASER) ||
             (sfp_interface == PHY_INTERFACE_MODE_2500BASEX) ||
             (sfp_interface == PHY_INTERFACE_MODE_SGMII) ||
             (sfp_interface == PHY_INTERFACE_MODE_1000BASEX) ||
-            (sfp_interface == PHY_INTERFACE_MODE_100BASEX)) {
-
-            TRX_LOG_ERR(qsfp, "Unsupported SFP interface: 0x%X", sfp_interface);
-            return -EINVAL;
-        } else {
-            TRX_LOG_ERR(qsfp, "Unable to get the lane speed. 0x%X", sfp_interface);
-            return -EINVAL;
-        }
+            (sfp_interface == PHY_INTERFACE_MODE_100BASEX))
+    {
+        TRX_LOG_ERR(qsfp, "Unsupported SFP interface: 0x%X", sfp_interface);
+        return -EINVAL;
+    }
+    else
+    {
+        TRX_LOG_ERR(qsfp, "Unable to get the lane speed. 0x%X", sfp_interface);
+        return -EINVAL;
     }
 
-    /* Handle the Dual speed support transceiver that are not
-     * Advertised through EEPROM */
-     if (strncmp(id->base.vendor_pn,"SFP-10/25GSR-85 ",16) == 0)
-     {
-         lane_speed |= TRX_LANE_SPEED_10G;
-     }
-
-    *speed_mask = (trx_speed_mask)lane_speed;
     return 0;
 }
 

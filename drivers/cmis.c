@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 #include "qsfp.h"
@@ -562,12 +562,11 @@ static int cmis_get_lanes_presence(const struct qsfp *qsfp,
  * present on trx.
  */
 static int cmis_get_lane_speed(const struct qsfp *qsfp,
-                               trx_speed_mask *speed_mask)
+                               trx_lane_speed* lane_speed)
 {
     u8 lane_cnt;
     u8 channel = 0;
     int ret;
-    trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
     if (qsfp->sm_mod_state >= QSFP_MOD_WAITHPOWER) {
         channel = qsfp->lane_presence;
@@ -585,14 +584,12 @@ static int cmis_get_lane_speed(const struct qsfp *qsfp,
     /* Need to revisit later to check the possibilities for an 8-lane
        transceiver among those only 4 implemented. */
     if (lane_cnt == 0x04) {
-        lane_speed |= TRX_LANE_SPEED_100G;
+        *lane_speed = TRX_LANE_SPEED_100G;
     } else if (lane_cnt == 0x08) {
-        lane_speed |= TRX_LANE_SPEED_50G;
+        *lane_speed = TRX_LANE_SPEED_50G;
     } else {
-        lane_speed = TRX_LANE_SPEED_UNKNOWN;
+        *lane_speed = TRX_LANE_SPEED_UNKNOWN;
     }
-
-    *speed_mask = (trx_speed_mask)lane_speed;
 
     return 0;
 }
@@ -632,9 +629,6 @@ static trx_link_length_range cmis_get_link_length_range(const struct qsfp *qsfp)
         return qsfp_mmf_code_to_link_length_range(media_interface_id);
     } else if (media_encoding == CMIS_SMF_ENCODING) {
         return qsfp_smf_code_to_link_length_range(media_interface_id);
-    } else if(media_encoding == CMIS_CR_ENCODING) {
-        if(media_interface_id == 0x01)
-            return TRX_CR;
     }
 
     return TRX_LINK_UNKNOWN;
@@ -672,7 +666,7 @@ const char* cmis_revision_to_str(u8 mod_rev_value, char *revStr)
     return revStr;
 }
 
-static int cmis_set_rate_select(const struct qsfp *qsfp, bool enable)
+static int cmis_set_rate_select(const struct qsfp *qsfp)
 {
     /* Rate select not supported by CMIS */
     return 0;

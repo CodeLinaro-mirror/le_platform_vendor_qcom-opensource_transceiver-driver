@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Code is derived from http://git.armlinux.org.uk/cgit/linux-arm.git/
  * tree/drivers/net/phy/sfp.h?h=cex7
@@ -353,8 +353,6 @@ struct qsfp {
     u8 sm_link_state;
     u8 sm_mod_tries;
     u8 lane_presence;
-    u8 lane_min_speed;
-    u8 lane_max_speed;
     size_t i2c_block_size;
 
     struct delayed_work timeout;
@@ -413,8 +411,8 @@ struct qsfp_spec_ops {
     int (*module_info)(struct qsfp *qsfp, struct ethtool_modinfo *modinfo);
     /* Gets connector type */
     u8 (*get_connector_type)(const struct qsfp *qsfp);
-    /* Gets lane speed  mask*/
-    int (*get_lane_speed)(const struct qsfp *qsfp, trx_speed_mask *speed_mask);
+    /* Gets lane speed */
+    int (*get_lane_speed)(const struct qsfp *qsfp, trx_lane_speed* speed);
     /* Gets transceive type */
     u8 (*get_transceiver_type)(const struct qsfp *qsfp);
     /* Gets link length ramge */
@@ -425,7 +423,7 @@ struct qsfp_spec_ops {
     int (*get_breakout_config)(const struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
     /* Set Rate select */
-    int (*set_rate_select)(const struct qsfp *qsfp, bool enable);
+    int (*set_rate_select)(const struct qsfp *qsfp);
     unsigned long (*irq_delay)(const struct qsfp *qsfp);
     int (*create_debugfs)(struct qsfp *qsfp);
 };
@@ -561,6 +559,7 @@ extern  const char * const trxspeed_to_str[];
 extern  const char * const trxtype_to_str[];
 
 #define LINK_LENGTH_RANGE_MAX_INDEX (11)
+#define LANE_SPEED_MAX_INDEX (6)
 #define TRX_TYPE_MAX_INDEX (5)
 #define REASON_CODE_MAX_INDEX (4)
 #define LINK_TYPE_MAX_INDEX (256)
