@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-only
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -28,15 +28,15 @@ typedef enum {
 typedef enum {
     TRX_LANE_SPEED_UNKNOWN = 0,
     /* Lane speed of 2.5GBPS */
-    TRX_LANE_SPEED_2_5G,
+    TRX_LANE_SPEED_2_5G = BIT(0),
     /* Lane speed of 10GBPS */
-    TRX_LANE_SPEED_10G,
+    TRX_LANE_SPEED_10G = BIT(1),
     /* Lane speed of 25GBPS */
-    TRX_LANE_SPEED_25G,
+    TRX_LANE_SPEED_25G = BIT(2),
     /* Lane speed of 50GBPS */
-    TRX_LANE_SPEED_50G,
+    TRX_LANE_SPEED_50G = BIT(3),
     /* Lane speed of 100GBPS */
-    TRX_LANE_SPEED_100G,
+    TRX_LANE_SPEED_100G = BIT(4),
 }trx_lane_speed;
 
 /* Enum to identify the TRX type */
@@ -85,17 +85,27 @@ typedef u8 trx_lane_cfg;
 /* The breakout configuration */
 typedef u8 trx_breakout_cfg;
 
+/* Transceiver speed mask */
+typedef u8 trx_speed_mask;
+
 struct qsfp_info {
     /* TRX type(SFP/QSFP/QSFP-DD)*/
     trx_type trx_module_type;
-    /* Lane supported speed */
-    trx_lane_speed trx_speed;
+    /* Lane supported speed mask */
+    trx_speed_mask speed_mask;
     /* Near-end configuration */
     trx_lane_cfg trx_laneinfo;
     /* Far-end configuration */
     trx_breakout_cfg trx_bout_cfg;
     /* Link length range */
     trx_link_length_range trx_link_length_range;
+};
+
+struct trx_eth_event_t {
+    trx_phy_event event;
+    u32 *lane_phandle;
+    u8 num_lanes;
+    trx_lane_speed eth_cfg_speed;
 };
 
 /***************************************************************
@@ -130,13 +140,13 @@ int qsfp_trx_get_lane_type(u32 lane_phandle, u8* link_info);
 * Function:       qsfp_trx_get_lane_speed
 * Description:    API to get QSFP TRX lane supported speed.
 * Inputs:         lane_phandle [in] : Lane phandle to get the QSFP structure.
-*                 trx_speed [out]   : Supported TRX lanespeed of type
-*                                     trx_lane_speed*.
+*                 trx_speed_mask [out] : Supported TRX lane speeds of type
+*                                        trx_speed_mask*.
 * Return value:   0      : Success
 *                -EINVAL : Error
 *
 ****************************************************************/
-int qsfp_trx_get_lane_speed(u32 lane_phandle, trx_lane_speed* trx_speed);
+int qsfp_trx_get_lane_speed(u32 lane_phandle, trx_speed_mask *speed_mask);
 
 /***************************************************************
 *
@@ -200,7 +210,8 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info);
 *
 * Function:       qsfp_trx_eth_event_notifier
 * Description:    API to get notification for eth interface events.
-* Inputs:         event [in]   : Type of eth interface event.
+* Inputs:         trx_eth_event_t structure pointer which has the input fields
+*                 event [in]   : Type of eth interface event.
 *                                TRX_IFCONFIG_DOWN : ifconfig Down
 *                                TRX_IFCONFIG_UP   : ifconfig Up
 *                                TRX_ETH_LINK_DOWN : Ethernet link down
@@ -208,12 +219,14 @@ int qsfp_trx_get_info(u32 lane_phandle, struct qsfp_info* trx_info);
 *                 lane_phandle [in] : Array of Lane phandles of size num_lanes
 *                 num_lanes [in] : Number of lanes having the event or
 *                                  size of lane_phandle  
+*                 eth_cfg_speed [in] : ETH interface configured speed of type
+*                                      trx_lane_speed.
 *
 * Return value:   0      : Success
 *                -EINVAL : Error
 *
 ****************************************************************/
-int qsfp_trx_eth_event_notifier(trx_phy_event event, u32 *lane_phandle, u8 num_lanes);
+int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier);
 
 /***************************************************************
 *
