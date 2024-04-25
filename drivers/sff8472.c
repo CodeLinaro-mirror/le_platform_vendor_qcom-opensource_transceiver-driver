@@ -192,6 +192,15 @@ static int sff8472_set_rate_select(const struct qsfp *qsfp, bool enable)
         break;
     }
 
+    /* FINISAR FTLF1436W5BTV RS0 and RS1 can control based on rate select bit
+     * A0H bit 5 of byte 65 is set to 1 */
+    if ((qsfp->id.sff8472.ext.options & cpu_to_be16(SFP_OPTIONS_RATE_SELECT)) &&
+        (rate_id == 0x00))
+    {
+        rx_rs0 = true;
+        tx_rs1 = true;
+    }
+
     if (rx_rs0) {
         ret = qsfp_read(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
         if (ret < 0) {
@@ -561,7 +570,9 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
 
     /* Handle the Dual speed support transceiver that are not
      * Advertised through EEPROM */
-     if (strncmp(id->base.vendor_pn,"SFP-10/25GSR-85 ",16) == 0)
+     if ((strncmp(id->base.vendor_pn,"SFP-10/25GSR-85 ",16) == 0) ||
+          (strncmp(id->base.vendor_pn,"FTLF1436W5BTV",13) == 0) ||
+          (strncmp(id->base.vendor_pn,"M14MK",5) == 0))
      {
          lane_speed |= TRX_LANE_SPEED_10G;
      }
