@@ -21,6 +21,8 @@
 #define SFF8636_POWER_CLASS_6 (0x02)
 #define SFF8636_POWER_CLASS_7 (0x03)
 
+/* Copper cable, unequalized */
+#define SFF8636_TRANS_COPPER_UNEQUAL    (10 << 4)
 #define VENDOR_CIG "CIG"
 #define CIG_TX_DISABLE_WAIT (5)
 
@@ -35,8 +37,17 @@ enum {
     SFF8636_TEMPERATURE                 = QSFP_ADDR(0, 0,  22),
     SFF8636_SUPPLY_VOLTAGE              = QSFP_ADDR(0, 0,  26),
     SFF8636_RX_POWER                    = QSFP_ADDR(0, 0,  34),
+    SFF8636_RX_POWER_LANE2              = QSFP_ADDR(0, 0,  36),
+    SFF8636_RX_POWER_LANE3              = QSFP_ADDR(0, 0,  38),
+    SFF8636_RX_POWER_LANE4              = QSFP_ADDR(0, 0,  40),
     SFF8636_TX_BIAS                     = QSFP_ADDR(0, 0,  42),
+    SFF8636_TX_BIAS_LANE2               = QSFP_ADDR(0, 0,  44),
+    SFF8636_TX_BIAS_LANE3               = QSFP_ADDR(0, 0,  46),
+    SFF8636_TX_BIAS_LANE4               = QSFP_ADDR(0, 0,  48),
     SFF8636_TX_POWER                    = QSFP_ADDR(0, 0,  50),
+    SFF8636_TX_POWER_LANE2              = QSFP_ADDR(0, 0,  52),
+    SFF8636_TX_POWER_LANE3              = QSFP_ADDR(0, 0,  54),
+    SFF8636_TX_POWER_LANE4              = QSFP_ADDR(0, 0,  56),
     SFF8636_TX_DISABLE                  = QSFP_ADDR(0, 0,  86),
     SFF8636_POWER_ENABLE                = QSFP_ADDR(0, 0,  93),
     SFF8636_LOS_IRQ_MASK                = QSFP_ADDR(0, 0, 100),

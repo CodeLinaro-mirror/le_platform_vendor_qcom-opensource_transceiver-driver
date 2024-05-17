@@ -864,8 +864,8 @@ module_init(fpc_qsfp_init);
  */
 static void fpc_qsfp_exit(void)
 {
-    platform_driver_unregister(&fpc_qsfp_driver);
     transceiver_debugfs_exit();
+    platform_driver_unregister(&fpc_qsfp_driver);
 
     if (trx_ipc_log_buf) {
         ipc_log_context_destroy(trx_ipc_log_buf);

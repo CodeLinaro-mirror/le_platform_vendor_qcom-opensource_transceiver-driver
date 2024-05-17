@@ -693,4 +693,6 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .set_rate_select = sff8472_set_rate_select,
     .irq_delay = sff8472_irq_delay,
     .create_debugfs = sff8472_create_debugfs_files,
+    .spec_sensor_sysfs_init = sff8472_create_sysfs_files,
+    .spec_sensor_sysfs_exit = sff8472_remove_sysfs_files,
 };

@@ -1267,4 +1267,6 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .set_rate_select = sff8636_set_rate_select,
     .irq_delay = sff8636_irq_delay,
     .create_debugfs = sff8636_create_debugfs_files,
+    .spec_sensor_sysfs_init = sff8636_create_sysfs_files,
+    .spec_sensor_sysfs_exit = sff8636_remove_sysfs_files,
 };

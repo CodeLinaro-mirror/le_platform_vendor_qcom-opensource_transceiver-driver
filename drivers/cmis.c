@@ -701,4 +701,6 @@ const struct qsfp_spec_ops cmis_spec_ops = {
     .set_rate_select = cmis_set_rate_select,
     .irq_delay = cmis_irq_delay,
     .create_debugfs = cmis_create_debugfs_files,
+    .spec_sensor_sysfs_init = cmis_create_sysfs_files,
+    .spec_sensor_sysfs_exit = cmis_remove_sysfs_files,
 };

@@ -1526,7 +1526,15 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
     qsfp->spec_ops->create_debugfs(qsfp);
 #endif
 
+    /* Parse the module ddm thresholds */
+    ret = qsfp_module_parse_ddm_thresholds(qsfp);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Module parse ddm thresholds failed, ret %d", ret);
+        return ret;
+    }
+
     module_sysfs_init(qsfp);
+    qsfp_sensor_sysfs_init(qsfp);
 
     qsfp->spec_ops->eeprom_print(qsfp);
 
@@ -1558,9 +1566,11 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
 #endif
 
     module_sysfs_exit(qsfp);
+    qsfp_sensor_sysfs_exit(qsfp);
     memset(&qsfp->id, 0, sizeof(qsfp->id));
     memset(&qsfp->flags, 0, sizeof(qsfp->flags));
     memset(&qsfp->support, 0, sizeof(qsfp->support));
+    memset(&qsfp->diag, 0, sizeof(qsfp->diag));
     memset(&qsfp->status, 0, sizeof(qsfp->status));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
@@ -2944,6 +2954,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->debugfs_dir = NULL;
     qsfp->module_debugfs_dir = NULL;
     qsfp->qsfp_sysfs_dir = NULL;
+    qsfp->sensor_sysfs_dir = NULL;
     qsfp->lane_min_speed = 0;
     qsfp->lane_max_speed = 0;
 

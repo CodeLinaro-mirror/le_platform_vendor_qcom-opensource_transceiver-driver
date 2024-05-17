@@ -105,6 +105,14 @@ struct qsfp_eeprom_id {
     };
 };
 
+struct qsfp_diag {
+    union {
+        struct sff8472_ddm_thresholds sff8472_ddm_limits;
+        struct sff8636_ddm_thresholds sff8636_ddm_limits;
+        struct cmis_thresholds cmis_ddm_limits;
+    };
+};
+
 struct qsfp_flags {
     u8 rx_los;
     u8 tx_los;
@@ -372,11 +380,13 @@ struct qsfp {
     struct qsfp_simulation sim;
 #endif
    struct kobject *qsfp_sysfs_dir;
+   struct kobject *sensor_sysfs_dir;
    /* Stores presence LOS TX Fault TX Disable status */
    struct qsfp_status status;
    struct qsfp_flags flags;
    /* Features supported/implemented */
    struct qsfp_support support;
+   struct qsfp_diag diag;
 };
 
 struct qsfp_spec_ops {
@@ -428,6 +438,8 @@ struct qsfp_spec_ops {
     int (*set_rate_select)(const struct qsfp *qsfp, bool enable);
     unsigned long (*irq_delay)(const struct qsfp *qsfp);
     int (*create_debugfs)(struct qsfp *qsfp);
+    int (*spec_sensor_sysfs_init)(struct qsfp *qsfp);
+    int (*spec_sensor_sysfs_exit)(struct qsfp *qsfp);
 };
 
 enum {
@@ -552,8 +564,13 @@ extern void lane_sm_mod_error(struct lane *lane, u8 state);
 extern trx_link_length_range qsfp_link_code_to_link_length_range(u8 link_code);
 extern trx_link_length_range qsfp_mmf_code_to_link_length_range(u8 mmf_code);
 extern trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code);
-
-
+extern int sff8472_create_sysfs_files(struct qsfp *qsfp);
+extern int sff8636_create_sysfs_files(struct qsfp *qsfp);
+extern int cmis_create_sysfs_files(struct qsfp *qsfp);
+extern int sff8472_remove_sysfs_files(struct qsfp *qsfp);
+extern int sff8636_remove_sysfs_files(struct qsfp *qsfp);
+extern int cmis_remove_sysfs_files(struct qsfp *qsfp);
+extern int qsfp_module_parse_ddm_thresholds(struct qsfp* qsfp);
 extern const char * const link_length_range_to_str[];
 extern  const char * const link_type_to_str[];
 extern  const char * const reasoncode_to_str[];
