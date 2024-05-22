@@ -348,6 +348,7 @@ static const char * const eth_event_to_str[] = {
 static int qsfp_configure_speed(struct qsfp* qsfp, trx_speed_mask lane_cfg_speed)
 {
     int ret;
+    u8 retry = QSFP_I2C_FAIL_RETRY;
 
     if(!qsfp)
     {
@@ -374,7 +375,12 @@ static int qsfp_configure_speed(struct qsfp* qsfp, trx_speed_mask lane_cfg_speed
 
     if(lane_cfg_speed == qsfp->lane_max_speed)
     {
-        ret = qsfp->spec_ops->set_rate_select(qsfp, true);
+        while (retry--) {
+            ret = qsfp->spec_ops->set_rate_select(qsfp, true);
+            if (ret == 0) {
+                break;
+            }
+        }
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Max Rate select failed, ret %d", ret);
             return ret;
@@ -382,7 +388,12 @@ static int qsfp_configure_speed(struct qsfp* qsfp, trx_speed_mask lane_cfg_speed
     }
     else if(lane_cfg_speed == qsfp->lane_min_speed)
     {
-        ret = qsfp->spec_ops->set_rate_select(qsfp, false);
+        while (retry--) {
+            ret = qsfp->spec_ops->set_rate_select(qsfp, false);
+            if (ret == 0) {
+                break;
+            }
+        }
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Min Rate select failed, ret %d", ret);
             return ret;
@@ -952,8 +963,6 @@ static const char  * const mod_state_strings[] = {
     [QSFP_MOD_ERROR_I2C] = "I2C_ERROR",
     [QSFP_MOD_ERROR_HPOWER] = "High_Power_ERROR",
     [QSFP_MOD_ERROR_TX_ENABLE_FAIL] = "TX_Enable_ERROR",
-    [QSFP_MOD_ERROR_I2C_SCL_STUCK] = "I2C_SCL_STUCK_ERROR",
-    [QSFP_MOD_ERROR_I2C_SDA_STUCK] = "I2C_SDA_STUCK_ERROR",
     [QSFP_MOD_REJECT_SPEC] = "Reject_Spec",
     [QSFP_MOD_REJECT_PWR] = "Reject_Power",
     [QSFP_MOD_PROBE] = "Probe",
@@ -1032,7 +1041,7 @@ const char *link_state_to_str(u8 sm_link_state)
  * Reads from QSFP memory map using i2c transaction by taking into account
  * page number as well.
  */
-static int qsfp_i2c_read(const struct qsfp *qsfp, u8 device, u8 page,
+static int qsfp_i2c_read(struct qsfp *qsfp, u8 device, u8 page,
                          u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[2];
@@ -1098,7 +1107,7 @@ static int qsfp_i2c_read(const struct qsfp *qsfp, u8 device, u8 page,
  * Writes into QSFP memory map using i2c transaction by taking into account
  * page number as well.
  */
-static int qsfp_i2c_write(const struct qsfp *qsfp, u8 device, u8 page,
+static int qsfp_i2c_write(struct qsfp *qsfp, u8 device, u8 page,
                           u8 dev_addr, void *buf, size_t len)
 {
     struct i2c_msg msgs[1];
@@ -1165,7 +1174,7 @@ static int qsfp_i2c_configure(struct qsfp *qsfp)
     return 0;
 }
 
-int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
+int qsfp_read(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
     int ret;
 
@@ -1178,12 +1187,36 @@ int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 
     ret = qsfp_i2c_read(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
 
+    /* On failure try reset of FPC402 for this particular port */
+    if (ret) {
+        TRX_LOG_ERR(qsfp, "Failed for address 0x%X. ret %d", addr, ret);
+        ret = fpc_qsfp_i2c_recover(qsfp);
+        if (ret == 0) {
+            /* After reset immediately try an attempt to read */
+            ret = qsfp_i2c_read(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed in second attempt for address 0x%X. ret %d. Delay %u",
+                            addr, ret, qsfp->fpc_qsfp_i2c_recover_delay);
+                qsfp->read_write_2nd_fail++;
+                /* On failure increase fpc_qsfp_i2c_recover_delay */
+                if (qsfp->fpc_qsfp_i2c_recover_delay < FPC_QSFP_I2C_RECOVER_TIME_MAX) {
+                    qsfp->fpc_qsfp_i2c_recover_delay += FPC_QSFP_I2C_RECOVER_TIME_STEP;
+                }
+            }
+        }
+    }
+
+    /* On successful i2c read make fpc_qsfp_i2c_recover_delay zero */
+    if (ret == 0) {
+        qsfp->fpc_qsfp_i2c_recover_delay = 0;
+    }
+
     i2c_unlock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
 
     return ret;
 }
 
-int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
+int qsfp_write(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
     int ret;
 
@@ -1195,6 +1228,30 @@ int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len)
     i2c_lock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
 
     ret = qsfp_i2c_write(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
+
+    /* On failure try reset of FPC402 for this particular port */
+    if (ret) {
+        TRX_LOG_ERR(qsfp, "Failed for address 0x%X. ret %d", addr, ret);
+        ret = fpc_qsfp_i2c_recover(qsfp);
+        if (ret == 0) {
+            /* After reset immediately try an attempt to write */
+            ret = qsfp_i2c_write(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "Failed in second attempt for address 0x%X. ret %d. Delay %u",
+                            addr, ret, qsfp->fpc_qsfp_i2c_recover_delay);
+                qsfp->read_write_2nd_fail++;
+                /* On failure increase fpc_qsfp_i2c_recover_delay */
+                if (qsfp->fpc_qsfp_i2c_recover_delay < FPC_QSFP_I2C_RECOVER_TIME_MAX) {
+                    qsfp->fpc_qsfp_i2c_recover_delay += FPC_QSFP_I2C_RECOVER_TIME_STEP;
+                }
+            }
+        }
+    }
+
+    /* On successful i2c write make fpc_qsfp_i2c_recover_delay zero */
+    if (ret == 0) {
+        qsfp->fpc_qsfp_i2c_recover_delay = 0;
+    }
 
     i2c_unlock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
 
@@ -1315,7 +1372,7 @@ static void qsfp_sm_link_check_rx_los(struct qsfp *qsfp)
  * If 'enable' is true push the QSFP to its high power class
  * otherwise push the QSFP to low power class 1
  */
-static int qsfp_sm_mod_hpower(const struct qsfp *qsfp, bool enable)
+static int qsfp_sm_mod_hpower(struct qsfp *qsfp, bool enable)
 {
     int ret;
 
@@ -2278,13 +2335,11 @@ static void qsfp_timeout(struct work_struct *work)
 {
     struct qsfp *qsfp = container_of(work, struct qsfp, timeout.work);
 
-    rtnl_lock();
     mutex_lock(&qsfp->sm_mutex);
 
     qsfp_sm_event(qsfp, QSFP_E_REVISIT);
 
     mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
 }
 
 static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
@@ -2477,11 +2532,6 @@ static void qsfp_lane_rxlos_txf(struct qsfp *qsfp, u8 chgd_rxlos, u8 chgd_txf)
     rx_los = qsfp->flags.rx_los;
     tx_fault = qsfp->flags.tx_fault;
 
-    /* sm_mutex to be unlocked to make sure order of locking is proper */
-    mutex_unlock(&qsfp->sm_mutex);
-    rtnl_lock();
-    mutex_lock(&qsfp->sm_mutex);
-
     for (i = 0 ; i < qsfp->num_lanes ; i++, rx_los >>= 1, tx_fault >>= 1,
          chgd_rxlos >>= 1, chgd_txf >>= 1) {
 
@@ -2548,9 +2598,6 @@ static void qsfp_lane_rxlos_txf(struct qsfp *qsfp, u8 chgd_rxlos, u8 chgd_txf)
         TRX_LOG_INFO(qsfp, "Not updating qsfp state as all lanes were"
                            " ifconfig down");
     }
-
-    mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
 }
 
 /*
@@ -2803,11 +2850,10 @@ void qsfp_check_state(struct qsfp *qsfp)
     chgd.tx_fault = oldf.tx_fault ^ newf->tx_fault;
 
     if (chgd.rx_los | chgd.tx_fault) {
-        /* lock will be released from qsfp_lane_rxlos_txf() */
         qsfp_lane_rxlos_txf(qsfp, chgd.rx_los, chgd.tx_fault);
-    } else {
-        mutex_unlock(&qsfp->sm_mutex);
     }
+
+    mutex_unlock(&qsfp->sm_mutex);
 }
 
 static void qsfp_poll(struct work_struct *work)
@@ -2881,9 +2927,6 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
 {
     TRX_LOG_INFO(qsfp, "");
 
-    /* rtnl_lock is not taken as insert wont create further lane insert event.
-     * Lane insert event created by revisit event
-     */
     mutex_lock(&qsfp->sm_mutex);
 
     qsfp->status.present = 1;
@@ -2900,14 +2943,12 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
 
     qsfp_stop_poll(qsfp);
 
-    rtnl_lock();
     mutex_lock(&qsfp->sm_mutex);
 
     qsfp->status.present = 0;
     qsfp_sm_event(qsfp, QSFP_E_REMOVE);
 
     mutex_unlock(&qsfp->sm_mutex);
-    rtnl_unlock();
 
     TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver removed", qsfp->port_num);
 }

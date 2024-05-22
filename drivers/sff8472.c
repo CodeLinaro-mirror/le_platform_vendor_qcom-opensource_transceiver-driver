@@ -135,7 +135,7 @@ static int sff8472_module_parse_power(struct qsfp *qsfp)
     return 0;
 }
 
-static int sff8472_disable_redundant_irq(const struct qsfp *qsfp)
+static int sff8472_disable_redundant_irq(struct qsfp *qsfp)
 {
     /* sff8472 doesnot support disabling any interrupts and there are
      * no redundant interrupts as well to disable them
@@ -143,12 +143,12 @@ static int sff8472_disable_redundant_irq(const struct qsfp *qsfp)
     return 0;
 }
 
-static int sff8472_handle_max_power_exceed(const struct qsfp *qsfp)
+static int sff8472_handle_max_power_exceed(struct qsfp *qsfp)
 {
     return -E_MAX_POWER_EXCEED;
 }
 
-static int sff8472_set_rate_select(const struct qsfp *qsfp, bool enable)
+static int sff8472_set_rate_select(struct qsfp *qsfp, bool enable)
 {
     int ret;
     u8 ctrl = 0;
@@ -307,7 +307,7 @@ static int sff8472_set_rate_select(const struct qsfp *qsfp, bool enable)
     return 0;
 }
 
-static int sff8472_mod_high_power(const struct qsfp *qsfp)
+static int sff8472_mod_high_power(struct qsfp *qsfp)
 {
     int ret;
     u8 val = 0;
@@ -329,7 +329,7 @@ static int sff8472_mod_high_power(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
 }
 
-static int sff8472_mod_low_power(const struct qsfp *qsfp)
+static int sff8472_mod_low_power(struct qsfp *qsfp)
 {
     int ret;
     u8 val = 0;
@@ -351,7 +351,7 @@ static int sff8472_mod_low_power(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8472_EXT_MOD_CTRL, &val, sizeof(val));
 }
 
-static void sff8472_eeprom_print(const struct qsfp *qsfp)
+static void sff8472_eeprom_print(struct qsfp *qsfp)
 {
     const struct sfp_eeprom_id *id = &qsfp->id.sff8472;
     char date[9];
@@ -508,12 +508,12 @@ static int sff8472_module_info(struct qsfp *qsfp,
     return 0;
 }
 
-static u8 sff8472_get_connector_type(const struct qsfp *qsfp)
+static u8 sff8472_get_connector_type(struct qsfp *qsfp)
 {
     return qsfp->id.sff8472.base.connector;
 }
 
-static int sff8472_get_lane_speed(const struct qsfp *qsfp,
+static int sff8472_get_lane_speed(struct qsfp *qsfp,
                                   trx_speed_mask *speed_mask)
 {
     phy_interface_t sfp_interface = PHY_INTERFACE_MODE_NA;
@@ -584,7 +584,7 @@ static int sff8472_get_lane_speed(const struct qsfp *qsfp,
 /*
  * Function to return the QSFP identifier value.
  */
-static u8 sff8472_get_transceiver_type(const struct qsfp *qsfp)
+static u8 sff8472_get_transceiver_type(struct qsfp *qsfp)
 {
     return qsfp->id.sff8472.base.phys_id;
 }
@@ -592,12 +592,12 @@ static u8 sff8472_get_transceiver_type(const struct qsfp *qsfp)
 /*
  * Function to return the link length range.
  */
-static trx_link_length_range sff8472_get_link_length_range(const struct qsfp *qsfp)
+static trx_link_length_range sff8472_get_link_length_range(struct qsfp *qsfp)
 {
     return qsfp_link_code_to_link_length_range(qsfp->id.sff8472.base.extended_cc);
 }
 
-static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
+static int sff8472_get_lanes_presence(struct qsfp *qsfp,
                                       trx_lane_cfg* laneinfo)
 {
     /* Only one lane supported by sfp */
@@ -607,14 +607,14 @@ static int sff8472_get_lanes_presence(const struct qsfp *qsfp,
 }
 
 
-static int sff8472_get_breakout_config(const struct qsfp *qsfp,
+static int sff8472_get_breakout_config(struct qsfp *qsfp,
                                        trx_breakout_cfg* bout_config)
 {
     *bout_config = TRX_FAR_END_NOT_MANAGED;
     return 0;
 }
 
-static int sff8472_lane_tx_enable(const struct lane *lane)
+static int sff8472_lane_tx_enable(struct lane *lane)
 {
     int ret;
     u8 ctrl = 0;
@@ -637,7 +637,7 @@ static int sff8472_lane_tx_enable(const struct lane *lane)
     return qsfp_write(lane->qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
 }
 
-static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
+static int sff8472_mod_tx_disable(struct qsfp *qsfp)
 {
     int ret;
     u8 ctrl = 0;
@@ -656,7 +656,7 @@ static int sff8472_mod_tx_disable(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8472_STATUS_CTRL, &ctrl, sizeof(ctrl));
 }
 
-static int sff8472_lane_tx_disable(const struct lane *lane)
+static int sff8472_lane_tx_disable(struct lane *lane)
 {
     if (lane->lane_num == 0) {
         return sff8472_mod_tx_disable(lane->qsfp);
@@ -665,7 +665,7 @@ static int sff8472_lane_tx_disable(const struct lane *lane)
     }
 }
 
-unsigned long sff8472_irq_delay(const struct qsfp *qsfp)
+unsigned long sff8472_irq_delay(struct qsfp *qsfp)
 {
     return msecs_to_jiffies(100);
 }

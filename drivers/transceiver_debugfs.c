@@ -522,6 +522,25 @@ static int fpc_debug_i2c_adapter_show(struct seq_file *s, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(fpc_debug_i2c_adapter);
 
+static int fpc_debug_reset_counter_show(struct seq_file *s, void *data)
+{
+    struct fpc *fpc = s->private;
+    struct qsfp *qsfpi;
+    u8 port;
+
+    for (port = 0 ; port < FPC_MAX_PORTS ; port++) {
+        qsfpi = fpc->qsfp[port];
+        if (qsfpi) {
+            seq_printf(s, "QSFP%u:\n", qsfpi->port_num);
+            seq_printf(s, "Reset counter:           %u\n", qsfpi->reset_counter);
+            seq_printf(s, "I2C stuck counter:       %u\n", qsfpi->i2c_stuck_counter);
+            seq_printf(s, "2nd i2c read/write fail: %u\n", qsfpi->read_write_2nd_fail);
+        }
+    }
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(fpc_debug_reset_counter);
 
 void fpc_debugfs_init(struct fpc *fpc)
 {
@@ -568,6 +587,15 @@ void fpc_debugfs_init(struct fpc *fpc)
                         &fpc_debug_i2c_adapter_fops);
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(fpc, "fpc i2c adapter debugfs_create_file fail,"
+                       " error %ld", PTR_ERR(file));
+        debugfs_remove_recursive(fpc->debugfs_dir);
+        fpc->debugfs_dir = NULL;
+    }
+
+    file = debugfs_create_file("reset_counter", 0600, fpc->debugfs_dir, fpc,
+                        &fpc_debug_reset_counter_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(fpc, "fpc reset counter debugfs_create_file fail,"
                        " error %ld", PTR_ERR(file));
         debugfs_remove_recursive(fpc->debugfs_dir);
         fpc->debugfs_dir = NULL;
