@@ -528,11 +528,28 @@ static void cmis_eeprom_print(struct qsfp *qsfp)
 
 static int cmis_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
 {
-    /* Eth tool not capable of detecting CMIS */
-    modinfo->type = 0;
-    modinfo->eeprom_len = 0;
+    modinfo->type = ETH_MODULE_SFF_8636;
+
+    if (qsfp->module_flat_mem == 0x01)
+    {
+        /* Flat memory (Page 00h supported only)
+         * page 00h (0-255 bytes) can be read.
+         */
+        modinfo->eeprom_len = TRX_EEPROM_PAGE_LENGTH;
+    }
+    else
+    {
+        /* upper pages 01h and 02h and 11h can read. */
+        modinfo->eeprom_len = ETH_MODULE_CMIS_MAX_LEN;
+    }
 
     return 0;
+}
+
+static int cmis_module_eeprom(struct qsfp *qsfp,
+                               struct ethtool_eeprom *ee, u8 *data)
+{
+    return qsfp_get_module_eeprom(qsfp,ee,data);
 }
 
 static u8 cmis_get_connector_type(struct qsfp *qsfp)
@@ -692,6 +709,7 @@ const struct qsfp_spec_ops cmis_spec_ops = {
     .mod_low_power = cmis_mod_low_power,
     .eeprom_print = cmis_eeprom_print,
     .module_info = cmis_module_info,
+    .module_eeprom = cmis_module_eeprom,
     .get_connector_type = cmis_get_connector_type,
     .get_lane_speed = cmis_get_lane_speed,
     .get_transceiver_type = cmis_get_transceiver_type,

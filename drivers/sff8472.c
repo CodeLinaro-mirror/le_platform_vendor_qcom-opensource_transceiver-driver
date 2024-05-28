@@ -497,15 +497,57 @@ static int sff8472_module_info(struct qsfp *qsfp,
                                struct ethtool_modinfo *modinfo)
 {
     if (qsfp->id.sff8472.ext.sff8472_compliance &&
-        !(qsfp->id.sff8472.ext.diagmon & SFP_DIAGMON_ADDRMODE)) {
+        (qsfp->id.sff8472.ext.diagmon & SFP_DIAGMON_DDM))
+    {
         modinfo->type = ETH_MODULE_SFF_8472;
         modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
-    } else {
+    }
+    else
+    {
         modinfo->type = ETH_MODULE_SFF_8079;
         modinfo->eeprom_len = ETH_MODULE_SFF_8079_LEN;
     }
 
+    TRX_LOG_INFO(qsfp, "Module_type: %d , Module length %d",
+                          modinfo->type, modinfo->eeprom_len);
     return 0;
+}
+
+static int sff8472_module_eeprom(struct qsfp *qsfp,
+                               struct ethtool_eeprom *ee, u8 *data)
+{
+    int ret = 0;
+    u32 offset = 0, length = 0, addr = 0, device = 0;
+    u8  page = 0;
+
+    if (ee->len == 0)
+    {
+        TRX_LOG_ERR(qsfp, "Invalid EEPROM length\n");
+        return -EINVAL;
+    }
+
+    offset = ee->offset;
+    length = ee->len;
+
+    if(offset >= TRX_EEPROM_PAGE_LENGTH)
+    {
+        device = 1;
+        offset -= TRX_EEPROM_PAGE_LENGTH;
+    }
+
+    addr = QSFP_ADDR(device, page, offset);
+
+    TRX_LOG_INFO(qsfp, "device: %u page: %u offset: %u addr: 0x%02X"
+                         " length %u\n", device, page, offset, addr, length);
+
+    ret = qsfp_read(qsfp, addr, data, length);
+    if (ret < 0)
+    {
+        TRX_LOG_ERR(qsfp, "Fail to read EEPROM from offset %u "
+                    "length %u. ret %d", offset, length, ret);
+    }
+
+    return ret;
 }
 
 static u8 sff8472_get_connector_type(struct qsfp *qsfp)
@@ -684,6 +726,7 @@ const struct qsfp_spec_ops sff8472_spec_ops = {
     .mod_low_power = sff8472_mod_low_power,
     .eeprom_print = sff8472_eeprom_print,
     .module_info = sff8472_module_info,
+    .module_eeprom = sff8472_module_eeprom,
     .get_connector_type = sff8472_get_connector_type,
     .get_lane_speed = sff8472_get_lane_speed,
     .get_transceiver_type = sff8472_get_transceiver_type,

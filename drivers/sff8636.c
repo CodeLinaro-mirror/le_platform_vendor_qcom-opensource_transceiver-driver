@@ -974,14 +974,23 @@ static int sff8636_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinf
     if (qsfp->id.sff8636.base.phys_ext_id >= SFF8636_REV_8636_1_3) {
         TRX_LOG_INFO(qsfp, "SFF_8636");
         modinfo->type = ETH_MODULE_SFF_8636;
-        modinfo->eeprom_len = ETH_MODULE_SFF_8636_LEN;
+        modinfo->eeprom_len = ETH_MODULE_SFF_8636_MAX_LEN;
     } else {
         TRX_LOG_INFO(qsfp, "SFF_8436");
         modinfo->type = ETH_MODULE_SFF_8436;
-        modinfo->eeprom_len = ETH_MODULE_SFF_8436_LEN;
+        modinfo->eeprom_len = ETH_MODULE_SFF_8436_MAX_LEN;
     }
 
+    TRX_LOG_INFO(qsfp, "Module_type: %d , Module length %d",
+                       modinfo->type, modinfo->eeprom_len);
+
     return 0;
+}
+
+static int sff8636_module_eeprom(struct qsfp *qsfp,
+                               struct ethtool_eeprom *ee, u8 *data)
+{
+    return qsfp_get_module_eeprom(qsfp,ee,data);
 }
 
 const char *sff8636_mod_revision_to_str(u8 mod_rev_value)
@@ -1258,6 +1267,7 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_low_power = sff8636_mod_low_power,
     .eeprom_print = sff8636_eeprom_print,
     .module_info = sff8636_module_info,
+    .module_eeprom = sff8636_module_eeprom,
     .get_connector_type = sff8636_get_connector_type,
     .get_lane_speed = sff8636_get_lane_speed,
     .get_transceiver_type = sff8636_get_transceiver_type,
