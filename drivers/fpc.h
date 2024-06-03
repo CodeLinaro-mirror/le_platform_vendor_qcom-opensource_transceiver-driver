@@ -123,5 +123,6 @@ extern void lane_shutdown(struct platform_device *pdev);
 extern void qsfp_module_insert_irq(struct qsfp *qsfp);
 extern void qsfp_module_remove_irq(struct qsfp *qsfp);
 extern void qsfp_irq(struct qsfp *qsfp);
+extern int fpc_qsfp_i2c_recover(struct qsfp *qsfp);
 
 #endif

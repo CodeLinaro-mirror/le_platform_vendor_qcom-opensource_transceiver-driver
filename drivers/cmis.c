@@ -74,7 +74,7 @@ static int cmis_mod_probe(struct qsfp *qsfp)
     return 0;
 }
 
-static int cmis_disable_redundant_irq(const struct qsfp *qsfp)
+static int cmis_disable_redundant_irq(struct qsfp *qsfp)
 {
     int ret;
     u8 mod_mask[] = {0xC7,
@@ -301,7 +301,7 @@ static void cmis_update_flags(struct qsfp *qsfp)
     }
 }
 
-static int cmis_mod_tx_disable(const struct qsfp *qsfp)
+static int cmis_mod_tx_disable(struct qsfp *qsfp)
 {
     u8 status = 0;
     int ret;
@@ -319,7 +319,7 @@ static int cmis_mod_tx_disable(const struct qsfp *qsfp)
     return qsfp_write(qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
 }
 
-static int cmis_lane_tx_enable(const struct lane *lane)
+static int cmis_lane_tx_enable(struct lane *lane)
 {
     u8 status = 0;
     int ret;
@@ -338,7 +338,7 @@ static int cmis_lane_tx_enable(const struct lane *lane)
     return qsfp_write(lane->qsfp, CMIS_TX_DISABLE, &status, sizeof(status));
 }
 
-static int cmis_lane_tx_disable(const struct lane *lane)
+static int cmis_lane_tx_disable(struct lane *lane)
 {
     u8 status = 0;
     int ret;
@@ -395,12 +395,12 @@ static int cmis_module_parse_power(struct qsfp *qsfp)
     return 0;
 }
 
-static int cmis_handle_max_power_exceed(const struct qsfp *qsfp)
+static int cmis_handle_max_power_exceed(struct qsfp *qsfp)
 {
     return -E_MAX_POWER_EXCEED;
 }
 
-static int cmis_mod_high_power(const struct qsfp *qsfp)
+static int cmis_mod_high_power(struct qsfp *qsfp)
 {
     int ret;
     u8 mod_ctrl = 0;
@@ -422,7 +422,7 @@ static int cmis_mod_high_power(const struct qsfp *qsfp)
     return qsfp_write(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
 }
 
-static int cmis_mod_low_power(const struct qsfp *qsfp)
+static int cmis_mod_low_power(struct qsfp *qsfp)
 {
     int ret;
     u8 mod_ctrl = 0;
@@ -444,7 +444,7 @@ static int cmis_mod_low_power(const struct qsfp *qsfp)
     return qsfp_write(qsfp, CMIS_MOD_GLOBAL_CTRL, &mod_ctrl, sizeof(mod_ctrl));
 }
 
-static void cmis_eeprom_print(const struct qsfp *qsfp)
+static void cmis_eeprom_print(struct qsfp *qsfp)
 {
     const struct cmis_eeprom_id *id = &qsfp->id.cmis;
     char date[9];
@@ -535,7 +535,7 @@ static int cmis_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinfo)
     return 0;
 }
 
-static u8 cmis_get_connector_type(const struct qsfp *qsfp)
+static u8 cmis_get_connector_type(struct qsfp *qsfp)
 {
     return qsfp->id.cmis.base.connector;
 }
@@ -543,7 +543,7 @@ static u8 cmis_get_connector_type(const struct qsfp *qsfp)
 /*
  * Function to get media lane information from EEPROM page 00h byte 210.
  */
-static int cmis_get_lanes_presence(const struct qsfp *qsfp,
+static int cmis_get_lanes_presence(struct qsfp *qsfp,
                                    trx_lane_cfg* laneinfo)
 {
     u8 channel = 0;
@@ -561,7 +561,7 @@ static int cmis_get_lanes_presence(const struct qsfp *qsfp,
  * Function to get lane supported speed based on the number of lanes'
  * present on trx.
  */
-static int cmis_get_lane_speed(const struct qsfp *qsfp,
+static int cmis_get_lane_speed(struct qsfp *qsfp,
                                trx_speed_mask *speed_mask)
 {
     u8 lane_cnt;
@@ -600,7 +600,7 @@ static int cmis_get_lane_speed(const struct qsfp *qsfp,
 /*
  * Function to return the QSFP identifier value.
  */
-static u8 cmis_get_transceiver_type(const struct qsfp *qsfp)
+static u8 cmis_get_transceiver_type(struct qsfp *qsfp)
 {
     return qsfp->id.cmis.base.phys_id;
 }
@@ -608,7 +608,7 @@ static u8 cmis_get_transceiver_type(const struct qsfp *qsfp)
 /*
  * Function to return the link length range.
  */
-static trx_link_length_range cmis_get_link_length_range(const struct qsfp *qsfp)
+static trx_link_length_range cmis_get_link_length_range(struct qsfp *qsfp)
 {
     u8 media_encoding = 0;
     u8 media_interface_id = 0;
@@ -644,7 +644,7 @@ static trx_link_length_range cmis_get_link_length_range(const struct qsfp *qsfp)
  * Function to return the cable assembly information from QSFP EEPROM
  * page 00h, byte 211 BIT [4-0].
  */
-static int cmis_get_breakout_config(const struct qsfp *qsfp,
+static int cmis_get_breakout_config(struct qsfp *qsfp,
                                     trx_breakout_cfg* bout_config)
 {
     /*  Assign breakout information to an 8-bit variable. */
@@ -653,7 +653,7 @@ static int cmis_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
-unsigned long cmis_irq_delay(const struct qsfp *qsfp)
+unsigned long cmis_irq_delay(struct qsfp *qsfp)
 {
     return 0;
 }
@@ -672,7 +672,7 @@ const char* cmis_revision_to_str(u8 mod_rev_value, char *revStr)
     return revStr;
 }
 
-static int cmis_set_rate_select(const struct qsfp *qsfp, bool enable)
+static int cmis_set_rate_select(struct qsfp *qsfp, bool enable)
 {
     /* Rate select not supported by CMIS */
     return 0;
