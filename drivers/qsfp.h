@@ -342,6 +342,15 @@ struct qsfp_simulation {
 };
 #endif
 
+struct qsfp_param_info {
+    u8 laser_temp_sup_flag:1;
+    u8 laser_temp_thsup_flag:1;
+    u8 unused:6;
+    u32  ltemp_reg_addr;
+    struct sff8636_param_cfg param_cfg;
+    struct sff8636_param_thresholds param_th;
+}__packed;
+
 struct qsfp {
     struct device *dev;
     struct fpc *fpc;
@@ -392,6 +401,7 @@ struct qsfp {
    /* Features supported/implemented */
    struct qsfp_support support;
    struct qsfp_diag diag;
+   struct qsfp_param_info param_info;
 };
 
 struct qsfp_spec_ops {
@@ -581,6 +591,9 @@ extern int cmis_remove_sysfs_files(struct qsfp *qsfp);
 extern int qsfp_module_parse_ddm_thresholds(struct qsfp* qsfp);
 int qsfp_get_module_eeprom(struct qsfp *qsfp,
                         struct ethtool_eeprom *ee, u8 *data);
+int parse_sff8636_page20_21(struct qsfp *qsfp);
+int qsfp_module_parse_laser_temp(struct qsfp *qsfp);
+extern long trx_calibrate_temp(__be16 tmp_val);
 
 extern const char * const link_length_range_to_str[];
 extern  const char * const link_type_to_str[];
