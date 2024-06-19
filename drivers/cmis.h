@@ -75,7 +75,7 @@ struct cmis_eeprom_ext {
     u8 reserved_0;
 
     /* byte 138 */
-    u16 nominal_wavelength;
+    __be16 nominal_wavelength;
     u16 wavelength_tolerance;
 
     /* byte 142 */
@@ -271,18 +271,18 @@ struct cmis_thresholds {
     u16 custom_low_alarm;
     u16 custom_high_warn;
     u16 custom_low_warn;
-    u16 rxpwr_high_alarm;
-    u16 rxpwr_low_alarm;
-    u16 rxpwr_high_warn;
-    u16 rxpwr_low_warn;
-    u16 bias_high_alarm;
-    u16 bias_low_alarm;
-    u16 bias_high_warn;
-    u16 bias_low_warn;
     u16 txpwr_high_alarm;
     u16 txpwr_low_alarm;
     u16 txpwr_high_warn;
     u16 txpwr_low_warn;
+    u16 bias_high_alarm;
+    u16 bias_low_alarm;
+    u16 bias_high_warn;
+    u16 bias_low_warn;
+    u16 rxpwr_high_alarm;
+    u16 rxpwr_low_alarm;
+    u16 rxpwr_high_warn;
+    u16 rxpwr_low_warn;
 }__packed;
 
 enum {
@@ -291,6 +291,8 @@ enum {
     CMIS_TEMP_VOLT_FLAGS             = QSFP_ADDR(0, 0x0,   9),
     CMIS_MOD_TEMPMON                 = QSFP_ADDR(0, 0x0,  14),
     CMIS_MOD_VCCMON                  = QSFP_ADDR(0, 0x0,  16),
+    CMIS_MOD_AUX2_MON                = QSFP_ADDR(0, 0x0,  20),
+    CMIS_MOD_AUX3_MON                = QSFP_ADDR(0, 0x0,  22),
     CMIS_MOD_GLOBAL_CTRL             = QSFP_ADDR(0, 0x0,  26),
     CMIS_MODULE_MASKS                = QSFP_ADDR(0, 0x0,  31),
     CMIS_ACTIVE_FIRMWARE             = QSFP_ADDR(0, 0x0,  39),
@@ -319,8 +321,29 @@ enum {
     CMIS_RX_CDR_LOL                  = QSFP_ADDR(0, 0x11, 148),
     CMIS_RX_POWER_FLAGS              = QSFP_ADDR(0, 0x11, 149),
     CMIS_TX_POWER                    = QSFP_ADDR(0, 0x11, 154),
+    CMIS_TX_POWER_LANE2              = QSFP_ADDR(0, 0x11, 156),
+    CMIS_TX_POWER_LANE3              = QSFP_ADDR(0, 0x11, 158),
+    CMIS_TX_POWER_LANE4              = QSFP_ADDR(0, 0x11, 160),
+    CMIS_TX_POWER_LANE5              = QSFP_ADDR(0, 0x11, 162),
+    CMIS_TX_POWER_LANE6              = QSFP_ADDR(0, 0x11, 164),
+    CMIS_TX_POWER_LANE7              = QSFP_ADDR(0, 0x11, 166),
+    CMIS_TX_POWER_LANE8              = QSFP_ADDR(0, 0x11, 168),
     CMIS_TX_BIAS                     = QSFP_ADDR(0, 0x11, 170),
+    CMIS_TX_BIAS_LANE2               = QSFP_ADDR(0, 0x11, 172),
+    CMIS_TX_BIAS_LANE3               = QSFP_ADDR(0, 0x11, 174),
+    CMIS_TX_BIAS_LANE4               = QSFP_ADDR(0, 0x11, 176),
+    CMIS_TX_BIAS_LANE5               = QSFP_ADDR(0, 0x11, 178),
+    CMIS_TX_BIAS_LANE6               = QSFP_ADDR(0, 0x11, 180),
+    CMIS_TX_BIAS_LANE7               = QSFP_ADDR(0, 0x11, 182),
+    CMIS_TX_BIAS_LANE8               = QSFP_ADDR(0, 0x11, 184),
     CMIS_RX_POWER                    = QSFP_ADDR(0, 0x11, 186),
+    CMIS_RX_POWER_LANE2              = QSFP_ADDR(0, 0x11, 188),
+    CMIS_RX_POWER_LANE3              = QSFP_ADDR(0, 0x11, 190),
+    CMIS_RX_POWER_LANE4              = QSFP_ADDR(0, 0x11, 192),
+    CMIS_RX_POWER_LANE5              = QSFP_ADDR(0, 0x11, 194),
+    CMIS_RX_POWER_LANE6              = QSFP_ADDR(0, 0x11, 196),
+    CMIS_RX_POWER_LANE7              = QSFP_ADDR(0, 0x11, 198),
+    CMIS_RX_POWER_LANE8              = QSFP_ADDR(0, 0x11, 200),
 
     CMIS_PAGE12_MASKS                = QSFP_ADDR(0, 0x12, 239),
 

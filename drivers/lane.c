@@ -22,14 +22,16 @@ static void lane_sm_mod_next(struct lane *lane, u8 state)
 
 static void lane_sm_link_upstream_linkdown(const struct lane *lane)
 {
+    rtnl_lock();
     sfp_link_down(lane->sfp_bus);
+    rtnl_unlock();
     TRX_LOG_INFO(lane, "sfp_link_down upstream ops called");
 }
 
 static int lane_tx_enable(struct lane *lane)
 {
     int ret;
-    u8 retry = 3;
+    u8 retry = QSFP_I2C_FAIL_RETRY;
 
     if (!lane->qsfp->support.tx_disable) {
         return 0;
@@ -51,7 +53,7 @@ static int lane_tx_enable(struct lane *lane)
 static int lane_tx_disable(struct lane *lane)
 {
     int ret;
-    u8 retry = 3;
+    u8 retry = QSFP_I2C_FAIL_RETRY;
 
     if (!lane->qsfp->support.tx_disable) {
         return 0;
@@ -72,7 +74,10 @@ static int lane_tx_disable(struct lane *lane)
 
 static void lane_sm_link_linkup(struct lane *lane)
 {
+    rtnl_lock();
     sfp_link_up(lane->sfp_bus);
+    rtnl_unlock();
+
     TRX_LOG_INFO(lane, "sfp_link_up upstream ops called");
 
     if (lane->status.eth_linkup) {
@@ -139,7 +144,9 @@ static void lane_sm_mod_remove(struct lane *lane)
          * reaching ethernet driver due to phylink framework
          */
         lane_sm_link_upstream_linkdown(lane);
+        rtnl_lock();
         sfp_module_remove(lane->sfp_bus);
+        rtnl_unlock();
         TRX_LOG_INFO(lane, "sfp_module_remove upstream ops called");
     }
 
@@ -150,9 +157,11 @@ static void lane_sm_mod_insert(struct lane *lane)
 {
     int ret;
 
+    rtnl_lock();
     /* Report the module insertion to the upstream device */
     ret = sfp_module_insert(lane->sfp_bus,
                            (const struct sfp_eeprom_id*)&lane->qsfp->id);
+    rtnl_unlock();
     if (ret < 0) {
         TRX_LOG_INFO(lane, "Ignore sfp_module_insert upstream"
                            " ops error. ret %d", ret);
@@ -247,6 +256,13 @@ static void lane_sm_link_check_linkup(struct lane *lane)
                                  lane->qsfp->port_num, lane->lane_num);
         lane_sm_mod_error(lane, QSFP_MOD_ERROR_TX_ENABLE_FAIL);
         return;
+
+    } else if (lane->sm_mod_state == QSFP_MOD_ERROR_TX_ENABLE_FAIL) {
+        /* Ifconfig up recovers TX enable fail error */
+        char *msg_tx_enable_fail_recovery[] = {QSFP_EVENT_TX_ENABLE_FAIL_RECOVERY, NULL};
+        lane->sm_mod_state = QSFP_MOD_PRESENT;
+        kobject_uevent_env(&lane->dev->kobj, KOBJ_CHANGE, msg_tx_enable_fail_recovery);
+        TRX_LOG_INFO(lane, "Fault Report Recovery: %s", msg_tx_enable_fail_recovery[0]);
     }
 
     if (lane->status.tx_fault) {
@@ -268,7 +284,8 @@ static void lane_sm_link(struct lane *lane, u32 event)
             }
         } else if (event == QSFP_E_DEV_UP) {
             /* if module present then only try to make it up */
-            if (lane->sm_mod_state == QSFP_MOD_PRESENT) {
+            if ((lane->sm_mod_state == QSFP_MOD_PRESENT) ||
+                (lane->sm_mod_state == QSFP_MOD_ERROR_TX_ENABLE_FAIL)) {
                 lane_sm_link_check_linkup(lane);
             }
         } else if (event == QSFP_E_TX_FAULT) {
@@ -374,9 +391,14 @@ static void lane_attach(struct sfp *sfp)
         return;
     }
 
-    /* rtnl_lock should not taken as it is already acquired by
-     * phylink before calling this callback function
+    /* rtnl lock already taken by the caller, it is released as transceiver
+     * operation may take longer time and order of locking rtnl and sm_mutex
+     * should follow the order of 1st sm_mutex 2nd rtnl. Attach event may call
+     * upstream ops sfp_module_insert() and rtnl lock is must before calling
+     * upstream ops. rtnl released here and taken before sfp_module_insert()
+     * and released immediately.
      */
+    rtnl_unlock();
     mutex_lock(&qsfp->sm_mutex);
 
     lane_sm_event(lane, QSFP_E_DEV_ATTACH);
@@ -384,6 +406,7 @@ static void lane_attach(struct sfp *sfp)
     qsfp_attach(lane);
 
     mutex_unlock(&qsfp->sm_mutex);
+    rtnl_lock();
 }
 
 static void lane_detach(struct sfp *sfp)
@@ -396,9 +419,11 @@ static void lane_detach(struct sfp *sfp)
         return;
     }
 
-    /* rtnl_lock should not taken as it is already acquired by
-     * phylink before calling this callback function
+    /* rtnl lock already taken by the caller, it is released as transceiver
+     * operation may take longer time and order of locking rtnl and sm_mutex
+     * should follow the order of 1st sm_mutex 2nd rtnl.
      */
+    rtnl_unlock();
     mutex_lock(&qsfp->sm_mutex);
 
     lane_sm_event(lane, QSFP_E_DEV_DETACH);
@@ -406,6 +431,7 @@ static void lane_detach(struct sfp *sfp)
     qsfp_detach(lane);
 
     mutex_unlock(&qsfp->sm_mutex);
+    rtnl_lock();
 }
 
 /* Called during ifconfig up */
@@ -417,10 +443,6 @@ void lane_start(struct lane *lane)
         TRX_LOG_ERR(lane, "qsfp is NULL");
         return;
     }
-
-    /* rtnl_lock should not taken as it is already acquired by
-     * phylink before calling this callback function
-     */
 
     lane_sm_event(lane, QSFP_E_DEV_UP);
 
@@ -436,10 +458,6 @@ void lane_stop(struct lane *lane)
         TRX_LOG_ERR(lane, "qsfp is NULL");
         return;
     }
-
-    /* rtnl_lock should not taken as it is already acquired by
-     * phylink before calling this callback function
-     */
 
     lane_sm_event(lane, QSFP_E_DEV_DOWN);
 
@@ -544,15 +562,15 @@ int lane_remove(struct platform_device *pdev)
         return 0;
     }
 
-    rtnl_lock();
     mutex_lock(&qsfp->sm_mutex);
+    rtnl_lock();
 
     lane->status.present = 0;
     lane_sm_event(lane, QSFP_E_REMOVE);
     qsfp->lane[lane->lane_num] = NULL;
 
-    mutex_unlock(&qsfp->sm_mutex);
     rtnl_unlock();
+    mutex_unlock(&qsfp->sm_mutex);
 
     if (lane->sfp_bus) {
         sfp_unregister_socket(lane->sfp_bus);

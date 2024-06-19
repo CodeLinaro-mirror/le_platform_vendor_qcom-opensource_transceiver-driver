@@ -232,7 +232,7 @@ static void sff8636_set_lane_rx_tx_irq_mask(bool enable, u8 lanes, u8 *buf)
     }
 }
 
-static int sff8636_disable_enable_lane_irq(const struct qsfp *qsfp, u8 lanes, bool enable)
+static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool enable)
 {
     int ret;
     u8 buf = 0;
@@ -374,7 +374,7 @@ static int sff8636_disable_enable_lane_irq(const struct qsfp *qsfp, u8 lanes, bo
     return 0;
 }
 
-static int sff8636_disable_redundant_irq(const struct qsfp *qsfp)
+static int sff8636_disable_redundant_irq(struct qsfp *qsfp)
 {
     int ret;
     u8 buf = 0;
@@ -417,14 +417,14 @@ static int sff8636_disable_redundant_irq(const struct qsfp *qsfp)
     return 0;
 }
 
-static int sff8636_handle_max_power_exceed(const struct qsfp *qsfp)
+static int sff8636_handle_max_power_exceed(struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_1TO4;
 
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
 
-static int sff8636_mod_high_power(const struct qsfp *qsfp)
+static int sff8636_mod_high_power(struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_HIGH;
 
@@ -438,7 +438,7 @@ static int sff8636_mod_high_power(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
 
-static int sff8636_mod_low_power(const struct qsfp *qsfp)
+static int sff8636_mod_low_power(struct qsfp *qsfp)
 {
     u8 val = SFF8636_POWER_CLASS_LOW;
 
@@ -452,7 +452,7 @@ static int sff8636_mod_low_power(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
 }
 
-static void sff8636_eeprom_print(const struct qsfp *qsfp)
+static void sff8636_eeprom_print(struct qsfp *qsfp)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
     char date[9];
@@ -778,7 +778,7 @@ static void sff8636_update_flags(struct qsfp *qsfp)
     }
 }
 
-static int sff8636_cig_mod_tx_disable(const struct qsfp *qsfp)
+static int sff8636_cig_mod_tx_disable(struct qsfp *qsfp)
 {
     u8 status = 0;
     u8 tmp = 0;
@@ -825,7 +825,7 @@ static bool sff8636_is_cig(const struct qsfp *qsfp)
     }
 }
 
-static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
+static int sff8636_mod_tx_disable(struct qsfp *qsfp)
 {
     u8 status = 0;
     int ret;
@@ -847,7 +847,7 @@ static int sff8636_mod_tx_disable(const struct qsfp *qsfp)
     return qsfp_write(qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
 }
 
-static int sff8636_cig_lane_tx_enable(const struct lane *lane)
+static int sff8636_cig_lane_tx_enable(struct lane *lane)
 {
     u8 status = 0;
     u8 tmp = 0;
@@ -885,7 +885,7 @@ static int sff8636_cig_lane_tx_enable(const struct lane *lane)
     }
 }
 
-static int sff8636_lane_tx_enable(const struct lane *lane)
+static int sff8636_lane_tx_enable(struct lane *lane)
 {
     u8 status = 0;
     int ret;
@@ -908,7 +908,7 @@ static int sff8636_lane_tx_enable(const struct lane *lane)
     return qsfp_write(lane->qsfp, SFF8636_TX_DISABLE, &status, sizeof(status));
 }
 
-static int sff8636_cig_lane_tx_disable(const struct lane *lane)
+static int sff8636_cig_lane_tx_disable(struct lane *lane)
 {
     u8 status = 0;
     u8 tmp = 0;
@@ -946,7 +946,7 @@ static int sff8636_cig_lane_tx_disable(const struct lane *lane)
     }
 }
 
-static int sff8636_lane_tx_disable(const struct lane *lane)
+static int sff8636_lane_tx_disable(struct lane *lane)
 {
     u8 status = 0;
     int ret;
@@ -1038,7 +1038,7 @@ const char *sff8636_mod_encoding_to_str(u8 mod_encoding)
     }
 }
 
-static u8 sff8636_get_connector_type(const struct qsfp *qsfp)
+static u8 sff8636_get_connector_type(struct qsfp *qsfp)
 {
     return qsfp->id.sff8636.base.connector;
 }
@@ -1120,7 +1120,7 @@ static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
  * Function to get the lane supported speed using linkcodes page 00h, byte 192,
  * or ethernet compliance codes page 00h, byte 131.
  */
-static int sff8636_get_lane_speed(const struct qsfp *qsfp,
+static int sff8636_get_lane_speed(struct qsfp *qsfp,
                                   trx_speed_mask *speed_mask)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
@@ -1152,7 +1152,7 @@ static int sff8636_get_lane_speed(const struct qsfp *qsfp,
 /*
  * Function to return the QSFP identifier value.
  */
-static u8 sff8636_get_transceiver_type(const struct qsfp *qsfp)
+static u8 sff8636_get_transceiver_type(struct qsfp *qsfp)
 {
     return qsfp->id.sff8636.base.phys_id;
 }
@@ -1160,7 +1160,7 @@ static u8 sff8636_get_transceiver_type(const struct qsfp *qsfp)
 /*
  * Function to return the link length range.
  */
-static trx_link_length_range sff8636_get_link_length_range(const struct qsfp *qsfp)
+static trx_link_length_range sff8636_get_link_length_range(struct qsfp *qsfp)
 {
     return qsfp_link_code_to_link_length_range(qsfp->id.sff8636.ext.link_codes);
 }
@@ -1168,7 +1168,7 @@ static trx_link_length_range sff8636_get_link_length_range(const struct qsfp *qs
 /*
  * Function to get channel information from EEPROM page 00h byte 113.
  */
-static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
+static int sff8636_get_lanes_presence(struct qsfp *qsfp,
                                       trx_lane_cfg* laneinfo)
 {
     u8 channel = 0;
@@ -1188,7 +1188,7 @@ static int sff8636_get_lanes_presence(const struct qsfp *qsfp,
 }
 
 
-static int sff8636_get_breakout_config(const struct qsfp *qsfp,
+static int sff8636_get_breakout_config(struct qsfp *qsfp,
                                        trx_breakout_cfg* bout_config)
 {
     u8 buf = 0;
@@ -1228,7 +1228,7 @@ static int sff8636_get_breakout_config(const struct qsfp *qsfp,
     return 0;
 }
 
-unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
+unsigned long sff8636_irq_delay(struct qsfp *qsfp)
 {
     /* Delay added as we are getting interrupt for RX/TX LOS recovery but within 60ms
      * we are getting RX/TX LOS so it is false RX/TX LOS recovery event. To avoid false
@@ -1237,7 +1237,7 @@ unsigned long sff8636_irq_delay(const struct qsfp *qsfp)
     return msecs_to_jiffies(60);
 }
 
-static int sff8636_set_rate_select(const struct qsfp *qsfp, bool enable)
+static int sff8636_set_rate_select(struct qsfp *qsfp, bool enable)
 {
     /* SFF8636 supports Rate select however it is not supported by our driver */
     return 0;
@@ -1267,4 +1267,6 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .set_rate_select = sff8636_set_rate_select,
     .irq_delay = sff8636_irq_delay,
     .create_debugfs = sff8636_create_debugfs_files,
+    .spec_sensor_sysfs_init = sff8636_create_sysfs_files,
+    .spec_sensor_sysfs_exit = sff8636_remove_sysfs_files,
 };

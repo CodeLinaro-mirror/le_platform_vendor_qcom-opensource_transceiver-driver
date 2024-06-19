@@ -22,6 +22,7 @@ enum {
     SFF8472_TX_BIAS              = QSFP_ADDR(1, 0, 100),
     SFF8472_TX_POWER             = QSFP_ADDR(1, 0, 102),
     SFF8472_RX_POWER             = QSFP_ADDR(1, 0, 104),
+    SFF8472_LASER_TEMP_WL        = QSFP_ADDR(1, 0, 106),
     SFF8472_STATUS_CTRL          = QSFP_ADDR(1, 0, 110),
     SFF8472_ALARM_WARN           = QSFP_ADDR(1, 0, 112),
     SFF8472_EXT_MOD_CTRL         = QSFP_ADDR(1, 0, 118),

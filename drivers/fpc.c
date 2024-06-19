@@ -29,6 +29,42 @@ MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
 
 void *trx_ipc_log_buf = NULL;
 
+/* fpc_write_nolock needed in case of qsfp i2c bus recovery as caller has already taken i2c bus lock */
+static int fpc_write_nolock(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
+{
+    struct i2c_msg msgs[1];
+    u8 bus_addr;
+    int ret;
+
+    if (!fpc) {
+        TRX_LOG_ERR_NODEV("fpc is NULL");
+        return -EINVAL;
+    }
+
+    bus_addr = fpc->i2c_address;
+
+    msgs[0].addr = bus_addr;
+    msgs[0].flags = 0;
+    msgs[0].len = 1 + len;
+    msgs[0].buf = kmalloc(1 + len, GFP_KERNEL);
+    if (!msgs[0].buf) {
+        return -ENOMEM;
+    }
+
+    msgs[0].buf[0] = dev_addr;
+    memcpy(&msgs[0].buf[1], buf, len);
+
+    ret = __i2c_transfer(fpc->i2c, msgs, ARRAY_SIZE(msgs));
+
+    kfree(msgs[0].buf);
+
+    if (ret < 0) {
+        return ret;
+    }
+
+    return ret == ARRAY_SIZE(msgs) ? 0 : -EIO;
+}
+
 /*
  * Reads FPC402 register memory map using i2c transaction
  * returns 0 on successful read of 'len' bytes otherwise error
@@ -244,40 +280,19 @@ static int fpc_read_i2c_stuck_status(const struct fpc *fpc)
         for (i = 0 , buf >>= 4; i < FPC_MAX_PORTS ; buf >>= 1, i++) {
             if (buf & 1) {
                 qsfp = fpc->qsfp[i];
-                if (!qsfp) {
+                if (qsfp) {
+                    kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_scl_stuck);
+                    TRX_LOG_ERR(qsfp, "Port-%u: Transceiver I2C clock "
+                    "line stuck. Recovery triggered", qsfp->port_num);
+                    TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver I2C clock "
+                    "line stuck. Recovery triggered", qsfp->port_num);
+                    qsfp->i2c_stuck_counter++;
+                    i2c_lock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
+                    fpc_qsfp_i2c_recover(qsfp);
+                    i2c_unlock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
+                } else {
                     TRX_LOG_ERR(fpc, "qsfp null for port %u", i);
-                    continue;
                 }
-
-                mutex_lock(&qsfp->sm_mutex);
-
-                /* Module state already in one of the error state and upcoming
-                 * state also an error state, in that case keep first error state
-                 */
-                if ((qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C) ||
-                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
-                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C_SDA_STUCK)) {
-                    mutex_unlock(&qsfp->sm_mutex);
-                    TRX_LOG_INFO(qsfp, "Module already in error state '%s'. "
-                                       "Ignoring I2C SCL Stuck",
-                                       mod_state_to_str(qsfp->sm_mod_state));
-                    continue;
-                }
-
-                /* Only QSFP state set to error while lane state not changed
-                 * as data can still flow in this state
-                 */
-                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR_I2C_SCL_STUCK, 0);
-
-                mutex_unlock(&qsfp->sm_mutex);
-
-                TRX_LOG_ERR(qsfp, "Module state set to %s",
-                            mod_state_to_str(QSFP_MOD_ERROR_I2C_SCL_STUCK));
-
-                kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_scl_stuck);
-                TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_scl_stuck[0]);
-                TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver I2C clock "
-                                         "line stuck", qsfp->port_num);
             }
         }
     }
@@ -298,40 +313,19 @@ static int fpc_read_i2c_stuck_status(const struct fpc *fpc)
         for (i = 0 , buf >>= 4; i < FPC_MAX_PORTS ; buf >>= 1, i++) {
             if (buf & 1) {
                 qsfp = fpc->qsfp[i];
-                if (!qsfp) {
+                if (qsfp) {
+                    kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_sda_stuck);
+                    TRX_LOG_ERR(qsfp, "Port-%u: Transceiver I2C data "
+                    "line stuck. Recovery triggered", qsfp->port_num);
+                    TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver I2C data "
+                    "line stuck. Recovery triggered", qsfp->port_num);
+                    qsfp->i2c_stuck_counter++;
+                    i2c_lock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
+                    fpc_qsfp_i2c_recover(qsfp);
+                    i2c_unlock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
+                } else {
                     TRX_LOG_ERR(fpc, "qsfp null for port %u", i);
-                    continue;
                 }
-
-                mutex_lock(&qsfp->sm_mutex);
-
-                /* Module state already in one of the error state and upcoming
-                 * state also an error state, in that case keep first error state
-                 */
-                if ((qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C) ||
-                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
-                    (qsfp->sm_mod_state == QSFP_MOD_ERROR_I2C_SCL_STUCK)) {
-                    mutex_unlock(&qsfp->sm_mutex);
-                    TRX_LOG_INFO(qsfp, "Module already in error state '%s'. "
-                                       "Ignoring I2C SDA Stuck",
-                                       mod_state_to_str(qsfp->sm_mod_state));
-                    continue;
-                }
-
-                /* Only QSFP state set to error while lane state not changed
-                 * as data can still flow in this state
-                 */
-                qsfp_sm_mod_next(qsfp, QSFP_MOD_ERROR_I2C_SDA_STUCK, 0);
-
-                mutex_unlock(&qsfp->sm_mutex);
-
-                TRX_LOG_ERR(qsfp, "Module state set to %s",
-                            mod_state_to_str(QSFP_MOD_ERROR_I2C_SDA_STUCK));
-
-                kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_sda_stuck);
-                TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_sda_stuck[0]);
-                TRX_QXDM_LOG_ERROR(qsfp, "Port-%u: Transceiver I2C data "
-                                         "line stuck", qsfp->port_num);
             }
         }
     }
@@ -524,6 +518,38 @@ static int fpc_reset(const struct fpc *fpc)
     }
 
     return ret;
+}
+
+int fpc_qsfp_i2c_recover(struct qsfp *qsfp)
+{
+    int ret;
+    u8 buf;
+
+    TRX_LOG_INFO(qsfp, "");
+
+    buf = 1 << qsfp->port_num;
+
+    ret = fpc_write_nolock(qsfp->fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Fail to write reset register. ret %d", ret);
+        return ret;
+    }
+
+    buf = 0;
+
+    ret = fpc_write_nolock(qsfp->fpc, FPC_RESET_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Fail to revert port reset sequence. ret %d", ret);
+        return ret;
+    }
+
+    qsfp->reset_counter++;
+
+    if (qsfp->fpc_qsfp_i2c_recover_delay > 0) {
+        msleep(qsfp->fpc_qsfp_i2c_recover_delay);
+    }
+
+    return 0;
 }
 
 /* Reset all 4 ports using reset gpio line */
@@ -864,8 +890,8 @@ module_init(fpc_qsfp_init);
  */
 static void fpc_qsfp_exit(void)
 {
-    platform_driver_unregister(&fpc_qsfp_driver);
     transceiver_debugfs_exit();
+    platform_driver_unregister(&fpc_qsfp_driver);
 
     if (trx_ipc_log_buf) {
         ipc_log_context_destroy(trx_ipc_log_buf);

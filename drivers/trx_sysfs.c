@@ -9,6 +9,36 @@
 
 #define MAX_SYSFS_TRX_FILE_LENGTH (1024)
 
+enum {
+    TX_POWER = 0,
+    RX_POWER,
+    TX_BIAS,
+    TEMP_HALRM,
+    TEMP_LALRM,
+    TEMP_HWARN,
+    TEMP_LWARN,
+    VOLT_HALRM,
+    VOLT_LALRM,
+    VOLT_HWARN,
+    VOLT_LWARN,
+    TXPWR_HALRM,
+    TXPWR_LALRM,
+    TXPWR_HWARN,
+    TXPWR_LWARN,
+    RXPWR_HALRM,
+    RXPWR_LALRM,
+    RXPWR_HWARN,
+    RXPWR_LWARN,
+    TXI_HALRM,
+    TXI_LALRM,
+    TXI_HWARN,
+    TXI_LWARN,
+    LTEMP_HALRM,
+    LTEMP_LALRM,
+    LTEMP_HWARN,
+    LTEMP_LWARN
+};
+
 /* Function to export device state information like
  * port number, link status, and module presence.
  */
@@ -1669,6 +1699,2521 @@ static ssize_t trx_ddm_thresholds_show(struct device *dev,
     }
 
 }
+struct qsfp* get_qsfp_kobj(struct kobject *kobj)
+{
+    struct device *dev = kobj_to_dev(kobj->parent);
+    struct qsfp *qsfp = NULL;
+
+    if(!dev) {
+        TRX_LOG_ERR_NODEV("Device structure is NULL\n");
+        return NULL;
+    }
+
+    qsfp= dev_get_drvdata(dev);
+    if(!qsfp) {
+        TRX_LOG_ERR_NODEV("QSFP is NULL\n");
+        return NULL;
+    }
+
+    return qsfp;
+}
+static ssize_t temp_show(struct kobject *kobj, struct kobj_attribute *attr,
+                                                   char *buf)
+{
+    struct sff8472_temp_diag temp_ext_cal = {0};
+    struct cmis_eeprom_id *cmis_id;
+    struct qsfp *qsfp = NULL;
+    struct sfp_eeprom_id *id;
+    int16_t tempc = 0;
+    u8 *spec_id;
+    int ret = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 96-97 */
+            ret = qsfp_read(qsfp, SFF8472_TEMP, &tempc,
+                                        sizeof(tempc));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);;
+                return -EINVAL;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                return sysfs_emit(buf, "%ld\n",
+                          trx_calibrate_temp(tempc));
+            }
+            else /* SFP supported External calibration */
+            {
+                ret = qsfp_read(qsfp, SFF8472_TEMP_EXT, &temp_ext_cal,
+                                      sizeof(temp_ext_cal));
+                if (ret < 0) {
+                    TRX_LOG_ERR(qsfp, "QSFP read error for temperature "
+                            "external calibration constants: %d\n\n", ret);
+                    return -EINVAL;
+                }
+                return sysfs_emit(buf, "%ld\n", trx_ext_temp_ddm(tempc,
+                                               &temp_ext_cal));
+            }
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp, "TRX temperature measurement not "
+                                "supported on non-DDM transceiver devices.\n");
+            return -EINVAL;
+        }
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.temp_flags) {
+            TRX_LOG_ERR(qsfp, "TRX temperature measurement not "
+                               "supported on non-DDM transceiver devices.\n");
+            return -EINVAL;
+        }
+        /* Page 00h Bytes 22-23 */
+        ret = qsfp_read(qsfp, SFF8636_TEMPERATURE, &tempc,
+                                           sizeof(tempc));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp,"QSFP read error: %d\n", ret);
+            return -EINVAL;
+        }
+
+        return sysfs_emit(buf,"%ld\n", trx_calibrate_temp(tempc));
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp,"TRX temperature measurement"
+                                            " not supported\n");
+            return -EINVAL;
+        }
+
+        /*Support advertised in page 01h:159.0 */
+        if (!cmis_id->ext.temp_mon_sup) {
+            TRX_LOG_ERR(qsfp, "TRX temperature measurement"
+                              " not supported\n");
+            return -EINVAL;
+        }
+
+        /* Page 00h Bytes 14-15 */
+        ret = qsfp_read(qsfp, CMIS_MOD_TEMPMON, &tempc,
+                              sizeof(tempc));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -EINVAL;
+        }
+
+        return sysfs_emit(buf, "%ld\n", trx_calibrate_temp(tempc));
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier "
+                          "{0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+static ssize_t volt_show(struct kobject *kobj, struct kobj_attribute *attr,
+                                                   char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    struct cmis_eeprom_id *cmis_id;
+    struct sfp_eeprom_id *id;
+    u8 *spec_id;
+    u16 supply_voltage_t = 0;
+    struct sff8472_vcc_diag vcc_ext_cal = {0};
+    int ret = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+        if(id->ext.diagmon & SFF8472_DIAGMON_DDM)
+        {
+            /* Address A2h, Bytes 98-99 */
+            ret = qsfp_read(qsfp, SFF8472_VCC, &supply_voltage_t,
+                                       sizeof(supply_voltage_t));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+                return -EINVAL;
+            }
+
+            /* Check for Internal calibration for DDM supported SFP,
+             * Address A0h, Byte 92 Bit 5.
+             */
+            if(id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+            {
+                return sysfs_emit(buf, "%ld\n",
+                       trx_calibrate_vcc(supply_voltage_t));
+            }
+            else /* SFP supported External calibration */
+            {
+                ret = qsfp_read(qsfp, SFF8472_VCC_EXT, &vcc_ext_cal,
+                        sizeof(vcc_ext_cal));
+                if (ret < 0) {
+                    TRX_LOG_ERR(qsfp,"QSFP read error: %d", ret);
+                    return -EINVAL;
+                }
+                return sysfs_emit(buf, "%ld\n",
+                                 trx_ext_vcc_ddm(supply_voltage_t,
+                                 &vcc_ext_cal));
+            }
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp,"TRX supply voltage measurement "
+                          "not supported on non-DDM transceiver devices.\n");
+            return -EINVAL;
+        }
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        if (!qsfp->support.volt_flags) {
+            TRX_LOG_ERR(qsfp,"TRX supply voltage measurement "
+                           "not supported on non-DDM transceiver devices.\n");
+            return -EINVAL;
+        }
+        /* Page 00h Bytes 26-27 */
+        ret = qsfp_read(qsfp, SFF8636_SUPPLY_VOLTAGE, &supply_voltage_t,
+                              sizeof(supply_voltage_t));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -EINVAL;
+        }
+
+        return sysfs_emit(buf, "%ld\n",
+                              trx_calibrate_vcc(supply_voltage_t));
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp,"TRX supply voltage measurement"
+                                            " not supported\n");
+            return -EINVAL;
+        }
+
+        /*Support advertised in page 01h:159.1 */
+        if (!cmis_id->ext.volt_mon_sup) {
+            TRX_LOG_ERR(qsfp, "TRX supply voltage measurement"
+                                            " not supported\n");
+            return -EINVAL;
+        }
+
+        /* Page 00h Bytes 16-17 */
+        ret = qsfp_read(qsfp, CMIS_MOD_VCCMON, &supply_voltage_t,
+                              sizeof(supply_voltage_t));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -EINVAL;
+        }
+
+        return sysfs_emit(buf,"%ld\n",
+                              trx_calibrate_vcc(supply_voltage_t));
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                                   " {0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+static ssize_t vendor_name_show(struct kobject *kobj,
+                                      struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    struct sfp_eeprom_id *sff8472_id;
+    struct sff8636_eeprom_id *sff8636_id;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+     case SFF8024_ID_SFP:
+     case SFF8024_ID_SFF_8472:
+         sff8472_id = &qsfp->id.sff8472;
+         return sysfs_emit(buf, "%.*s\n",
+                                (int)sizeof(sff8472_id->base.vendor_name),
+                                sff8472_id->base.vendor_name);
+     case SFF8024_ID_QSFP28_8636:
+     case SFF8024_ID_QSFP_8436_8636:
+         sff8636_id = &qsfp->id.sff8636;
+         return sysfs_emit(buf, "%.*s\n",
+                                (int)sizeof(sff8636_id->base.vendor_name),
+                                sff8636_id->base.vendor_name);
+     case SFF8024_ID_QSFPDD_CMIS:
+         cmis_id = &qsfp->id.cmis;
+         return sysfs_emit(buf, "%.*s\n",
+                                (int)sizeof(cmis_id->base.vendor_name),
+                                cmis_id->base.vendor_name);
+
+     default:
+         TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                           " {0x%02X}\n", *spec_id);
+         return -EINVAL;
+     }
+}
+
+static ssize_t vendor_pn_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    struct sfp_eeprom_id *sff8472_id;
+    struct sff8636_eeprom_id *sff8636_id;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+     case SFF8024_ID_SFP:
+     case SFF8024_ID_SFF_8472:
+         sff8472_id = &qsfp->id.sff8472;
+         return sysfs_emit(buf, "%.*s\n",
+                                (int)sizeof(sff8472_id->base.vendor_pn),
+                                sff8472_id->base.vendor_pn);
+     case SFF8024_ID_QSFP28_8636:
+     case SFF8024_ID_QSFP_8436_8636:
+         sff8636_id = &qsfp->id.sff8636;
+         return sysfs_emit(buf, "%.*s\n",
+                                (int)sizeof(sff8636_id->base.vendor_pn),
+                                sff8636_id->base.vendor_pn);
+     case SFF8024_ID_QSFPDD_CMIS:
+         cmis_id = &qsfp->id.cmis;
+         return sysfs_emit(buf, "%.*s\n", (int)sizeof(cmis_id->base.vendor_pn),
+                                cmis_id->base.vendor_pn);
+
+     default:
+         TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                           " {0x%02X}\n", *spec_id);
+         return -EINVAL;
+     }
+}
+
+static ssize_t vendor_sn_show(struct kobject *kobj,
+                                   struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    struct sfp_eeprom_id *sff8472_id;
+    struct sff8636_eeprom_id *sff8636_id;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+     case SFF8024_ID_SFP:
+     case SFF8024_ID_SFF_8472:
+         sff8472_id = &qsfp->id.sff8472;
+
+         return sysfs_emit(buf, "%.*s\n",
+         (int)sizeof(sff8472_id->ext.vendor_sn), sff8472_id->ext.vendor_sn);
+
+     case SFF8024_ID_QSFP28_8636:
+     case SFF8024_ID_QSFP_8436_8636:
+         sff8636_id = &qsfp->id.sff8636;
+
+         return sysfs_emit(buf, "%.*s\n",
+         (int)sizeof(sff8636_id->ext.vendor_sn), sff8636_id->ext.vendor_sn);
+ 
+     case SFF8024_ID_QSFPDD_CMIS:
+         cmis_id = &qsfp->id.cmis;
+
+         return sysfs_emit(buf, "%.*s\n",
+         (int)sizeof(cmis_id->base.vendor_sn), cmis_id->base.vendor_sn);
+
+     default:
+         TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                           " {0x%02X}\n", *spec_id);
+         return -EINVAL;
+     }
+}
+
+static ssize_t wavelength_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    struct sfp_eeprom_id *sff8472_id;
+    struct sff8636_eeprom_id *sff8636_id;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        if ((!sff8472_id->base.sfp_ct_passive) &&
+            (!sff8472_id->base.sfp_ct_active))
+        {
+            return sysfs_emit(buf, "%ld\n",
+                   be16_to_cpu(sff8472_id->base.optical_wavelength));
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp, "Unknown Wavelength\n");
+            return -EINVAL;
+        }
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        sff8636_id = &qsfp->id.sff8636;
+        if ((sff8636_id->base.device_tech & 0xF0) >=
+            SFF8636_TRANS_COPPER_UNEQUAL)
+        {
+            /* Wavelength not defined for copper cable */
+            TRX_LOG_ERR(qsfp, "Unknown Wavelength\n");
+            return -EINVAL;
+        }
+        else
+        {
+            /* Laser wavelength in nm */
+            return sysfs_emit(buf, "%ld\n",
+                be16_to_cpu(sff8636_id->base.wavelength)/20);
+        }
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        if(cmis_id->base.media_interface_tech >= 0x0A)
+        {
+            /* Wavelength not defined for copper cable */
+            TRX_LOG_ERR(qsfp, "Unknown Wavelength\n");
+            return -EINVAL;
+        }
+        else if (!qsfp->module_flat_mem)
+        {
+            /* Laser wavelength in nm */
+            return sysfs_emit(buf, "%ld\n",
+                   be16_to_cpu(cmis_id->ext.nominal_wavelength)/20);
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp, "Unknown Wavelength\n");
+            return -EINVAL;
+        }
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                          " {0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+static ssize_t mod_info_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    u8 *spec_id;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+    return sysfs_emit(buf, "%s\n", mod_identifier_to_str(*spec_id));
+}
+
+static ssize_t laser_temp_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id;
+    struct sfp_eeprom_id *id;
+    struct sff8636_eeprom_ext *ext;
+    __be16 l_tempc = 0;
+    int ret = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        id = &qsfp->id.sff8472;
+        /* Check for DDM support, Address A0h, Byte 92 Bit 6 and
+         * Internalcalibration */
+        if((id->ext.diagmon & SFF8472_DIAGMON_DDM) &&
+           (id->ext.diagmon & SFF8472_DIAGMON_INT_CAL))
+        {
+            /* Adress A2h, Bytes 106-107 */
+            ret = qsfp_read(qsfp, SFF8472_LASER_TEMP_WL, &l_tempc,
+                                    sizeof(l_tempc));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);;
+                return -EINVAL;
+            }
+
+            if(l_tempc == 0x00) {
+                TRX_LOG_ERR(qsfp, "Laser temperature unknown\n");
+                return -EINVAL;
+            }
+
+            return sysfs_emit(buf, "%ld\n", trx_calibrate_temp(l_tempc));
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp, "Laser temperature not supported\n");
+            return -EINVAL;
+        }
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ext = &qsfp->id.sff8636.ext;
+        /* Check page 20, 21 support from page 00h byte 195 bit 0 */
+        if(!ext->page20_21)
+        {
+            TRX_LOG_ERR(qsfp, "Laser temperature not supported\n");
+             return -EINVAL;
+        }
+        else
+        {
+             /* Transceiver support page 20 & 21 but supported
+              * Transceiver not available to test.*/
+             TRX_LOG_ERR(qsfp, "SFF-8636 laser temperature"
+                               " support not added\n");
+             return -EINVAL;
+        }
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+            memory modules*/
+            TRX_LOG_ERR(qsfp,"TRX Laser temperature measurement"
+                                            " not supported\n");
+            return -EINVAL;
+        }
+
+        /* AUX2 denotes Laser temperature */
+        if(!(cmis_id->ext.aux_mon_obs & BIT(1)) &&
+            cmis_id->ext.aux2_mon_sup)
+        {
+            ret = qsfp_read(qsfp, CMIS_MOD_AUX2_MON, &l_tempc,
+                                    sizeof(l_tempc));
+        }
+        else if(!(cmis_id->ext.aux_mon_obs & BIT(2)) &&
+                 cmis_id->ext.aux3_mon_sup)
+        {
+          /* AUX3 denotes Laser temperature */
+            ret = qsfp_read(qsfp, CMIS_MOD_AUX3_MON, &l_tempc,
+                                    sizeof(l_tempc));
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp, "Laser temperature unknown\n");
+            return -EINVAL;
+        }
+
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);;
+            return -EINVAL;
+        }
+
+        if(l_tempc == 0x00) {
+            TRX_LOG_ERR(qsfp, "Laser temperature unknown\n");
+            return -EINVAL;
+        }
+        return sysfs_emit(buf, "%ld\n", trx_calibrate_temp(l_tempc));
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier {0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+int common_temp_threshold(struct qsfp *qsfp, int attr, long* value)
+{
+    struct sff8472_ddm_thresholds *sff8472_ddm_limits;
+    struct sff8636_ddm_thresholds *sff8636_ddm_limits;
+    struct cmis_thresholds *cmis_ddm_limits;
+    struct sfp_eeprom_id *sff8472_id;
+    u8 *spec_id;
+    struct sff8472_temp_diag temp_ext_cal = {0};
+    int ret = 0;
+    __be16 temp_threshold;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
+        {
+           TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                             "warning threshold limits\n");
+           return -EINVAL;
+        }
+
+        sff8472_ddm_limits = &qsfp->diag.sff8472_ddm_limits;
+
+        if(attr == TEMP_HALRM)
+            temp_threshold = sff8472_ddm_limits->temp_high_alarm;
+        else if(attr == TEMP_LALRM)
+            temp_threshold = sff8472_ddm_limits->temp_low_alarm;
+        else if(attr == TEMP_HWARN)
+            temp_threshold = sff8472_ddm_limits->temp_high_warn;
+        else if(attr == TEMP_LWARN)
+            temp_threshold = sff8472_ddm_limits->temp_low_warn;
+        else
+            return -EINVAL;
+
+       if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_EXT_CAL)
+       {
+           ret = qsfp_read(qsfp, SFF8472_TEMP_EXT, &temp_ext_cal,
+                                 sizeof(temp_ext_cal));
+           if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error for temperature "
+                             "external calibration constants: %d\n\n", ret);
+                return -EINVAL;
+           }
+           *value = trx_ext_temp_ddm(temp_threshold, &temp_ext_cal);
+       }
+       else /* SFP supported Internal calibration */
+       {
+          *value = trx_calibrate_temp(temp_threshold);
+       }
+       return 0;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        sff8636_ddm_limits = &qsfp->diag.sff8636_ddm_limits;
+
+        if(attr == TEMP_HALRM)
+            temp_threshold = sff8636_ddm_limits->temp_high_alarm;
+        else if(attr == TEMP_LALRM)
+            temp_threshold = sff8636_ddm_limits->temp_low_alarm;
+        else if(attr == TEMP_HWARN)
+            temp_threshold = sff8636_ddm_limits->temp_high_warn;
+        else if(attr == TEMP_LWARN)
+            temp_threshold = sff8636_ddm_limits->temp_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_temp(temp_threshold);
+        return 0;
+    case SFF8024_ID_QSFPDD_CMIS:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        cmis_ddm_limits = &qsfp->diag.cmis_ddm_limits;
+
+        if(attr == TEMP_HALRM)
+            temp_threshold = cmis_ddm_limits->temp_high_alarm;
+        else if(attr == TEMP_LALRM)
+            temp_threshold = cmis_ddm_limits->temp_low_alarm;
+        else if(attr == TEMP_HWARN)
+            temp_threshold = cmis_ddm_limits->temp_high_warn;
+        else if(attr == TEMP_LWARN)
+            temp_threshold = cmis_ddm_limits->temp_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_temp(temp_threshold);
+        return 0;
+    }
+
+    return 0;
+}
+
+static ssize_t temp_halrm_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long temp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_temp_threshold(qsfp,TEMP_HALRM,&temp_threshold);
+    if(ret < 0)
+         return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",temp_threshold);
+}
+
+static ssize_t temp_lalrm_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long temp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_temp_threshold(qsfp,TEMP_LALRM,&temp_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",temp_threshold);
+}
+
+static ssize_t temp_hwarn_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long temp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_temp_threshold(qsfp, TEMP_HWARN,&temp_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",temp_threshold);
+
+}
+
+static ssize_t temp_lwarn_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long temp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_temp_threshold(qsfp, TEMP_LWARN,&temp_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",temp_threshold);
+}
+
+
+int common_volt_threshold(struct qsfp *qsfp, int attr, long* value)
+{
+    struct sff8472_ddm_thresholds *sff8472_ddm_limits;
+    struct sff8636_ddm_thresholds *sff8636_ddm_limits;
+    struct cmis_thresholds *cmis_ddm_limits;
+    struct sfp_eeprom_id *sff8472_id;
+    u8 *spec_id;
+    struct sff8472_vcc_diag vcc_ext_cal = {0};
+    int ret = 0;
+    __be16 volt_threshold;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
+        {
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                             "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        sff8472_ddm_limits = &qsfp->diag.sff8472_ddm_limits;
+
+        if(attr == VOLT_HALRM)
+            volt_threshold = sff8472_ddm_limits->volt_high_alarm;
+        else if(attr == VOLT_LALRM)
+            volt_threshold = sff8472_ddm_limits->volt_low_alarm;
+        else if(attr == VOLT_HWARN)
+            volt_threshold = sff8472_ddm_limits->volt_high_warn;
+        else if(attr == VOLT_LWARN)
+            volt_threshold = sff8472_ddm_limits->volt_low_warn;
+        else
+            return -EINVAL;
+
+       if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_EXT_CAL)
+       {
+           ret = qsfp_read(qsfp, SFF8472_VCC_EXT, &vcc_ext_cal,
+                                 sizeof(vcc_ext_cal));
+           if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error for voltage "
+                             "external calibration constants: %d\n\n", ret);
+                return -EINVAL;
+           }
+           *value = trx_ext_vcc_ddm(volt_threshold, &vcc_ext_cal);
+       }
+       else /* SFP supported Internal calibration */
+       {
+          *value = trx_calibrate_vcc(volt_threshold);
+       }
+       return 0;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        sff8636_ddm_limits = &qsfp->diag.sff8636_ddm_limits;
+
+        if(attr == VOLT_HALRM)
+            volt_threshold = sff8636_ddm_limits->volt_high_alarm;
+        else if(attr == VOLT_LALRM)
+            volt_threshold = sff8636_ddm_limits->volt_low_alarm;
+        else if(attr == VOLT_HWARN)
+            volt_threshold = sff8636_ddm_limits->volt_high_warn;
+        else if(attr == VOLT_LWARN)
+            volt_threshold = sff8636_ddm_limits->volt_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_vcc(volt_threshold);
+        return 0;
+    case SFF8024_ID_QSFPDD_CMIS:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        cmis_ddm_limits = &qsfp->diag.cmis_ddm_limits;
+
+        if(attr == VOLT_HALRM)
+            volt_threshold = cmis_ddm_limits->volt_high_alarm;
+        else if(attr == VOLT_LALRM)
+            volt_threshold = cmis_ddm_limits->volt_low_alarm;
+        else if(attr == VOLT_HWARN)
+            volt_threshold = cmis_ddm_limits->volt_high_warn;
+        else if(attr == VOLT_LWARN)
+            volt_threshold = cmis_ddm_limits->volt_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_vcc(volt_threshold);
+        return 0;
+    }
+
+    return 0;
+}
+
+static ssize_t volt_halrm_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long volt_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_volt_threshold(qsfp, VOLT_HALRM, &volt_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",volt_threshold);
+}
+
+static ssize_t volt_lalrm_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long volt_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_volt_threshold(qsfp, VOLT_LALRM, &volt_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",volt_threshold);
+}
+
+static ssize_t volt_hwarn_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long volt_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_volt_threshold(qsfp, VOLT_HWARN, &volt_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",volt_threshold);
+}
+
+static ssize_t volt_lwarn_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long volt_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_volt_threshold(qsfp, VOLT_LWARN, &volt_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",volt_threshold);
+
+}
+
+int common_txi_threshold(struct qsfp *qsfp, int attr, long* value)
+{
+    struct sff8472_ddm_thresholds *sff8472_ddm_limits;
+    struct sff8636_ddm_thresholds *sff8636_ddm_limits;
+    struct cmis_thresholds *cmis_ddm_limits;
+    struct sfp_eeprom_id *sff8472_id;
+    u8 *spec_id;
+    struct sff8472_txi_diag txi_ext_cal = {0};
+    int ret = 0;
+    __be16 txi_threshold;
+    struct cmis_eeprom_id *cmis_id;
+    u8 cmis_tx_bias_multiplier = 1;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
+        {
+           TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                             "warning threshold limits\n");
+           return -EINVAL;
+        }
+
+        sff8472_ddm_limits = &qsfp->diag.sff8472_ddm_limits;
+
+        if(attr == TXI_HALRM)
+            txi_threshold = sff8472_ddm_limits->bias_high_alarm;
+        else if(attr == TXI_LALRM)
+            txi_threshold = sff8472_ddm_limits->bias_low_alarm;
+        else if(attr == TXI_HWARN)
+            txi_threshold = sff8472_ddm_limits->bias_high_warn;
+        else if(attr == TXI_LWARN)
+            txi_threshold = sff8472_ddm_limits->bias_low_warn;
+        else
+            return -EINVAL;
+
+       if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_EXT_CAL)
+       {
+           ret = qsfp_read(qsfp, SFF8472_TXI_EXT, &txi_ext_cal,
+                                 sizeof(txi_ext_cal));
+           if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error for tx bias current "
+                            "external calibration constants: %d\n\n", ret);
+                return -EINVAL;
+           }
+           *value = trx_ext_ddm_txbias(txi_threshold, &txi_ext_cal);
+       }
+       else /* SFP supported Internal calibration */
+       {
+          *value = trx_calibrate_txbias(txi_threshold);
+       }
+       return 0;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        sff8636_ddm_limits = &qsfp->diag.sff8636_ddm_limits;
+
+        if(attr == TXI_HALRM)
+            txi_threshold = sff8636_ddm_limits->bias_high_alarm;
+        else if(attr == TXI_LALRM)
+            txi_threshold = sff8636_ddm_limits->bias_low_alarm;
+        else if(attr == TXI_HWARN)
+            txi_threshold = sff8636_ddm_limits->bias_high_warn;
+        else if(attr == TXI_LWARN)
+            txi_threshold = sff8636_ddm_limits->bias_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_txbias(txi_threshold);
+        return 0;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        /*Support advertised in page 01h:160.0 */
+        if(!cmis_id->ext.tx_bias_mon_sup ) {
+            TRX_LOG_ERR(qsfp, "TRX tx bias current measurement "
+                               "not supported\n");
+            return -EINVAL;
+        }
+
+        switch(cmis_id->ext.tx_bias_cur_scal) {
+        case 0x00:
+            /* multiply x1 */
+            cmis_tx_bias_multiplier = 1;
+            break;
+        case 0x01:
+            /* multiply x2 */
+            cmis_tx_bias_multiplier = 2;
+            break;
+        case 0x02:
+            /* multiply x4 */
+            cmis_tx_bias_multiplier = 4;
+            break;
+        /* reserved case is not expected from OIF-CMIS-05.2 Rev */
+        case 0x03:
+            TRX_LOG_ERR(qsfp, "TRX tx bias current multiplier "
+                       "was reserved not expected for OIF-CMIS-05.2\n");
+            return -EINVAL;
+        }
+
+        cmis_ddm_limits = &qsfp->diag.cmis_ddm_limits;
+
+        if(attr == TXI_HALRM)
+            txi_threshold = cmis_ddm_limits->bias_high_alarm;
+        else if(attr == TXI_LALRM)
+            txi_threshold = cmis_ddm_limits->bias_low_alarm;
+        else if(attr == TXI_HWARN)
+            txi_threshold = cmis_ddm_limits->bias_high_warn;
+        else if(attr == TXI_LWARN)
+            txi_threshold = cmis_ddm_limits->bias_low_warn;
+        else
+            return -EINVAL;
+
+        txi_threshold *= cmis_tx_bias_multiplier;
+
+        *value = trx_calibrate_txbias(txi_threshold);
+        return 0;
+    }
+
+    return 0;
+}
+
+static ssize_t tx_bias_halrm_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long txi_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_txi_threshold(qsfp, TXI_HALRM,  &txi_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",txi_threshold);
+}
+
+static ssize_t tx_bias_lalrm_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long txi_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_txi_threshold(qsfp, TXI_LALRM,  &txi_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",txi_threshold);
+}
+
+static ssize_t tx_bias_hwarn_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long txi_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_txi_threshold(qsfp, TXI_HWARN, &txi_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",txi_threshold);
+}
+
+static ssize_t tx_bias_lwarn_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long txi_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_txi_threshold(qsfp, TXI_LWARN, &txi_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",txi_threshold);
+}
+
+int common_power_threshold(struct qsfp *qsfp, int attr, long* value)
+{
+    struct sff8472_ddm_thresholds *sff8472_ddm_limits;
+    struct sff8636_ddm_thresholds *sff8636_ddm_limits;
+    struct cmis_thresholds *cmis_ddm_limits;
+    struct sfp_eeprom_id *sff8472_id;
+    u8 *spec_id;
+    struct sff8472_txpwr_diag txpwr_ext_cal = {0};
+
+    int ret = 0;
+    __be16 power_threshold;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
+        {
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                              "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        sff8472_ddm_limits = &qsfp->diag.sff8472_ddm_limits;
+
+        if(attr == TXPWR_HALRM)
+            power_threshold = sff8472_ddm_limits->txpwr_high_alarm;
+        else if(attr == TXPWR_LALRM)
+            power_threshold = sff8472_ddm_limits->txpwr_low_alarm;
+        else if(attr == TXPWR_HWARN)
+            power_threshold = sff8472_ddm_limits->txpwr_high_warn;
+        else if(attr == TXPWR_LWARN)
+            power_threshold = sff8472_ddm_limits->txpwr_low_warn;
+        else if(attr == RXPWR_HALRM)
+            power_threshold = sff8472_ddm_limits->rxpwr_high_alarm;
+        else if(attr == RXPWR_LALRM)
+            power_threshold = sff8472_ddm_limits->rxpwr_low_alarm;
+        else if(attr == RXPWR_HWARN)
+            power_threshold = sff8472_ddm_limits->rxpwr_high_warn;
+        else if(attr == RXPWR_LWARN)
+            power_threshold = sff8472_ddm_limits->rxpwr_low_warn;
+        else
+            return -EINVAL;
+
+       if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_EXT_CAL)
+       {
+           ret = qsfp_read(qsfp, SFF8472_TXPWR_EXT, &txpwr_ext_cal,
+                                 sizeof(txpwr_ext_cal));
+           if (ret < 0) {
+                TRX_LOG_ERR(qsfp, "QSFP read error for txpwr "
+                          "external calibration constants: %d\n\n", ret);
+                return -EINVAL;
+           }
+           *value =  trx_ext_ddm_power(power_threshold, &txpwr_ext_cal);
+       }
+       else /* SFP supported Internal calibration */
+       {
+          *value = trx_calibrate_power(power_threshold);
+       }
+       return 0;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        sff8636_ddm_limits = &qsfp->diag.sff8636_ddm_limits;
+
+        if(attr == TXPWR_HALRM)
+            power_threshold = sff8636_ddm_limits->txpwr_high_alarm;
+        else if(attr == TXPWR_LALRM)
+            power_threshold = sff8636_ddm_limits->txpwr_low_alarm;
+        else if(attr == TXPWR_HWARN)
+            power_threshold = sff8636_ddm_limits->txpwr_high_warn;
+        else if(attr == TXPWR_LWARN)
+            power_threshold = sff8636_ddm_limits->txpwr_low_warn;
+        else if(attr == RXPWR_HALRM)
+            power_threshold = sff8636_ddm_limits->rxpwr_high_alarm;
+        else if(attr == RXPWR_LALRM)
+            power_threshold = sff8636_ddm_limits->rxpwr_low_alarm;
+        else if(attr == RXPWR_HWARN)
+            power_threshold = sff8636_ddm_limits->rxpwr_high_warn;
+        else if(attr == RXPWR_LWARN)
+            power_threshold = sff8636_ddm_limits->rxpwr_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_power(power_threshold);
+        return 0;
+    case SFF8024_ID_QSFPDD_CMIS:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return -EINVAL;
+        }
+
+        cmis_ddm_limits = &qsfp->diag.cmis_ddm_limits;
+        if(attr == TXPWR_HALRM)
+            power_threshold = cmis_ddm_limits->txpwr_high_alarm;
+        else if(attr == TXPWR_LALRM)
+            power_threshold = cmis_ddm_limits->txpwr_low_alarm;
+        else if(attr == TXPWR_HWARN)
+            power_threshold = cmis_ddm_limits->txpwr_high_warn;
+        else if(attr == TXPWR_LWARN)
+            power_threshold = cmis_ddm_limits->txpwr_low_warn;
+        else if(attr == RXPWR_HALRM)
+            power_threshold = cmis_ddm_limits->rxpwr_high_alarm;
+        else if(attr == RXPWR_LALRM)
+            power_threshold = cmis_ddm_limits->rxpwr_low_alarm;
+        else if(attr == RXPWR_HWARN)
+            power_threshold = cmis_ddm_limits->rxpwr_high_warn;
+        else if(attr == RXPWR_LWARN)
+            power_threshold = cmis_ddm_limits->rxpwr_low_warn;
+        else
+            return -EINVAL;
+
+        *value = trx_calibrate_power(power_threshold);
+        return 0;
+    }
+
+    return 0;
+}
+
+static ssize_t tx_power_halrm_show(struct kobject *kobj,
+                                   struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, TXPWR_HALRM, &power_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+}
+
+static ssize_t tx_power_lalrm_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, TXPWR_LALRM, &power_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+
+}
+
+static ssize_t tx_power_hwarn_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, TXPWR_HWARN, &power_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+}
+
+static ssize_t tx_power_lwarn_show(struct kobject *kobj,
+                                   struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, TXPWR_LWARN, &power_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+}
+
+static ssize_t rx_power_halrm_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, RXPWR_HALRM, &power_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+}
+
+static ssize_t rx_power_lalrm_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, RXPWR_LALRM, &power_threshold);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+
+}
+
+static ssize_t rx_power_hwarn_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, RXPWR_HWARN, &power_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+
+}
+
+static ssize_t rx_power_lwarn_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long power_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power_threshold(qsfp, RXPWR_LWARN, &power_threshold);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",power_threshold);
+}
+
+int common_laser_temp_threshold(struct qsfp *qsfp, int attr, long* value)
+{
+    struct sff8472_ddm_thresholds *sff8472_ddm_limits;
+    struct cmis_thresholds *cmis_ddm_limits;
+    struct sfp_eeprom_id *sff8472_id;
+    struct cmis_eeprom_id *cmis_id;
+    struct sff8636_eeprom_ext *ext;
+    long laser_temp_threshold;
+    u8 *spec_id;
+
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        sff8472_ddm_limits = &qsfp->diag.sff8472_ddm_limits;
+
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
+        {
+            TRX_LOG_ERR(qsfp,"TRX Laser temperature Alrm/Warn"
+                              " not supported\n");
+            return -EINVAL;
+        }
+
+        if(attr == LTEMP_HALRM)
+            laser_temp_threshold = sff8472_ddm_limits->laser_temp_high_alarm;
+        if(attr == LTEMP_LALRM)
+            laser_temp_threshold = sff8472_ddm_limits->laser_temp_low_alarm;
+        if(attr == LTEMP_HWARN)
+            laser_temp_threshold = sff8472_ddm_limits->laser_temp_high_warn;
+        if(attr == LTEMP_LWARN)
+            laser_temp_threshold = sff8472_ddm_limits->laser_temp_low_warn;
+        else
+            return -EINVAL;
+
+        if(laser_temp_threshold == 0x00) {
+            TRX_LOG_ERR(qsfp, "Laser temperature threshold unknown\n");
+            return -EINVAL;
+        }
+        *value = laser_temp_threshold;
+        return 0;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ext = &qsfp->id.sff8636.ext;
+        /* Check page 20, 21 support from page 00h byte 195 bit 0 */
+        if(!ext->page20_21)
+        {
+            TRX_LOG_ERR(qsfp, "Laser temperature thresholds not supported\n");
+            return -EINVAL;
+        }
+
+        /* Transceiver support page 20 & 21 but supported
+         * Transceiver not available to test.*/
+         TRX_LOG_ERR(qsfp, "SFF-8636 laser temperature thresholds"
+                                          " support not added\n");
+         return -EINVAL;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        /* Page 00h, Byte-2 Bit-7 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp,"TRX Laser temperature Alrm/Warn"
+                             " not supported\n");
+            return -EINVAL;
+        }
+
+        cmis_ddm_limits = &qsfp->diag.cmis_ddm_limits;
+        /* AUX2 denotes Laser temperature */
+        if(cmis_id->ext.aux2_mon_sup  &&
+           !(cmis_id->ext.aux_mon_obs & BIT(1)))
+        {
+            if(attr == LTEMP_HALRM)
+                laser_temp_threshold = cmis_ddm_limits->aux2_high_alarm;
+            else if(attr == LTEMP_LALRM)
+                laser_temp_threshold = cmis_ddm_limits->aux2_low_alarm;
+            else if(attr == LTEMP_HWARN)
+                laser_temp_threshold = cmis_ddm_limits->aux2_high_warn;
+            else if(attr == LTEMP_LWARN)
+                laser_temp_threshold = cmis_ddm_limits->aux2_low_warn;
+            else
+                return -EINVAL;
+        }
+        else if(cmis_id->ext.aux3_mon_sup &&
+                !(cmis_id->ext.aux_mon_obs & BIT(2)))
+        {
+            /* AUX3 denotes Laser temperature */
+            if(attr == LTEMP_HALRM)
+                laser_temp_threshold = cmis_ddm_limits->aux3_high_alarm;
+            else if(attr == LTEMP_LALRM)
+                laser_temp_threshold = cmis_ddm_limits->aux3_low_alarm;
+            else if(attr == LTEMP_HWARN)
+                laser_temp_threshold = cmis_ddm_limits->aux3_high_warn;
+            else if(attr == LTEMP_LWARN)
+                laser_temp_threshold = cmis_ddm_limits->aux3_low_warn;
+            else
+                return -EINVAL;
+        }
+        else
+        {
+            TRX_LOG_ERR(qsfp,"TRX Laser temperature Alrm/Warn"
+                             " not supported\n");
+            return -EINVAL;
+        }
+
+        if(laser_temp_threshold == 0x00) {
+            TRX_LOG_ERR(qsfp, "Laser temperature threshold unknown\n");
+            return -EINVAL;
+        }
+
+        *value = laser_temp_threshold;
+        return 0;
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                          " {0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+static ssize_t ltemp_halrm_show(struct kobject *kobj,
+                                   struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long ltemp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_laser_temp_threshold(qsfp, LTEMP_HALRM, &ltemp_threshold);
+    if(ret < 0)
+         return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",ltemp_threshold);
+}
+
+static ssize_t ltemp_lalrm_show(struct kobject *kobj,
+                                   struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long ltemp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_laser_temp_threshold(qsfp, LTEMP_LALRM, &ltemp_threshold);
+    if(ret < 0)
+         return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",ltemp_threshold);
+}
+
+static ssize_t ltemp_hwarn_show(struct kobject *kobj,
+                                   struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long ltemp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_laser_temp_threshold(qsfp, LTEMP_HWARN, &ltemp_threshold);
+    if(ret < 0)
+         return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",ltemp_threshold);
+}
+
+static ssize_t ltemp_lwarn_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long ltemp_threshold = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_laser_temp_threshold(qsfp, LTEMP_LWARN, &ltemp_threshold);
+    if(ret < 0)
+         return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",ltemp_threshold);
+}
+
+int get_sfp_power(struct qsfp *qsfp, int lane_number, long* value_in, int attr)
+{
+   struct sfp_eeprom_id *sff8472_id;
+   struct sff8472_txpwr_diag txpwr_ext_cal = {0};
+   int ret;
+   __be16 sfp_tx_power;
+   sff8472_id = &qsfp->id.sff8472;
+
+   if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+   {
+       if(attr == TX_POWER)
+           ret = qsfp_read(qsfp, SFF8472_TX_POWER, &sfp_tx_power,
+                                 sizeof(sfp_tx_power));
+        else if(attr == RX_POWER)
+         ret = qsfp_read(qsfp, SFF8472_RX_POWER, &sfp_tx_power,
+                                      sizeof(sfp_tx_power));
+        else
+             return -EINVAL;
+
+       if (ret < 0) {
+           TRX_LOG_ERR(qsfp,"QSFP read error: %d\n", ret);
+           return -EINVAL;
+       }
+
+       /* Check for Internal calibration for DDM supported SFP,
+        * Address A0h, Byte 92 Bit 5.
+        */
+       if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+       {
+          *value_in = trx_calibrate_power(sfp_tx_power);
+          return 0;
+       }
+       else /* SFP supported External calibration */
+       {
+           ret = qsfp_read(qsfp, SFF8472_TXPWR_EXT, &txpwr_ext_cal,
+                                sizeof(txpwr_ext_cal));
+           if (ret < 0) {
+               TRX_LOG_ERR(qsfp,"QSFP read error for tx power external"
+                                " calibration constants: %d\n\n", ret);
+               return -EINVAL;
+           }
+          *value_in = trx_ext_ddm_power(sfp_tx_power,&txpwr_ext_cal);
+          return 0;
+       }
+    }
+    else
+    {
+        TRX_LOG_ERR(qsfp, "Transmitter power measurement"
+                    " not supported on non-DDM transceiver devices.\n");
+        return -EINVAL;
+    }
+}
+
+int get_qsfp_reg(int lane_number, u32* addr, int attr)
+{
+    if(attr == TX_POWER || attr == RX_POWER)
+    {
+        if(lane_number == 1) {
+            *addr  = (attr == RX_POWER) ? SFF8636_RX_POWER :
+                                          SFF8636_TX_POWER;
+        }
+        else if (lane_number == 2) {
+            *addr  = (attr == RX_POWER) ? SFF8636_RX_POWER_LANE2 :
+                                          SFF8636_TX_POWER_LANE2;
+        }
+        else if (lane_number == 3) {
+            *addr  = (attr == RX_POWER) ? SFF8636_RX_POWER_LANE3 :
+                                          SFF8636_TX_POWER_LANE3;
+        }
+        else if (lane_number == 4) {
+            *addr  =  (attr == RX_POWER) ? SFF8636_RX_POWER_LANE4 :
+                                           SFF8636_TX_POWER_LANE4;
+        }
+        else
+            return -1;
+    }
+    else if(attr == TX_BIAS)
+    {
+        if(lane_number == 1)
+            *addr  = SFF8636_TX_BIAS;
+        else if (lane_number == 2)
+            *addr  = SFF8636_TX_BIAS_LANE2;
+        else if (lane_number == 3)
+            *addr  = SFF8636_TX_BIAS_LANE3;
+        else if (lane_number == 4)
+            *addr  = SFF8636_TX_BIAS_LANE4;
+        else
+            return -1;
+    }
+    else
+        return -1;
+
+    return 0;
+}
+
+int get_cmis_reg(int lane_number, u32* addr, int attr)
+{
+    if(attr == TX_POWER || attr == RX_POWER)
+    {
+        if(lane_number == 1) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER :
+                                          CMIS_TX_POWER;
+        }
+        else if (lane_number == 2) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE2 :
+                                          CMIS_TX_POWER_LANE2;
+        }
+        else if (lane_number == 3) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE3 :
+                                          CMIS_TX_POWER_LANE3;
+        }
+        else if (lane_number == 4) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE4 :
+                                          CMIS_TX_POWER_LANE4;
+        }
+        else if (lane_number == 5) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE5 :
+                                          CMIS_TX_POWER_LANE5;
+        }
+        else if (lane_number == 6) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE6 :
+                                          CMIS_TX_POWER_LANE6;
+        }
+        else if (lane_number == 7) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE7 :
+                                          CMIS_TX_POWER_LANE7;
+        }
+        else if (lane_number == 8) {
+            *addr  = (attr == RX_POWER) ? CMIS_RX_POWER_LANE8 :
+                                          CMIS_TX_POWER_LANE8;
+        }
+        else
+            return -1;
+    }
+    else if(attr == TX_BIAS)
+    {
+        if(lane_number == 1)
+            *addr  = CMIS_TX_BIAS;
+        else if (lane_number == 2)
+            *addr  = CMIS_TX_BIAS_LANE2;
+        else if (lane_number == 3)
+            *addr  = CMIS_TX_BIAS_LANE3;
+        else if (lane_number == 4)
+            *addr  = CMIS_TX_BIAS_LANE4;
+        else if (lane_number == 5)
+            *addr  = CMIS_TX_BIAS_LANE5;
+        else if (lane_number == 6)
+            *addr  = CMIS_TX_BIAS_LANE6;
+        else if (lane_number == 7)
+            *addr  = CMIS_TX_BIAS_LANE7;
+        else if (lane_number == 8)
+            *addr  = CMIS_TX_BIAS_LANE8;
+        else
+            return -1;
+    }
+    else
+        return -1;
+
+    return 0;
+}
+
+int get_qsfp_power(struct qsfp *qsfp, int lane_number,
+                        long* value_in, int attr)
+{
+    int ret;
+    __be16 qsfp_tx_power;
+    struct sff8636_eeprom_id *id;
+    u8  diagmon;
+    u32 addr;
+    id = &qsfp->id.sff8636;
+    diagmon = id->ext.diagmon;
+
+    if(attr == TX_POWER) {
+        if(!(diagmon & BIT(2))) {
+            TRX_LOG_ERR(qsfp,  "Transmitter tx power measurement"
+                           " not supported\n");
+            return -EINVAL;
+        }
+    }
+    else if(attr == RX_POWER) {
+        if (!qsfp->support.rx_power_flags) {
+            TRX_LOG_ERR(qsfp, "TRX optical rx power measurement"
+                           " not supported on non-DDM transceiver devices.\n");
+            return -EINVAL;
+        }
+    }
+    else
+        return -EINVAL;
+
+    if(attr == TX_POWER)
+        ret = get_qsfp_reg(lane_number, &addr, TX_POWER);
+    else
+        ret = get_qsfp_reg(lane_number, &addr, RX_POWER);
+
+    if (ret < 0)
+        return -EINVAL;
+
+    ret = qsfp_read(qsfp, addr, &qsfp_tx_power,
+                          sizeof(qsfp_tx_power));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+        return -EINVAL;
+    }
+
+    *value_in = trx_calibrate_power(qsfp_tx_power);
+
+    return 0;
+}
+
+int get_cmis_power(struct qsfp *qsfp, int lane_number,
+                        long* value_in, int attr)
+{
+    struct cmis_eeprom_id *cmis_id;
+    u32 addr = 0;
+    __be16 cmis_tx_power;
+    int ret = 0;
+    cmis_id = &qsfp->id.cmis;
+
+    if (qsfp->module_flat_mem == 0x01) {
+        /* Module level monitor values supports only for paged
+           memory modules*/
+        TRX_LOG_ERR(qsfp, "Transmitter power measurement"
+                          " not supported\n");
+        return -EINVAL;
+    }
+
+    if(attr == TX_POWER) {
+        /*Support advertised in page 01h:160.1 */
+        if(!cmis_id->ext.tx_optical_pow_mon_sup) {
+            TRX_LOG_ERR(qsfp, "Transmitter power measurement "
+                           "not supported\n");
+            return -EINVAL;
+        }
+    }
+    else if(attr == RX_POWER) {
+        if (!qsfp->support.rx_power_flags) {
+            TRX_LOG_ERR(qsfp, "TRX optical rx power measurement"
+                           " not supported on non-DDM transceiver devices.\n");
+            return -EINVAL;
+        }
+    }
+    else
+        return -EINVAL;
+
+    if(attr == TX_POWER)
+        ret = get_cmis_reg(lane_number, &addr, TX_POWER);
+    else
+        ret = get_cmis_reg(lane_number, &addr, RX_POWER);
+
+    if (ret < 0)
+        return -EINVAL;
+
+    ret = qsfp_read(qsfp, addr, &cmis_tx_power,
+                          sizeof(cmis_tx_power));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp,, "QSFP read error: %d\n", ret);
+        return -EINVAL;
+    }
+
+    *value_in = trx_calibrate_power(cmis_tx_power);
+    return 0;
+}
+
+int common_power(struct qsfp *qsfp, int lane_number,
+                      long* value_in, int attr)
+{
+    int ret = 0;
+    long value = 0;
+    u8 *spec_id;
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        ret = get_sfp_power(qsfp, lane_number, &value, attr);
+        if(ret == 0)
+            *value_in = value;
+        return ret;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ret = get_qsfp_power(qsfp, lane_number, &value, attr);
+        if(ret == 0)
+            *value_in = value;
+        return ret;
+    case SFF8024_ID_QSFPDD_CMIS:
+        ret = get_cmis_power(qsfp, lane_number, &value, attr);
+        if(ret == 0)
+            *value_in = value;
+        return ret;
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                          " {0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+static ssize_t tx_power_lane1_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,1,&tx_power,TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+}
+
+static ssize_t tx_power_lane2_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,2,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+}
+
+static ssize_t tx_power_lane3_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,3,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+
+}
+
+static ssize_t tx_power_lane4_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,4,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+}
+
+static ssize_t tx_power_lane5_show(struct kobject *kobj,
+                                     struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,5,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+
+}
+
+static ssize_t tx_power_lane6_show(struct kobject *kobj,
+                                      struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,6,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+
+}
+
+static ssize_t tx_power_lane7_show(struct kobject *kobj,
+                                       struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,7,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+
+}
+
+static ssize_t tx_power_lane8_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,8,&tx_power, TX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_power);
+}
+
+static ssize_t rx_power_lane1_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,1,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane2_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,2,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane3_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,3,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane4_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,4,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane5_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,5,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane6_show(struct kobject *kobj,
+                                  struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,6,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane7_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,7,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+static ssize_t rx_power_lane8_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long rx_power = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_power(qsfp,8,&rx_power, RX_POWER);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",rx_power);
+}
+
+int get_sfp_tx_bias(struct qsfp* qsfp, int lane_number,long* value)
+{
+    struct sfp_eeprom_id *sff8472_id;
+    u16 tx_bias_current = 0;
+    long bias_value;
+    struct sff8472_txi_diag txi_ext_cal = {0};
+    int ret = 0;
+
+    sff8472_id = &qsfp->id.sff8472;
+
+    /* Check for DDM support, Address A0h, Byte 92 Bit 6 */
+    if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
+    {
+        /* Address A2h, Bytes 100-101 */
+        ret = qsfp_read(qsfp, SFF8472_TX_BIAS, &tx_bias_current,
+                                      sizeof(tx_bias_current));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -EINVAL;
+        }
+
+        /* Check for Internal calibration for DDM supported SFP,
+         * Address A0h, Byte 92 Bit 5.
+         */
+        if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
+        {
+            bias_value =  trx_calibrate_txbias(tx_bias_current);
+            *value = bias_value;
+            return 0;
+        }
+        else /* SFP supported External calibration */
+        {
+            ret = qsfp_read(qsfp, SFF8472_TXI_EXT, &txi_ext_cal,
+                                  sizeof(txi_ext_cal));
+            if (ret < 0) {
+                TRX_LOG_ERR(qsfp,"QSFP read error for tx bias current "
+                           "of external calibration constants: %d\n\n", ret);
+                return -EINVAL;
+            }
+
+            bias_value =   trx_ext_ddm_txbias(tx_bias_current, &txi_ext_cal);
+            *value = bias_value;
+            return 0;
+        }
+    }
+    else
+    {
+        TRX_LOG_ERR(qsfp, "TRX tx bias current measurement"
+                         " not supported on non-DDM transceiver devices.\n");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+int get_qsfp_tx_bias(struct qsfp* qsfp, int lane_number,long* value)
+{
+    int ret = 0;
+    u32 addr;
+    u16 tx_bias;
+
+    if (!qsfp->support.tx_bias_flags) {
+        TRX_LOG_ERR(qsfp,"TRX tx bias current measurement"
+                     " not supported on non-DDM transceiver devices.\n");
+        return -EINVAL;
+    }
+
+    ret = get_qsfp_reg(lane_number, &addr, TX_BIAS);
+    if (ret < 0)
+        return -EINVAL;
+
+     ret = qsfp_read(qsfp, addr, &tx_bias,
+                                 sizeof(tx_bias));
+     if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+        return -EINVAL;
+     }
+
+    *value = trx_calibrate_txbias(tx_bias);
+    return 0;
+}
+
+int get_cmis_tx_bias(struct qsfp* qsfp, int lane_number,long* value)
+{
+    u8 cmis_tx_bias_multiplier = 1;
+    int ret = 0;
+    struct cmis_eeprom_id *cmis_id;
+    u16 tx_bias_current = 0;
+    u32 addr;
+
+    cmis_id = &qsfp->id.cmis;
+
+    if (qsfp->module_flat_mem == 0x01) {
+        /* Module level monitor values supports only for paged
+           memory modules*/
+        TRX_LOG_ERR(qsfp,  "TRX tx bias current measurement "
+                           "not supported\n");
+        return -EINVAL;
+    }
+
+    /*Support advertised in page 01h:160.0 */
+    if(!cmis_id->ext.tx_bias_mon_sup ) {
+        TRX_LOG_ERR(qsfp, "TRX tx bias current measurement "
+                          "not supported\n");
+        return -EINVAL;
+    }
+
+    switch(cmis_id->ext.tx_bias_cur_scal) {
+    case 0x00:
+        /* multiply x1 */
+        cmis_tx_bias_multiplier = 1;
+        break;
+    case 0x01:
+        /* multiply x2 */
+        cmis_tx_bias_multiplier = 2;
+        break;
+    case 0x02:
+        /* multiply x4 */
+        cmis_tx_bias_multiplier = 4;
+        break;
+    /* reserved case is not expected from OIF-CMIS-05.2 Rev */
+    case 0x03:
+        TRX_LOG_ERR(qsfp, "TRX tx bias current multiplier "
+                          "was reserved not expected for OIF-CMIS-05.2\n");
+        return -EINVAL;
+    }
+
+     ret = get_cmis_reg(lane_number, &addr, TX_BIAS);
+     if (ret < 0)
+             return -EINVAL;
+
+    /* Page 11h Bytes 170-185 */
+    ret = qsfp_read(qsfp, addr, &tx_bias_current,
+                          sizeof(tx_bias_current));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+        return -EINVAL;
+    }
+
+    tx_bias_current *= cmis_tx_bias_multiplier;
+
+     *value = trx_calibrate_txbias(tx_bias_current);
+     return 0;
+}
+
+int common_tx_bias(struct qsfp *qsfp, int lane_number, long* tx_bias)
+{
+    int ret = 0;
+    long value = 0;
+    u8 *spec_id;
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        ret = get_sfp_tx_bias(qsfp, lane_number, &value);
+        if(ret == 0)
+            *tx_bias = value;
+        return ret;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        ret = get_qsfp_tx_bias(qsfp, lane_number, &value);
+        if(ret == 0)
+            *tx_bias = value;
+        return ret;
+    case SFF8024_ID_QSFPDD_CMIS:
+        ret = get_cmis_tx_bias(qsfp, lane_number, &value);
+        if(ret == 0)
+            *tx_bias = value;
+        return ret;
+    default:
+        TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
+                          " {0x%02X}\n", *spec_id);
+        return -EINVAL;
+    }
+}
+
+static ssize_t tx_bias_lane1_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+     qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,1,&tx_bias);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane2_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,2,&tx_bias);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane3_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,3,&tx_bias);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane4_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,4,&tx_bias);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane5_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,5,&tx_bias);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane6_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,6,&tx_bias);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane7_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,7,&tx_bias);
+    if(ret < 0)
+       return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
+
+static ssize_t tx_bias_lane8_show(struct kobject *kobj,
+                                 struct kobj_attribute *attr, char *buf)
+{
+    struct qsfp *qsfp = NULL;
+    int ret = 0;
+    long tx_bias = 0;
+
+    qsfp = get_qsfp_kobj(kobj);
+    if(!qsfp)
+        return -EINVAL;
+
+    ret = common_tx_bias(qsfp,8,&tx_bias);
+    if(ret < 0)
+        return -EINVAL;
+
+    return sysfs_emit(buf, "%ld\n",tx_bias);
+}
 
 static DEVICE_ATTR(state_info, S_IRUGO, trx_state_info_show, NULL);
 static DEVICE_ATTR(led_on_off, 0644, trx_led_on_off_show,
@@ -1707,12 +4252,251 @@ static struct attribute *trx_module_attrs[] = {
     NULL
 };
 
+static struct kobj_attribute temperature_attribute = __ATTR(temperature, 0664,
+                                                     temp_show, NULL);
+static struct kobj_attribute voltage_attribute = __ATTR(supply_voltage, 0664,
+                                                 volt_show, NULL);
+static struct kobj_attribute vendor_name_attribute = __ATTR(vendor_name, 0664,
+                                                     vendor_name_show, NULL);
+static struct kobj_attribute vendor_pn_attribute = __ATTR(vendor_pn, 0664,
+                                                   vendor_pn_show, NULL);
+static struct kobj_attribute vendor_sn_attribute = __ATTR(vendor_sn, 0664,
+                                                   vendor_sn_show, NULL);
+static struct kobj_attribute wavelength_attribute = __ATTR(wavelength, 0664,
+                                                    wavelength_show, NULL);
+static struct kobj_attribute mod_info_attribute = __ATTR(mod_info, 0664,
+                                                  mod_info_show, NULL);
+static struct kobj_attribute laser_temp_attribute = __ATTR(laser_temp, 0664,
+                                                    laser_temp_show, NULL);
+
+static struct kobj_attribute temp_halrm_attribute = __ATTR(temp_halrm, 0664,
+                                                    temp_halrm_show, NULL);
+static struct kobj_attribute temp_lalrm_attribute = __ATTR(temp_lalrm, 0664,
+                                                    temp_lalrm_show, NULL);
+static struct kobj_attribute temp_hwarn_attribute = __ATTR(temp_hwarn, 0664,
+                                                    temp_hwarn_show, NULL);
+static struct kobj_attribute temp_lwarn_attribute = __ATTR(temp_lwarn, 0664,
+                                                    temp_lwarn_show, NULL);
+
+static struct kobj_attribute volt_halrm_attribute = __ATTR(volt_halrm, 0664,
+                                                    volt_halrm_show, NULL);
+static struct kobj_attribute volt_lalrm_attribute = __ATTR(volt_lalrm, 0664,
+                                                    volt_lalrm_show, NULL);
+static struct kobj_attribute volt_hwarn_attribute = __ATTR(volt_hwarn, 0664,
+                                                    volt_hwarn_show, NULL);
+static struct kobj_attribute volt_lwarn_attribute = __ATTR(volt_lwarn, 0664,
+                                                    volt_lwarn_show, NULL);
+
+static struct kobj_attribute tx_bias_halrm_attribute = __ATTR(tx_bias_halrm,
+                                            0664, tx_bias_halrm_show, NULL);
+static struct kobj_attribute tx_bias_lalrm_attribute = __ATTR(tx_bias_lalrm,
+                                            0664, tx_bias_lalrm_show, NULL);
+static struct kobj_attribute tx_bias_hwarn_attribute = __ATTR(tx_bias_hwarn,
+                                             0664,tx_bias_hwarn_show, NULL);
+static struct kobj_attribute tx_bias_lwarn_attribute = __ATTR(tx_bias_lwarn,
+                                            0664, tx_bias_lwarn_show, NULL);
+
+static struct kobj_attribute tx_power_halrm_attribute = __ATTR(tx_power_halrm,
+                                             0664, tx_power_halrm_show, NULL);
+static struct kobj_attribute tx_power_lalrm_attribute = __ATTR(tx_power_lalrm,
+                                             0664, tx_power_lalrm_show, NULL);
+static struct kobj_attribute tx_power_hwarn_attribute = __ATTR(tx_power_hwarn,
+                                             0664, tx_power_hwarn_show, NULL);
+static struct kobj_attribute tx_power_lwarn_attribute = __ATTR(tx_power_lwarn,
+                                             0664, tx_power_lwarn_show, NULL);
+
+static struct kobj_attribute rx_power_halrm_attribute = __ATTR(rx_power_halrm,
+                                             0664, rx_power_halrm_show, NULL);
+static struct kobj_attribute rx_power_lalrm_attribute = __ATTR(rx_power_lalrm,
+                                             0664, rx_power_lalrm_show, NULL);
+static struct kobj_attribute rx_power_hwarn_attribute = __ATTR(rx_power_hwarn,
+                                             0664, rx_power_hwarn_show, NULL);
+static struct kobj_attribute rx_power_lwarn_attribute = __ATTR(rx_power_lwarn,
+                                             0664, rx_power_lwarn_show, NULL);
+
+static struct kobj_attribute ltemp_halrm_attribute = __ATTR(ltemp_halrm, 0664,
+                                                     ltemp_halrm_show, NULL);
+static struct kobj_attribute ltemp_lalrm_attribute = __ATTR(ltemp_lalrm, 0664,
+                                                     ltemp_lalrm_show, NULL);
+static struct kobj_attribute ltemp_hwarn_attribute = __ATTR(ltemp_hwarn, 0664,
+                                                     ltemp_hwarn_show, NULL);
+static struct kobj_attribute ltemp_lwarn_attribute = __ATTR(ltemp_lwarn, 0664,
+                                                     ltemp_lwarn_show, NULL);
+
+static struct kobj_attribute tx_power_lane1_attribute = __ATTR(tx_power_lane1,
+                                             0664, tx_power_lane1_show, NULL);
+static struct kobj_attribute tx_power_lane2_attribute = __ATTR(tx_power_lane2,
+                                             0664, tx_power_lane2_show, NULL);
+static struct kobj_attribute tx_power_lane3_attribute = __ATTR(tx_power_lane3,
+                                             0664, tx_power_lane3_show, NULL);
+static struct kobj_attribute tx_power_lane4_attribute = __ATTR(tx_power_lane4,
+                                             0664, tx_power_lane4_show, NULL);
+static struct kobj_attribute tx_power_lane5_attribute = __ATTR(tx_power_lane5,
+                                             0664, tx_power_lane5_show, NULL);
+static struct kobj_attribute tx_power_lane6_attribute = __ATTR(tx_power_lane6,
+                                             0664, tx_power_lane6_show, NULL);
+static struct kobj_attribute tx_power_lane7_attribute = __ATTR(tx_power_lane7,
+                                             0664, tx_power_lane7_show, NULL);
+static struct kobj_attribute tx_power_lane8_attribute = __ATTR(tx_power_lane8,
+                                             0664, tx_power_lane8_show, NULL);
+
+static struct kobj_attribute rx_power_lane1_attribute = __ATTR(rx_power_lane1,
+                                             0664, rx_power_lane1_show, NULL);
+static struct kobj_attribute rx_power_lane2_attribute = __ATTR(rx_power_lane2,
+                                            0664, rx_power_lane2_show, NULL);
+static struct kobj_attribute rx_power_lane3_attribute = __ATTR(rx_power_lane3,
+                                             0664, rx_power_lane3_show, NULL);
+static struct kobj_attribute rx_power_lane4_attribute = __ATTR(rx_power_lane4,
+                                             0664, rx_power_lane4_show, NULL);
+static struct kobj_attribute rx_power_lane5_attribute = __ATTR(rx_power_lane5,
+                                             0664, rx_power_lane5_show, NULL);
+static struct kobj_attribute rx_power_lane6_attribute = __ATTR(rx_power_lane6,
+                                             0664, rx_power_lane6_show, NULL);
+static struct kobj_attribute rx_power_lane7_attribute = __ATTR(rx_power_lane7,
+                                             0664, rx_power_lane7_show, NULL);
+static struct kobj_attribute rx_power_lane8_attribute = __ATTR(rx_power_lane8,
+                                             0664, rx_power_lane8_show, NULL);
+
+static struct kobj_attribute tx_bias_lane1_attribute = __ATTR(tx_bias_lane1,
+                                            0664, tx_bias_lane1_show, NULL);
+static struct kobj_attribute tx_bias_lane2_attribute = __ATTR(tx_bias_lane2,
+                                            0664, tx_bias_lane2_show, NULL);
+static struct kobj_attribute tx_bias_lane3_attribute = __ATTR(tx_bias_lane3,
+                                            0664, tx_bias_lane3_show, NULL);
+static struct kobj_attribute tx_bias_lane4_attribute = __ATTR(tx_bias_lane4,
+                                            0664, tx_bias_lane4_show, NULL);
+static struct kobj_attribute tx_bias_lane5_attribute = __ATTR(tx_bias_lane5,
+                                            0664, tx_bias_lane5_show, NULL);
+static struct kobj_attribute tx_bias_lane6_attribute = __ATTR(tx_bias_lane6,
+                                            0664, tx_bias_lane6_show, NULL);
+static struct kobj_attribute tx_bias_lane7_attribute = __ATTR(tx_bias_lane7,
+                                            0664, tx_bias_lane7_show, NULL);
+static struct kobj_attribute tx_bias_lane8_attribute = __ATTR(tx_bias_lane8,
+                                            0664, tx_bias_lane8_show, NULL);
+
+/* sensor info runtime attributes */
+static struct attribute *sensor_attrs[] = {
+    &temperature_attribute.attr,
+    &voltage_attribute.attr,
+    &vendor_name_attribute.attr,
+    &vendor_pn_attribute.attr,
+    &vendor_sn_attribute.attr,
+    &wavelength_attribute.attr,
+    &mod_info_attribute.attr,
+    &laser_temp_attribute.attr,
+
+    &temp_halrm_attribute.attr,
+    &temp_lalrm_attribute.attr,
+    &temp_hwarn_attribute.attr,
+    &temp_lwarn_attribute.attr,
+
+    &volt_halrm_attribute.attr,
+    &volt_lalrm_attribute.attr,
+    &volt_hwarn_attribute.attr,
+    &volt_lwarn_attribute.attr,
+
+    &tx_bias_halrm_attribute.attr,
+    &tx_bias_lalrm_attribute.attr,
+    &tx_bias_hwarn_attribute.attr,
+    &tx_bias_lwarn_attribute.attr,
+
+    &tx_power_halrm_attribute.attr,
+    &tx_power_lalrm_attribute.attr,
+    &tx_power_hwarn_attribute.attr,
+    &tx_power_lwarn_attribute.attr,
+
+    &rx_power_halrm_attribute.attr,
+    &rx_power_lalrm_attribute.attr,
+    &rx_power_hwarn_attribute.attr,
+    &rx_power_lwarn_attribute.attr,
+
+    &ltemp_halrm_attribute.attr,
+    &ltemp_lalrm_attribute.attr,
+    &ltemp_hwarn_attribute.attr,
+    &ltemp_lwarn_attribute.attr,
+    NULL
+};
+
+/* SFF-8472 sensor info runtime attributes */
+static struct attribute *sff8472_sysfs_attrs[] = {
+    &tx_power_lane1_attribute.attr,
+    &rx_power_lane1_attribute.attr,
+    &tx_bias_lane1_attribute.attr,
+    NULL
+};
+
+/* SFF-8636 sensor info runtime attributes */
+static struct attribute *sff8636_sysfs_attrs[] = {
+    &tx_power_lane1_attribute.attr,
+    &tx_power_lane2_attribute.attr,
+    &tx_power_lane3_attribute.attr,
+    &tx_power_lane4_attribute.attr,
+
+    &rx_power_lane1_attribute.attr,
+    &rx_power_lane2_attribute.attr,
+    &rx_power_lane3_attribute.attr,
+    &rx_power_lane4_attribute.attr,
+
+    &tx_bias_lane1_attribute.attr,
+    &tx_bias_lane2_attribute.attr,
+    &tx_bias_lane3_attribute.attr,
+    &tx_bias_lane4_attribute.attr,
+    NULL
+};
+
+/* cmis sensor info runtime attributes */
+static struct attribute *cmis_sysfs_attrs[] = {
+    &tx_power_lane1_attribute.attr,
+    &tx_power_lane2_attribute.attr,
+    &tx_power_lane3_attribute.attr,
+    &tx_power_lane4_attribute.attr,
+    &tx_power_lane5_attribute.attr,
+    &tx_power_lane6_attribute.attr,
+    &tx_power_lane7_attribute.attr,
+    &tx_power_lane8_attribute.attr,
+
+    &rx_power_lane1_attribute.attr,
+    &rx_power_lane2_attribute.attr,
+    &rx_power_lane3_attribute.attr,
+    &rx_power_lane4_attribute.attr,
+    &rx_power_lane5_attribute.attr,
+    &rx_power_lane6_attribute.attr,
+    &rx_power_lane7_attribute.attr,
+    &rx_power_lane8_attribute.attr,
+
+    &tx_bias_lane1_attribute.attr,
+    &tx_bias_lane2_attribute.attr,
+    &tx_bias_lane3_attribute.attr,
+    &tx_bias_lane4_attribute.attr,
+    &tx_bias_lane5_attribute.attr,
+    &tx_bias_lane6_attribute.attr,
+    &tx_bias_lane7_attribute.attr,
+    &tx_bias_lane8_attribute.attr,
+    NULL
+};
+
 static const struct attribute_group trx_attr_group = {
     .attrs = trx_attrs,
 };
 
 static const struct attribute_group trx_module_attr_group = {
     .attrs = trx_module_attrs,
+};
+
+static const struct attribute_group sensor_attr_group = {
+    .attrs = sensor_attrs,
+};
+
+static const struct attribute_group sff8472_attr_group = {
+    .attrs = sff8472_sysfs_attrs,
+};
+
+static const struct attribute_group sff8636_attr_group = {
+    .attrs = sff8636_sysfs_attrs,
+};
+
+static const struct attribute_group cmis_attr_group = {
+    .attrs = cmis_sysfs_attrs,
 };
 
 /* Initialization function for creating SysFS attribute files
@@ -1734,6 +4518,51 @@ int qsfp_sysfs_init(struct qsfp *qsfp)
         sysfs_remove_group(qsfp->qsfp_sysfs_dir, &trx_attr_group);
         return ret;
     }
+    return 0;
+}
+
+int qsfp_sensor_sysfs_init(struct qsfp *qsfp)
+{
+    int ret;
+    if(!qsfp->qsfp_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "qsfp_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    qsfp->sensor_sysfs_dir = kobject_create_and_add("sensor_info", qsfp->qsfp_sysfs_dir);
+    if(!qsfp->sensor_sysfs_dir)
+        return -ENOMEM;
+
+    ret = sysfs_create_group(qsfp->sensor_sysfs_dir, &sensor_attr_group);
+    if(ret != 0) {
+        TRX_LOG_ERR(qsfp, "SysFS sensor attr group create failure\n");
+        sysfs_remove_group(qsfp->sensor_sysfs_dir, &sensor_attr_group);
+        return ret;
+    }
+
+    /* create spec specific files */
+    qsfp->spec_ops->spec_sensor_sysfs_init(qsfp);
+
+    return 0;
+}
+
+int qsfp_sensor_sysfs_exit(struct qsfp *qsfp)
+{
+
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    sysfs_remove_group(qsfp->sensor_sysfs_dir, &sensor_attr_group);
+
+    /* delete spec specific files */
+    qsfp->spec_ops->spec_sensor_sysfs_exit(qsfp);
+
+    kobject_del(qsfp->sensor_sysfs_dir);
+    qsfp->sensor_sysfs_dir = NULL;
     return 0;
 }
 
@@ -1790,3 +4619,172 @@ int module_sysfs_exit(struct qsfp *qsfp)
     TRX_LOG_INFO(qsfp, "SysFS module_attr cleanup\n");
     return 0;
 }
+
+int sff8472_create_sysfs_files(struct qsfp *qsfp)
+{
+    int ret = 0;
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    ret = sysfs_create_group(qsfp->sensor_sysfs_dir, &sff8472_attr_group);
+    if(ret != 0) {
+        TRX_LOG_ERR(qsfp, "SysFS 8472 attr group create failure\n");
+        sysfs_remove_group(qsfp->sensor_sysfs_dir, &sff8472_attr_group);
+        return ret;
+    }
+
+    return 0;
+}
+
+int sff8472_remove_sysfs_files(struct qsfp *qsfp)
+{
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    sysfs_remove_group(qsfp->sensor_sysfs_dir, &sff8472_attr_group);
+
+    return 0;
+}
+
+int sff8636_create_sysfs_files(struct qsfp *qsfp)
+{
+    int ret = 0;
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    ret = sysfs_create_group(qsfp->sensor_sysfs_dir, &sff8636_attr_group);
+    if(ret != 0) {
+        TRX_LOG_ERR(qsfp, "SysFS 8636 attr group create failure\n");
+        sysfs_remove_group(qsfp->sensor_sysfs_dir, &sff8636_attr_group);
+        return ret;
+    }
+
+    return 0;
+}
+
+int sff8636_remove_sysfs_files(struct qsfp *qsfp)
+{
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    sysfs_remove_group(qsfp->sensor_sysfs_dir, &sff8636_attr_group);
+
+    return 0;
+}
+
+int cmis_create_sysfs_files(struct qsfp *qsfp)
+{
+    int ret = 0;
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    ret = sysfs_create_group(qsfp->sensor_sysfs_dir, &cmis_attr_group);
+    if(ret != 0) {
+        TRX_LOG_ERR(qsfp, "SysFS cmis attr group create failure\n");
+        sysfs_remove_group(qsfp->sensor_sysfs_dir, &cmis_attr_group);
+        return ret;
+    }
+
+    return 0;
+}
+
+int cmis_remove_sysfs_files(struct qsfp *qsfp)
+{
+    if(!qsfp->sensor_sysfs_dir)
+    {
+        TRX_LOG_ERR(qsfp, "sensor_sysfs_dir is NULL\n");
+        return -EINVAL;
+    }
+
+    sysfs_remove_group(qsfp->sensor_sysfs_dir, &cmis_attr_group);
+
+    return 0;
+}
+
+int qsfp_module_parse_ddm_thresholds(struct qsfp* qsfp)
+{
+    int ret = 0;
+    struct qsfp_diag diag_l;
+    u8 *spec_id;
+    struct sfp_eeprom_id *sff8472_id;
+    spec_id = (u8*)&qsfp->id;
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        if(!(sff8472_id->ext.enhopts & SFP_ENHOPTS_ALARMWARN))
+        {
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                              "warning threshold limits\n");
+            return 0;
+        }
+
+        /* Address A2h, Bytes 0-39 */
+        ret = qsfp_read(qsfp, SFF8472_DDM_TH, &diag_l.sff8472_ddm_limits,
+                                      sizeof(diag_l.sff8472_ddm_limits));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -1;
+        }
+        qsfp->diag = diag_l;
+        return 0;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        /* Page 00h, Byte-2 Bit-2 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp, "TRX does not support alarm and "
+                               "warning threshold limits\n");
+            return 0;
+        }
+
+        /* Page 03h Bytes 128-199 */
+        ret = qsfp_read(qsfp, SFF8636_DDM_TH, &diag_l.sff8636_ddm_limits,
+                              sizeof(diag_l.sff8636_ddm_limits));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -1;
+        }
+        qsfp->diag = diag_l;
+        return 0;
+    case SFF8024_ID_QSFPDD_CMIS:
+        /* Page 00h, Byte-2 Bit-7 */
+        if (qsfp->module_flat_mem == 0x01) {
+            /* Module level monitor values supports only for paged
+               memory modules*/
+            TRX_LOG_ERR(qsfp,"TRX does not support alarm and "
+                             "warning threshold limits\n");
+            return 0;
+        }
+
+        /* Page 02h Bytes 128-199 */
+        ret = qsfp_read(qsfp, CMIS_DDM_TH, &diag_l.cmis_ddm_limits,
+                              sizeof(diag_l.cmis_ddm_limits));
+        if (ret < 0) {
+            TRX_LOG_ERR(qsfp, "QSFP read error: %d\n", ret);
+            return -1;
+        }
+        qsfp->diag = diag_l;
+        return 0;
+    default:
+        return -1;
+    }
+}
+

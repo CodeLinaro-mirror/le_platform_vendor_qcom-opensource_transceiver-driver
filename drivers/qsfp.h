@@ -105,6 +105,14 @@ struct qsfp_eeprom_id {
     };
 };
 
+struct qsfp_diag {
+    union {
+        struct sff8472_ddm_thresholds sff8472_ddm_limits;
+        struct sff8636_ddm_thresholds sff8636_ddm_limits;
+        struct cmis_thresholds cmis_ddm_limits;
+    };
+};
+
 struct qsfp_flags {
     u8 rx_los;
     u8 tx_los;
@@ -355,6 +363,7 @@ struct qsfp {
     u8 lane_presence;
     u8 lane_min_speed;
     u8 lane_max_speed;
+    u16 fpc_qsfp_i2c_recover_delay;
     size_t i2c_block_size;
 
     struct delayed_work timeout;
@@ -370,29 +379,35 @@ struct qsfp {
     struct dentry *module_debugfs_dir;
     struct qsfp_flags sim_flags;
     struct qsfp_simulation sim;
+    /* added for debugging purpose will be removed after soaking for sometime */
+    u16 reset_counter;
+    u16 i2c_stuck_counter;
+    u16 read_write_2nd_fail;
 #endif
    struct kobject *qsfp_sysfs_dir;
+   struct kobject *sensor_sysfs_dir;
    /* Stores presence LOS TX Fault TX Disable status */
    struct qsfp_status status;
    struct qsfp_flags flags;
    /* Features supported/implemented */
    struct qsfp_support support;
+   struct qsfp_diag diag;
 };
 
 struct qsfp_spec_ops {
     /* called during module insert to read EEPROM */
     int (*mod_probe)(struct qsfp *qsfp);
     /* Disable uninterested interrupts */
-    int (*disable_redundant_irq)(const struct qsfp *qsfp);
-    int (*disable_enable_lane_irq)(const struct qsfp *qsfp, u8 lane, bool enable);
+    int (*disable_redundant_irq)(struct qsfp *qsfp);
+    int (*disable_enable_lane_irq)(struct qsfp *qsfp, u8 lane, bool enable);
     /* Updates module current flags LOS,TX Fault, alarms, warning etc */
     void (*update_flags)(struct qsfp *qsfp);
     /* Disable TX for whole transceiver module */
-    int (*mod_tx_disable)(const struct qsfp *qsfp);
+    int (*mod_tx_disable)(struct qsfp *qsfp);
     /* Enable TX lanewise */
-    int (*lane_tx_enable)(const struct lane *lane);
+    int (*lane_tx_enable)(struct lane *lane);
     /* Disable TX lanewise */
-    int (*lane_tx_disable)(const struct lane *lane);
+    int (*lane_tx_disable)(struct lane *lane);
     /* Check feature like LOS,TX Fault implemented or not and
      * update features field accordingly
      */
@@ -402,32 +417,34 @@ struct qsfp_spec_ops {
     /* called to handle situation of module max power is more
      * than max allowed power
      */
-    int (*handle_max_power_exceed)(const struct qsfp *qsfp);
+    int (*handle_max_power_exceed)(struct qsfp *qsfp);
     /* configure module for high power */
-    int (*mod_high_power)(const struct qsfp *qsfp);
+    int (*mod_high_power)(struct qsfp *qsfp);
     /* configure module for low power */
-    int (*mod_low_power)(const struct qsfp *qsfp);
+    int (*mod_low_power)(struct qsfp *qsfp);
     /* Dumps EEPROM data */
-    void (*eeprom_print)(const struct qsfp *qsfp);
+    void (*eeprom_print)(struct qsfp *qsfp);
     /* Ethtool callback function to get module info */
     int (*module_info)(struct qsfp *qsfp, struct ethtool_modinfo *modinfo);
     /* Gets connector type */
-    u8 (*get_connector_type)(const struct qsfp *qsfp);
+    u8 (*get_connector_type)(struct qsfp *qsfp);
     /* Gets lane speed  mask*/
-    int (*get_lane_speed)(const struct qsfp *qsfp, trx_speed_mask *speed_mask);
+    int (*get_lane_speed)(struct qsfp *qsfp, trx_speed_mask *speed_mask);
     /* Gets transceive type */
-    u8 (*get_transceiver_type)(const struct qsfp *qsfp);
+    u8 (*get_transceiver_type)(struct qsfp *qsfp);
     /* Gets link length ramge */
-    trx_link_length_range (*get_link_length_range)(const struct qsfp *qsfp);
+    trx_link_length_range (*get_link_length_range)(struct qsfp *qsfp);
     /* Gets Near-End Implementation */
-    int (*get_lanes_presence)(const struct qsfp *qsfp, trx_lane_cfg* laneinfo);
+    int (*get_lanes_presence)(struct qsfp *qsfp, trx_lane_cfg* laneinfo);
     /* Gets Far-End Implementation */
-    int (*get_breakout_config)(const struct qsfp *qsfp,
+    int (*get_breakout_config)(struct qsfp *qsfp,
                           trx_breakout_cfg* bo_config);
     /* Set Rate select */
-    int (*set_rate_select)(const struct qsfp *qsfp, bool enable);
-    unsigned long (*irq_delay)(const struct qsfp *qsfp);
+    int (*set_rate_select)(struct qsfp *qsfp, bool enable);
+    unsigned long (*irq_delay)(struct qsfp *qsfp);
     int (*create_debugfs)(struct qsfp *qsfp);
+    int (*spec_sensor_sysfs_init)(struct qsfp *qsfp);
+    int (*spec_sensor_sysfs_exit)(struct qsfp *qsfp);
 };
 
 enum {
@@ -452,8 +469,6 @@ enum {
     QSFP_MOD_ERROR_I2C,
     QSFP_MOD_ERROR_HPOWER,
     QSFP_MOD_ERROR_TX_ENABLE_FAIL,
-    QSFP_MOD_ERROR_I2C_SCL_STUCK,
-    QSFP_MOD_ERROR_I2C_SDA_STUCK,
     QSFP_MOD_REJECT_SPEC,
     QSFP_MOD_REJECT_PWR,
     QSFP_MOD_PROBE,
@@ -484,6 +499,9 @@ enum {
 
 #define QSFP_FAULT_STR_MAX (80)
 #define QSFP_FEATURE_STR_MAX (150)
+#define QSFP_I2C_FAIL_RETRY (10)
+#define FPC_QSFP_I2C_RECOVER_TIME_STEP (200)
+#define FPC_QSFP_I2C_RECOVER_TIME_MAX (1000)
 
 enum {
     SFF8024_CONNECTOR_FC1_COPPER = 0x02,
@@ -535,8 +553,8 @@ extern int fpc_enable_qsfp_interrupt(const struct qsfp *qsfp);
 extern const char *mod_identifier_to_str(u8 spec_id);
 extern const char *mod_link_codes_to_str(unsigned short mod_link_codes);
 
-extern int qsfp_read(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
-extern int qsfp_write(const struct qsfp *qsfp, u32 addr, void *buf, size_t len);
+extern int qsfp_read(struct qsfp *qsfp, u32 addr, void *buf, size_t len);
+extern int qsfp_write(struct qsfp *qsfp, u32 addr, void *buf, size_t len);
 extern u8 qsfp_check(void *buf, size_t len);
 extern int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info);
 extern void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state, u32 timeout);
@@ -552,8 +570,13 @@ extern void lane_sm_mod_error(struct lane *lane, u8 state);
 extern trx_link_length_range qsfp_link_code_to_link_length_range(u8 link_code);
 extern trx_link_length_range qsfp_mmf_code_to_link_length_range(u8 mmf_code);
 extern trx_link_length_range qsfp_smf_code_to_link_length_range(u8 smf_code);
-
-
+extern int sff8472_create_sysfs_files(struct qsfp *qsfp);
+extern int sff8636_create_sysfs_files(struct qsfp *qsfp);
+extern int cmis_create_sysfs_files(struct qsfp *qsfp);
+extern int sff8472_remove_sysfs_files(struct qsfp *qsfp);
+extern int sff8636_remove_sysfs_files(struct qsfp *qsfp);
+extern int cmis_remove_sysfs_files(struct qsfp *qsfp);
+extern int qsfp_module_parse_ddm_thresholds(struct qsfp* qsfp);
 extern const char * const link_length_range_to_str[];
 extern  const char * const link_type_to_str[];
 extern  const char * const reasoncode_to_str[];

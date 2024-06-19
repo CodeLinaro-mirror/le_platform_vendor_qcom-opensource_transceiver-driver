@@ -23,6 +23,8 @@ int qsfp_sysfs_init(struct qsfp *qsfp);
 int qsfp_sysfs_exit(struct qsfp *qsfp);
 int module_sysfs_init(struct qsfp *qsfp);
 int module_sysfs_exit(struct qsfp *qsfp);
+int qsfp_sensor_sysfs_init(struct qsfp *qsfp);
+int qsfp_sensor_sysfs_exit(struct qsfp *qsfp);
 extern void qsfp_fill_features_str(const struct qsfp *qsfp, char *buf, int len);
 extern long trx_calibrate_temp(__be16 tmp_val);
 extern long trx_calibrate_vcc(__be16 vcc_val);
