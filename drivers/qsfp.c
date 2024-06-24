@@ -76,6 +76,7 @@ static struct qsfp* get_qsfp(u32 lane_phandle)
 int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
 {
     u8 connector;
+    u8 trx_type;
 
     if (!qsfp) {
         /* There is chance that Lane/QSFP/FPC probe not yet
@@ -99,6 +100,25 @@ int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
 
         } else {
             connector = qsfp->spec_ops->get_connector_type(qsfp);
+            if ((*spec_id == SFF8024_ID_QSFP28_8636) ||
+                (*spec_id == SFF8024_ID_QSFP_8436_8636))
+            {
+                if(connector == SFF8024_CONNECTOR_NOSEPARATE)
+                {
+                    if(qsfp->id.sff8636.base.ecom_extended == 0x1)
+                    {
+                        trx_type = qsfp->id.sff8636.ext.link_codes;
+                        /* Check for AOC cable types */
+                        if((trx_type == 0x01) ||
+                           (trx_type == 0x18) ||
+                           (trx_type == 0x31) ||
+                           (trx_type == 0x33)) {
+                               *link_info = PORT_FIBRE;
+                               return 0;
+                        }
+                    }
+                }
+            }
         }
     } else {
         TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
@@ -1534,7 +1554,6 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
     ret = qsfp->spec_ops->disable_redundant_irq(qsfp);
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Disable interrupts failed. ret %d", ret);
-        return ret;
     }
 
     /* TX disable when module inserted */
