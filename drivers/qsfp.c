@@ -356,6 +356,7 @@ void qsfp_start_poll(struct qsfp *qsfp, unsigned long delay)
 {
     qsfp->need_poll = true;
     mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(delay));
+    TRX_LOG_INFO(qsfp, "Polling started with delay: %lu", delay);
 }
 
 static const char * const eth_event_to_str[] = {
@@ -2713,12 +2714,13 @@ void qsfp_check_state(struct qsfp *qsfp)
     struct qsfp_flags chgd;
     const struct qsfp_flags *newf;
 
+    mutex_lock(&qsfp->sm_mutex);
+
     if (qsfp_set_spec_ops(qsfp) < 0) {
         TRX_LOG_ERR(qsfp, "Unable to set the spec ops");
+        mutex_unlock(&qsfp->sm_mutex);
         return;
     }
-
-    mutex_lock(&qsfp->sm_mutex);
 
     /* Save previous flags */
     oldf = qsfp->flags;
