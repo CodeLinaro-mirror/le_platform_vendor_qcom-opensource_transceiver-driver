@@ -26,6 +26,9 @@
 #define VENDOR_CIG "CIG"
 #define CIG_TX_DISABLE_WAIT (5)
 
+#define SFF8636_PARAM_THRESHOLD_SET_MAX (16)
+#define SFF8636_PARAM_CFG_SET_MAX (24)
+
 enum {
     SFF8636_LOS                         = QSFP_ADDR(0, 0,   3),
     SFF8636_TX_FAULT                    = QSFP_ADDR(0, 0,   4),
@@ -65,6 +68,8 @@ enum {
     SFF8636_TX_BIAS_IRQ_MASK            = QSFP_ADDR(0, 3, 244),
     SFF8636_TX_POWER_IRQ_MASK           = QSFP_ADDR(0, 3, 246),
     SFF8636_RESERVED_IRQ_MASK           = QSFP_ADDR(0, 3, 248),
+    SFF8636_PARAM_CFG                   = QSFP_ADDR(0, 0x20, 200),
+    SFF8636_PARAM_THRESHOLD             = QSFP_ADDR(0, 0x21, 128),
 };
 
 enum {
@@ -390,6 +395,24 @@ struct sff8636_ddm_thresholds {
     u16 txpwr_low_alarm;
     u16 txpwr_high_warn;
     u16 txpwr_low_warn;
+}__packed;
+
+struct sff8636_param_thresholds {
+    __be16 param_high_alarm;
+    __be16 param_low_alarm;
+    __be16 param_high_warn;
+    __be16 param_low_warn;
+}__packed;
+
+struct sff8636_param_cfg {
+    /* MSB */
+    u8 channel_num:2;
+    u8 param_mon_type:1;
+    u8 reserved:1;
+    u8 threshold_id:4;
+
+    /* LSB */
+    u8 param_type;
 }__packed;
 
 #endif

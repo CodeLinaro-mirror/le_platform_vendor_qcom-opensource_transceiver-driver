@@ -354,12 +354,11 @@ enum {
 
 #define CMIS_LOW_POWER_REQ_SW   (BIT(4))
 #define CMIS_LOW_POWER_ALLOW_HW (BIT(6))
-
+#define ETH_MODULE_CMIS_MAX_LEN (2431)
 #define CMIS_MODULE_STATE_READY (0x3)
 
 #define CMIS_MMF_ENCODING (1)
 #define CMIS_SMF_ENCODING (2)
 #define CMIS_CR_ENCODING  (3)
-
 
 #endif

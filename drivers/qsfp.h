@@ -342,6 +342,15 @@ struct qsfp_simulation {
 };
 #endif
 
+struct qsfp_param_info {
+    u8 laser_temp_sup_flag:1;
+    u8 laser_temp_thsup_flag:1;
+    u8 unused:6;
+    u32  ltemp_reg_addr;
+    struct sff8636_param_cfg param_cfg;
+    struct sff8636_param_thresholds param_th;
+}__packed;
+
 struct qsfp {
     struct device *dev;
     struct fpc *fpc;
@@ -392,6 +401,7 @@ struct qsfp {
    /* Features supported/implemented */
    struct qsfp_support support;
    struct qsfp_diag diag;
+   struct qsfp_param_info param_info;
 };
 
 struct qsfp_spec_ops {
@@ -426,6 +436,8 @@ struct qsfp_spec_ops {
     void (*eeprom_print)(struct qsfp *qsfp);
     /* Ethtool callback function to get module info */
     int (*module_info)(struct qsfp *qsfp, struct ethtool_modinfo *modinfo);
+    /* Ethtool callback function to get module EEPROM info */
+    int (*module_eeprom)(struct qsfp *qsfp, struct ethtool_eeprom *ee, u8 *data);
     /* Gets connector type */
     u8 (*get_connector_type)(struct qsfp *qsfp);
     /* Gets lane speed  mask*/
@@ -577,6 +589,12 @@ extern int sff8472_remove_sysfs_files(struct qsfp *qsfp);
 extern int sff8636_remove_sysfs_files(struct qsfp *qsfp);
 extern int cmis_remove_sysfs_files(struct qsfp *qsfp);
 extern int qsfp_module_parse_ddm_thresholds(struct qsfp* qsfp);
+int qsfp_get_module_eeprom(struct qsfp *qsfp,
+                        struct ethtool_eeprom *ee, u8 *data);
+int parse_sff8636_page20_21(struct qsfp *qsfp);
+int qsfp_module_parse_laser_temp(struct qsfp *qsfp);
+extern long trx_calibrate_temp(__be16 tmp_val);
+
 extern const char * const link_length_range_to_str[];
 extern  const char * const link_type_to_str[];
 extern  const char * const reasoncode_to_str[];
@@ -587,6 +605,19 @@ extern  const char * const trxtype_to_str[];
 #define TRX_TYPE_MAX_INDEX (5)
 #define REASON_CODE_MAX_INDEX (4)
 #define LINK_TYPE_MAX_INDEX (256)
+
+
+#define TRX_EEPROM_PAGE_LENGTH    (256)
+#define TRX_EEPROM_UP_PAGE_LENGTH    (128)
+
+/* This is used to access the optional upper pages (1 - 17) in the QSFP
+ * memory map. Page 1 is available on offset 256 through 383, page 2 -
+ * on offset 384 through 511, page 3 - on offset 512 through 639, page
+ * 17 - on  2304 through 2431.
+ */
+#define TRX_PAGE_GET(off) (((off) - \
+                TRX_EEPROM_PAGE_LENGTH) / \
+                TRX_EEPROM_UP_PAGE_LENGTH + 1)
 
 extern void *trx_ipc_log_buf;
 

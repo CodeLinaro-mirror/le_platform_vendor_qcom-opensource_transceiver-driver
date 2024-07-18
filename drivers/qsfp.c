@@ -1590,6 +1590,12 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
         return ret;
     }
 
+    ret  = qsfp_module_parse_laser_temp(qsfp);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Module parse laser temperature failed, ret %d", ret);
+        return ret;
+    }
+
     module_sysfs_init(qsfp);
     qsfp_sensor_sysfs_init(qsfp);
 
@@ -1629,6 +1635,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     memset(&qsfp->support, 0, sizeof(qsfp->support));
     memset(&qsfp->diag, 0, sizeof(qsfp->diag));
     memset(&qsfp->status, 0, sizeof(qsfp->status));
+    memset(&qsfp->param_info, 0, sizeof(qsfp->param_info));
     qsfp->module_revision = 0;
     qsfp->module_power_mW = 0;
     qsfp->module_power_class = 0;
@@ -2283,26 +2290,57 @@ int qsfp_module_info(struct sfp *sfp, struct ethtool_modinfo *modinfo)
     return qsfp->spec_ops->module_info(lane->qsfp, modinfo);
 }
 
+int qsfp_get_module_eeprom(struct qsfp *qsfp,
+                        struct ethtool_eeprom *ee, u8 *data)
+{
+    int ret = 0;
+    u32 offset = 0, length = 0, addr = 0;
+    u8  page = 0;
+
+    if (ee->len == 0)
+    {
+        TRX_LOG_ERR(qsfp, "Invalid EEPROM length\n");
+        return -EINVAL;
+    }
+
+    offset = ee->offset;
+    length = ee->len;
+
+    if(offset >= TRX_EEPROM_PAGE_LENGTH)
+    {
+        page = TRX_PAGE_GET(offset);
+        offset -= TRX_EEPROM_UP_PAGE_LENGTH * page;
+    }
+
+    addr = QSFP_ADDR(0, page, offset);
+
+    TRX_LOG_INFO(qsfp, "page: %u offset: %u addr: 0x%02X"
+                " length %u\n", page, offset, addr, length);
+
+    ret = qsfp_read(qsfp, addr, data, length);
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Fail to read EEPROM from offset %u "
+                 "length %u. ret %d", ee->offset, ee->len, ret);
+    }
+
+    return ret;
+}
+
 int qsfp_module_eeprom(struct sfp *sfp, struct ethtool_eeprom *ee,
                  u8 *data)
 {
-    int ret;
     struct lane *lane = (struct lane*)sfp;
     struct qsfp *qsfp = lane->qsfp;
 
     TRX_LOG_INFO(qsfp, "offset %u length %u", ee->offset, ee->len);
 
-    if (ee->len == 0) {
-        return -EINVAL;
+
+    if (!qsfp->spec_ops) {
+        TRX_LOG_INFO(qsfp, "Module not present or not supported");
+        return -ENODEV;
     }
 
-    ret = qsfp_read(qsfp, ee->offset, data, ee->len);
-    if (ret < 0) {
-        TRX_LOG_ERR(qsfp, "Fail to read EEPROM from offset %u "
-                    "length %u. ret %d", ee->offset, ee->len, ret);
-    }
-
-    return ret;
+    return qsfp->spec_ops->module_eeprom(lane->qsfp, ee, data);
 }
 
 int qsfp_module_eeprom_by_page(struct sfp *sfp,
@@ -2338,8 +2376,43 @@ int qsfp_module_eeprom_by_page(struct sfp *sfp,
     }
 
     return ret;
+}
 
-};
+int qsfp_trx_get_module_info(u32 lane_phandle, struct ethtool_modinfo *modinfo)
+{
+    struct lane *lane;
+
+    if(modinfo == NULL)
+        return -EINVAL;
+
+    lane = phandle_to_drvdata(lane_phandle);
+    if (!lane)
+        return -EINVAL;
+
+    if (!lane->status.present)
+        return -EINVAL;
+
+    return qsfp_module_info((struct sfp *)lane,modinfo);
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_module_info);
+
+int qsfp_trx_get_module_eeprom(u32 lane_phandle, struct ethtool_eeprom *ee, u8 *data)
+{
+    struct lane *lane;
+
+    if((ee == NULL) || (data == NULL))
+        return -EINVAL;
+
+    lane = phandle_to_drvdata(lane_phandle);
+    if (!lane)
+        return -EINVAL;
+
+    if (!lane->status.present)
+        return -EINVAL;
+
+    return qsfp_module_eeprom((struct sfp *)lane, ee, data);
+}
+EXPORT_SYMBOL_GPL(qsfp_trx_get_module_eeprom);
 
 static void qsfp_timeout(struct work_struct *work)
 {
@@ -2998,7 +3071,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->sensor_sysfs_dir = NULL;
     qsfp->lane_min_speed = 0;
     qsfp->lane_max_speed = 0;
-
+    memset(&qsfp->param_info, 0, sizeof(qsfp->param_info));
     return qsfp;
 }
 
@@ -3041,6 +3114,7 @@ int qsfp_probe_cleanup(struct qsfp* qsfp)
 #endif
     module_sysfs_exit(qsfp);
     qsfp_sysfs_exit(qsfp);
+    memset(&qsfp->param_info, 0, sizeof(qsfp->param_info));
 
     return 0;
 }
@@ -3274,6 +3348,7 @@ int qsfp_remove(struct platform_device *pdev)
     */
     module_sysfs_exit(qsfp);
     qsfp_sysfs_exit(qsfp);
+    memset(&qsfp->param_info, 0, sizeof(qsfp->param_info));
 
     mutex_lock(&qsfp->sm_mutex);
 

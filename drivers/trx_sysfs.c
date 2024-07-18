@@ -36,7 +36,7 @@ enum {
     LTEMP_HALRM,
     LTEMP_LALRM,
     LTEMP_HWARN,
-    LTEMP_LWARN
+    LTEMP_LWARN,
 };
 
 /* Function to export device state information like
@@ -2203,11 +2203,19 @@ static ssize_t laser_temp_show(struct kobject *kobj, struct kobj_attribute *attr
         }
         else
         {
-             /* Transceiver support page 20 & 21 but supported
-              * Transceiver not available to test.*/
-             TRX_LOG_ERR(qsfp, "SFF-8636 laser temperature"
-                               " support not added\n");
-             return -EINVAL;
+            if((qsfp->param_info.laser_temp_sup_flag == 0x1) &&
+                (qsfp->param_info.ltemp_reg_addr != 0x00))
+            {
+                ret = qsfp_read(qsfp, qsfp->param_info.ltemp_reg_addr,
+                                           &l_tempc, sizeof(l_tempc));
+                if (ret < 0) {
+                    TRX_LOG_ERR(qsfp, "Page 20H laser temp read failed,"
+                                      " ret %d", ret);
+                    return -EINVAL;
+                }
+                return sysfs_emit(buf, "%ld\n", trx_calibrate_temp(l_tempc));
+            }
+            return -EINVAL;
         }
     case SFF8024_ID_QSFPDD_CMIS:
         cmis_id = &qsfp->id.cmis;
@@ -2265,7 +2273,7 @@ int common_temp_threshold(struct qsfp *qsfp, int attr, long* value)
     u8 *spec_id;
     struct sff8472_temp_diag temp_ext_cal = {0};
     int ret = 0;
-    __be16 temp_threshold;
+    __be16 temp_threshold = 0;
 
     spec_id = (u8*)&qsfp->id;
 
@@ -2448,7 +2456,7 @@ int common_volt_threshold(struct qsfp *qsfp, int attr, long* value)
     u8 *spec_id;
     struct sff8472_vcc_diag vcc_ext_cal = {0};
     int ret = 0;
-    __be16 volt_threshold;
+    __be16 volt_threshold = 0;
 
     spec_id = (u8*)&qsfp->id;
 
@@ -2630,7 +2638,7 @@ int common_txi_threshold(struct qsfp *qsfp, int attr, long* value)
     u8 *spec_id;
     struct sff8472_txi_diag txi_ext_cal = {0};
     int ret = 0;
-    __be16 txi_threshold;
+    __be16 txi_threshold = 0;
     struct cmis_eeprom_id *cmis_id;
     u8 cmis_tx_bias_multiplier = 1;
 
@@ -2844,7 +2852,7 @@ int common_power_threshold(struct qsfp *qsfp, int attr, long* value)
     struct sff8472_txpwr_diag txpwr_ext_cal = {0};
 
     int ret = 0;
-    __be16 power_threshold;
+    __be16 power_threshold = 0;
 
     spec_id = (u8*)&qsfp->id;
 
@@ -3141,11 +3149,11 @@ int common_laser_temp_threshold(struct qsfp *qsfp, int attr, long* value)
 
         if(attr == LTEMP_HALRM)
             laser_temp_threshold = sff8472_ddm_limits->laser_temp_high_alarm;
-        if(attr == LTEMP_LALRM)
+        else if(attr == LTEMP_LALRM)
             laser_temp_threshold = sff8472_ddm_limits->laser_temp_low_alarm;
-        if(attr == LTEMP_HWARN)
+        else if(attr == LTEMP_HWARN)
             laser_temp_threshold = sff8472_ddm_limits->laser_temp_high_warn;
-        if(attr == LTEMP_LWARN)
+        else if(attr == LTEMP_LWARN)
             laser_temp_threshold = sff8472_ddm_limits->laser_temp_low_warn;
         else
             return -EINVAL;
@@ -3154,7 +3162,7 @@ int common_laser_temp_threshold(struct qsfp *qsfp, int attr, long* value)
             TRX_LOG_ERR(qsfp, "Laser temperature threshold unknown\n");
             return -EINVAL;
         }
-        *value = laser_temp_threshold;
+        *value = trx_calibrate_temp(laser_temp_threshold);
         return 0;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
@@ -3165,12 +3173,30 @@ int common_laser_temp_threshold(struct qsfp *qsfp, int attr, long* value)
             TRX_LOG_ERR(qsfp, "Laser temperature thresholds not supported\n");
             return -EINVAL;
         }
+        else
+        {
+            if(qsfp->param_info.laser_temp_thsup_flag == 0x1)
+            {
+                if(attr == LTEMP_HALRM)
+                    laser_temp_threshold = qsfp->param_info.param_th.param_high_alarm;
+                else if(attr == LTEMP_LALRM)
+                    laser_temp_threshold = qsfp->param_info.param_th.param_low_alarm;
+                else if(attr == LTEMP_HWARN)
+                    laser_temp_threshold = qsfp->param_info.param_th.param_high_warn;
+                else if(attr == LTEMP_LWARN)
+                    laser_temp_threshold = qsfp->param_info.param_th.param_low_warn;
+                else
+                    return -EINVAL;
 
-        /* Transceiver support page 20 & 21 but supported
-         * Transceiver not available to test.*/
-         TRX_LOG_ERR(qsfp, "SFF-8636 laser temperature thresholds"
-                                          " support not added\n");
-         return -EINVAL;
+                *value = trx_calibrate_temp(laser_temp_threshold);
+                return 0;
+            }
+            else
+            {
+                TRX_LOG_ERR(qsfp, "Laser temperature thresholds not supported\n");
+                return -EINVAL;
+            }
+        }
     case SFF8024_ID_QSFPDD_CMIS:
         cmis_id = &qsfp->id.cmis;
         /* Page 00h, Byte-2 Bit-7 */
@@ -3225,7 +3251,7 @@ int common_laser_temp_threshold(struct qsfp *qsfp, int attr, long* value)
             return -EINVAL;
         }
 
-        *value = laser_temp_threshold;
+        *value = trx_calibrate_temp(laser_temp_threshold);
         return 0;
     default:
         TRX_LOG_ERR(qsfp, "Invalid Specification Identifier"
@@ -3265,7 +3291,7 @@ static ssize_t ltemp_lalrm_show(struct kobject *kobj,
 
     ret = common_laser_temp_threshold(qsfp, LTEMP_LALRM, &ltemp_threshold);
     if(ret < 0)
-         return -EINVAL;
+        return -EINVAL;
 
     return sysfs_emit(buf, "%ld\n",ltemp_threshold);
 }
@@ -3283,7 +3309,7 @@ static ssize_t ltemp_hwarn_show(struct kobject *kobj,
 
     ret = common_laser_temp_threshold(qsfp, LTEMP_HWARN, &ltemp_threshold);
     if(ret < 0)
-         return -EINVAL;
+        return -EINVAL;
 
     return sysfs_emit(buf, "%ld\n",ltemp_threshold);
 }
@@ -3301,7 +3327,7 @@ static ssize_t ltemp_lwarn_show(struct kobject *kobj,
 
     ret = common_laser_temp_threshold(qsfp, LTEMP_LWARN, &ltemp_threshold);
     if(ret < 0)
-         return -EINVAL;
+        return -EINVAL;
 
     return sysfs_emit(buf, "%ld\n",ltemp_threshold);
 }
@@ -3310,8 +3336,8 @@ int get_sfp_power(struct qsfp *qsfp, int lane_number, long* value_in, int attr)
 {
    struct sfp_eeprom_id *sff8472_id;
    struct sff8472_txpwr_diag txpwr_ext_cal = {0};
-   int ret;
-   __be16 sfp_tx_power;
+   int ret = 0;
+   __be16 sfp_tx_power = 0;
    sff8472_id = &qsfp->id.sff8472;
 
    if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_DDM)
@@ -3470,8 +3496,8 @@ int get_cmis_reg(int lane_number, u32* addr, int attr)
 int get_qsfp_power(struct qsfp *qsfp, int lane_number,
                         long* value_in, int attr)
 {
-    int ret;
-    __be16 qsfp_tx_power;
+    int ret = 0;
+    __be16 qsfp_tx_power = 0;
     struct sff8636_eeprom_id *id;
     u8  diagmon;
     u32 addr;
@@ -3520,7 +3546,7 @@ int get_cmis_power(struct qsfp *qsfp, int lane_number,
 {
     struct cmis_eeprom_id *cmis_id;
     u32 addr = 0;
-    __be16 cmis_tx_power;
+    __be16 cmis_tx_power = 0;
     int ret = 0;
     cmis_id = &qsfp->id.cmis;
 
@@ -3898,7 +3924,7 @@ int get_sfp_tx_bias(struct qsfp* qsfp, int lane_number,long* value)
 {
     struct sfp_eeprom_id *sff8472_id;
     u16 tx_bias_current = 0;
-    long bias_value;
+    long bias_value = 0;
     struct sff8472_txi_diag txi_ext_cal = {0};
     int ret = 0;
 
@@ -3953,7 +3979,7 @@ int get_qsfp_tx_bias(struct qsfp* qsfp, int lane_number,long* value)
 {
     int ret = 0;
     u32 addr;
-    u16 tx_bias;
+    u16 tx_bias = 0;
 
     if (!qsfp->support.tx_bias_flags) {
         TRX_LOG_ERR(qsfp,"TRX tx bias current measurement"
@@ -4523,7 +4549,7 @@ int qsfp_sysfs_init(struct qsfp *qsfp)
 
 int qsfp_sensor_sysfs_init(struct qsfp *qsfp)
 {
-    int ret;
+    int ret = 0;
     if(!qsfp->qsfp_sysfs_dir)
     {
         TRX_LOG_ERR(qsfp, "qsfp_sysfs_dir is NULL\n");
@@ -4786,5 +4812,18 @@ int qsfp_module_parse_ddm_thresholds(struct qsfp* qsfp)
     default:
         return -1;
     }
+}
+
+int qsfp_module_parse_laser_temp(struct qsfp* qsfp)
+{
+    u8 *spec_id;
+    spec_id = (u8*)&qsfp->id;
+
+    if((*spec_id == SFF8024_ID_QSFP28_8636) ||
+       (*spec_id == SFF8024_ID_QSFP_8436_8636))
+    {
+        return parse_sff8636_page20_21(qsfp);
+    }
+    return 0;
 }
 

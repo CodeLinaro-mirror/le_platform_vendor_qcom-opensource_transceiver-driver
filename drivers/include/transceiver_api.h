@@ -7,6 +7,8 @@
 #ifndef TRX_API_H
 #define TRX_API_H
 
+#include <linux/ethtool.h>
+
 /* Macro to identify the breakout configuration is not
    supported case for separable transceiver of type
    QSFP-28, QSFP-56, or QSFP+. */
@@ -242,5 +244,36 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier);
 ****************************************************************/
 int qsfp_trx_get_link_length_range(u32 lane_phandle,
                                    trx_link_length_range* link_length_range);
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_module_info
+* Description:    API to get QSFP TRX module EEPROM type and length
+*                 information.
+* Inputs:         lane_phandle [in] : Lane phandle to get the QSFP structure.
+*                 modinfo [out] : Structure to get module EEPROM type and
+*                                 length information.
+*
+* Return value:   0                : Success
+*                -EINVAL | -ENODEV : Error
+*
+****************************************************************/
+int qsfp_trx_get_module_info(u32 lane_phandle,
+                                    struct ethtool_modinfo *modinfo );
+
+/***************************************************************
+*
+* Function:       qsfp_trx_get_module_eeprom
+* Description:    API to get TRX EEPROM data.
+* Inputs:         lane_phandle [in] : Lane phandle to get the QSFP structure.
+*                 ee [in] : Structure to pass offset information to TRX driver.
+*                 data [out] : Buffer to get EEPROM data from TRX driver.
+*
+* Return value:   0                : Success
+*                -EINVAL | -ENODEV : Error
+*
+****************************************************************/
+int qsfp_trx_get_module_eeprom(u32 lane_phandle,struct ethtool_eeprom *ee,
+                                      u8 *data);
 
 #endif

@@ -974,14 +974,23 @@ static int sff8636_module_info(struct qsfp *qsfp, struct ethtool_modinfo *modinf
     if (qsfp->id.sff8636.base.phys_ext_id >= SFF8636_REV_8636_1_3) {
         TRX_LOG_INFO(qsfp, "SFF_8636");
         modinfo->type = ETH_MODULE_SFF_8636;
-        modinfo->eeprom_len = ETH_MODULE_SFF_8636_LEN;
+        modinfo->eeprom_len = ETH_MODULE_SFF_8636_MAX_LEN;
     } else {
         TRX_LOG_INFO(qsfp, "SFF_8436");
         modinfo->type = ETH_MODULE_SFF_8436;
-        modinfo->eeprom_len = ETH_MODULE_SFF_8436_LEN;
+        modinfo->eeprom_len = ETH_MODULE_SFF_8436_MAX_LEN;
     }
 
+    TRX_LOG_INFO(qsfp, "Module_type: %d , Module length %d",
+                       modinfo->type, modinfo->eeprom_len);
+
     return 0;
+}
+
+static int sff8636_module_eeprom(struct qsfp *qsfp,
+                               struct ethtool_eeprom *ee, u8 *data)
+{
+    return qsfp_get_module_eeprom(qsfp,ee,data);
 }
 
 const char *sff8636_mod_revision_to_str(u8 mod_rev_value)
@@ -1243,6 +1252,89 @@ static int sff8636_set_rate_select(struct qsfp *qsfp, bool enable)
     return 0;
 }
 
+int parse_sff8636_page20_21(struct qsfp *qsfp)
+{
+    struct sff8636_param_thresholds param_th[SFF8636_PARAM_THRESHOLD_SET_MAX];
+    struct sff8636_param_cfg param_cfg[SFF8636_PARAM_CFG_SET_MAX];
+    struct sff8636_eeprom_ext *ext;
+    struct qsfp_param_info *lparam_info;
+
+    int ret = 0, i = 0;
+    int flag_ltemp = 0;
+    u8 laser_offset = 0;
+    int threshold_id = 0, ltemp_param_index = 0;
+
+    ext = &qsfp->id.sff8636.ext;
+    lparam_info = &qsfp->param_info;
+
+    /* Check page 20h, 21h support from page 00h byte 195 bit 0 */
+    if(!ext->page20_21)
+    {
+        memset(lparam_info, 0, sizeof(*lparam_info));
+        TRX_LOG_INFO(qsfp, "Laser temperature not supported\n");
+        return 0;
+    }
+
+    /* Parse Page 21h Param threshold set */
+    ret = qsfp_read(qsfp, SFF8636_PARAM_THRESHOLD, &param_th,
+                     sizeof(param_th));
+    if (ret < 0) {
+        memset(lparam_info, 0, sizeof(*lparam_info));
+        TRX_LOG_ERR(qsfp, "Page 21H read failed, ret %d", ret);
+        return -EINVAL;
+    }
+
+    /* Parse Page 20h Param cfg set */
+    ret = qsfp_read(qsfp, SFF8636_PARAM_CFG, &param_cfg,
+                     sizeof(param_cfg));
+    if (ret < 0) {
+        memset(lparam_info, 0, sizeof(*lparam_info));
+        TRX_LOG_ERR(qsfp, "Page 20H param cfg read failed, ret %d", ret);
+        return -EINVAL;
+    }
+
+    /* Parse param cfg for Laser temp */
+    for(i = 0; i< SFF8636_PARAM_CFG_SET_MAX; i++)
+    {
+        if(param_cfg[i].param_type == 0x8)
+        {
+            threshold_id = param_cfg[i].threshold_id;
+            ltemp_param_index = i;
+            flag_ltemp = 1;
+            lparam_info->laser_temp_sup_flag = 1;
+
+            memcpy(&lparam_info->param_cfg, &param_cfg[i],
+                                    sizeof(param_cfg[i]));
+            TRX_LOG_INFO(qsfp, "laser temp supported, threshold_id: %d"
+                               " ltemp_param_index: %d\n", threshold_id,
+                               ltemp_param_index);
+            break;
+        }
+    }
+
+    if(!flag_ltemp)
+    {
+        TRX_LOG_INFO(qsfp, "laser temp not supported by cfg registers \n");
+        memset(lparam_info, 0, sizeof(*lparam_info));;
+        return 0;
+    }
+
+    /* 152 is address of Param 1 MSB */
+    laser_offset =  152 + (ltemp_param_index * 2);
+    lparam_info->ltemp_reg_addr = QSFP_ADDR(0, 0x20, laser_offset);
+    lparam_info->laser_temp_sup_flag = 1;
+
+    lparam_info->laser_temp_thsup_flag = 1;
+    memcpy(&lparam_info->param_th, &param_th[threshold_id],
+                        sizeof(param_th[threshold_id]));
+
+    TRX_LOG_INFO(qsfp, "laser temp reg offset: %d  laser temp"
+                       " reg addr: 0x%02x\n", laser_offset,
+                       lparam_info->ltemp_reg_addr);
+
+    return 0;
+}
+
 const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_probe = sff8636_mod_probe,
     .disable_redundant_irq = sff8636_disable_redundant_irq,
@@ -1258,6 +1350,7 @@ const struct qsfp_spec_ops sff8636_spec_ops = {
     .mod_low_power = sff8636_mod_low_power,
     .eeprom_print = sff8636_eeprom_print,
     .module_info = sff8636_module_info,
+    .module_eeprom = sff8636_module_eeprom,
     .get_connector_type = sff8636_get_connector_type,
     .get_lane_speed = sff8636_get_lane_speed,
     .get_transceiver_type = sff8636_get_transceiver_type,
