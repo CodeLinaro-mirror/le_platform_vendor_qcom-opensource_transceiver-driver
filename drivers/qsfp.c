@@ -1451,8 +1451,15 @@ static int qsfp_module_tx_disable(struct qsfp *qsfp)
     u8 i;
     int ret;
     struct lane *lanei;
+    u8 retry = QSFP_I2C_FAIL_RETRY;
 
-    ret = qsfp->spec_ops->mod_tx_disable(qsfp);
+    while (retry--) {
+        ret = qsfp->spec_ops->mod_tx_disable(qsfp);
+        if (ret == 0) {
+            break;
+        }
+    }
+
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
         return ret;
