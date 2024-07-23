@@ -238,6 +238,7 @@ static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool ena
     u8 buf = 0;
     u8 buf1[2] = {0};
     u8 tmp;
+    u8 retry = QSFP_I2C_FAIL_RETRY;
     const struct qsfp_support *support = &qsfp->support;
 
     lanes = lanes & qsfp->lane_presence;
@@ -315,7 +316,6 @@ static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool ena
     }
 
     if (support->rx_power_flags) {
-
         ret = qsfp_read(qsfp, SFF8636_RX_POWER_IRQ_MASK, buf1, sizeof(buf1));
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to read RX power irq mask register."
@@ -335,7 +335,14 @@ static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool ena
 
     if (support->tx_power_flags) {
         buf1[0] = buf1[1] = 0;
-        ret = qsfp_read(qsfp, SFF8636_TX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+
+        while (retry--) {
+            ret = qsfp_read(qsfp, SFF8636_TX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+            if (ret == 0) {
+                break;
+            }
+        }
+
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to read TX power irq mask register."
                               " ret %d", ret);
@@ -344,7 +351,15 @@ static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool ena
 
         sff8636_set_lane_rx_tx_irq_mask(enable, lanes, buf1);
 
-        ret = qsfp_write(qsfp, SFF8636_TX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+        retry = QSFP_I2C_FAIL_RETRY;
+
+        while (retry--) {
+            ret = qsfp_write(qsfp, SFF8636_TX_POWER_IRQ_MASK, buf1, sizeof(buf1));
+            if (ret == 0) {
+                break;
+            }
+        }
+
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to write TX power irq mask register."
                               " ret %d", ret);
@@ -354,7 +369,15 @@ static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool ena
 
     if (support->tx_bias_flags) {
         buf1[0] = buf1[1] = 0;
-        ret = qsfp_read(qsfp, SFF8636_TX_BIAS_IRQ_MASK, buf1, sizeof(buf1));
+        retry = QSFP_I2C_FAIL_RETRY;
+
+        while (retry--) {
+            ret = qsfp_read(qsfp, SFF8636_TX_BIAS_IRQ_MASK, buf1, sizeof(buf1));
+            if (ret == 0) {
+                break;
+            }
+        }
+
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to read TX bias irq mask register."
                               " ret %d", ret);
@@ -363,7 +386,15 @@ static int sff8636_disable_enable_lane_irq(struct qsfp *qsfp, u8 lanes, bool ena
 
         sff8636_set_lane_rx_tx_irq_mask(enable, lanes, buf1);
 
-        ret = qsfp_write(qsfp, SFF8636_TX_BIAS_IRQ_MASK, buf1, sizeof(buf1));
+        retry = QSFP_I2C_FAIL_RETRY;
+
+        while (retry--) {
+            ret = qsfp_write(qsfp, SFF8636_TX_BIAS_IRQ_MASK, buf1, sizeof(buf1));
+            if (ret == 0) {
+                break;
+            }
+        }
+
         if (ret < 0) {
             TRX_LOG_ERR(qsfp, "Failed to write TX bias irq mask register."
                               " ret %d", ret);
