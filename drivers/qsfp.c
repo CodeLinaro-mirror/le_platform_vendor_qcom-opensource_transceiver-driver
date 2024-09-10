@@ -76,6 +76,7 @@ static struct qsfp* get_qsfp(u32 lane_phandle)
 int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
 {
     u8 connector;
+    u8 trx_type;
 
     if (!qsfp) {
         /* There is chance that Lane/QSFP/FPC probe not yet
@@ -99,6 +100,25 @@ int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
 
         } else {
             connector = qsfp->spec_ops->get_connector_type(qsfp);
+            if ((*spec_id == SFF8024_ID_QSFP28_8636) ||
+                (*spec_id == SFF8024_ID_QSFP_8436_8636))
+            {
+                if(connector == SFF8024_CONNECTOR_NOSEPARATE)
+                {
+                    if(qsfp->id.sff8636.base.ecom_extended == 0x1)
+                    {
+                        trx_type = qsfp->id.sff8636.ext.link_codes;
+                        /* Check for AOC cable types */
+                        if((trx_type == 0x01) ||
+                           (trx_type == 0x18) ||
+                           (trx_type == 0x31) ||
+                           (trx_type == 0x33)) {
+                               *link_info = PORT_FIBRE;
+                               return 0;
+                        }
+                    }
+                }
+            }
         }
     } else {
         TRX_LOG_WARN(qsfp, "Spec ops not yet initialised");
@@ -336,6 +356,7 @@ void qsfp_start_poll(struct qsfp *qsfp, unsigned long delay)
 {
     qsfp->need_poll = true;
     mod_delayed_work(system_wq, &qsfp->poll, msecs_to_jiffies(delay));
+    TRX_LOG_INFO(qsfp, "Polling started with delay: %lu", delay);
 }
 
 static const char * const eth_event_to_str[] = {
@@ -1430,8 +1451,15 @@ static int qsfp_module_tx_disable(struct qsfp *qsfp)
     u8 i;
     int ret;
     struct lane *lanei;
+    u8 retry = QSFP_I2C_FAIL_RETRY;
 
-    ret = qsfp->spec_ops->mod_tx_disable(qsfp);
+    while (retry--) {
+        ret = qsfp->spec_ops->mod_tx_disable(qsfp);
+        if (ret == 0) {
+            break;
+        }
+    }
+
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "TX disable failed. ret %d", ret);
         return ret;
@@ -1534,7 +1562,6 @@ static int qsfp_sm_mod_probe(struct qsfp *qsfp)
     ret = qsfp->spec_ops->disable_redundant_irq(qsfp);
     if (ret < 0) {
         TRX_LOG_ERR(qsfp, "Disable interrupts failed. ret %d", ret);
-        return ret;
     }
 
     /* TX disable when module inserted */
@@ -2694,12 +2721,13 @@ void qsfp_check_state(struct qsfp *qsfp)
     struct qsfp_flags chgd;
     const struct qsfp_flags *newf;
 
+    mutex_lock(&qsfp->sm_mutex);
+
     if (qsfp_set_spec_ops(qsfp) < 0) {
         TRX_LOG_ERR(qsfp, "Unable to set the spec ops");
+        mutex_unlock(&qsfp->sm_mutex);
         return;
     }
-
-    mutex_lock(&qsfp->sm_mutex);
 
     /* Save previous flags */
     oldf = qsfp->flags;
