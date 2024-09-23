@@ -27,7 +27,14 @@ const struct of_device_id fpc_qsfp_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, fpc_qsfp_of_match);
 
+struct class *uevent_tcvr_class = NULL;
+struct device *uevent_tcvr_device = NULL;
+
 void *trx_ipc_log_buf = NULL;
+/* Flag to transmit kobject uevents for logging to userspace */
+u8 is_qxdm_log_en = 0;
+
+struct kobject *transceiver_kobj = NULL;
 
 /* fpc_write_nolock needed in case of qsfp i2c bus recovery as caller has already taken i2c bus lock */
 static int fpc_write_nolock(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
@@ -623,7 +630,7 @@ static int fpc_probe(struct platform_device *pdev)
 
     fpc = fpc_alloc(&pdev->dev);
     if (IS_ERR(fpc)) {
-        TRX_LOG_ERR(&pdev, "fpc_alloc failed");
+        TRX_LOG_PDEV_ERR(&pdev, "fpc_alloc failed");
         return PTR_ERR(fpc);
     }
 
@@ -764,19 +771,19 @@ static int fpc_probe(struct platform_device *pdev)
 /*
  * Checks whether platform device is for FPC
  */
-static u8 get_node_type(const struct platform_device *pdev)
+static u8 get_node_type(struct platform_device *pdev)
 {
     struct device_node *node = pdev->dev.of_node;
     const struct of_device_id *id;
 
     if (!node) {
-        TRX_LOG_ERR(&pdev, "No dev of_node");
+        TRX_LOG_PDEV_ERR(&pdev, "No dev of_node");
         return -EINVAL;
     }
 
     id = of_match_node(fpc_qsfp_of_match, node);
     if (WARN_ON(!id)) {
-        TRX_LOG_ERR(&pdev, "No of_match_node");
+        TRX_LOG_PDEV_ERR(&pdev, "No of_match_node");
         return -EINVAL;
     }
 
@@ -787,7 +794,7 @@ static u8 get_node_type(const struct platform_device *pdev)
     } else if (!strcmp(id->compatible, LANE_COMPATIBLE)) {
         return QSFP_LANE;
     } else {
-        TRX_LOG_ERR(&pdev, "%s no match", id->compatible);
+        TRX_LOG_PDEV_ERR(&pdev, "%s no match", id->compatible);
         return QSFP_NONE;
     }
 }
@@ -868,11 +875,71 @@ static struct platform_driver fpc_qsfp_driver = {
     },
 };
 
+static ssize_t enable_qxdm_show(struct kobject *kobj,
+                        struct kobj_attribute *attr, char *buf) {
+    return snprintf(buf, PAGE_SIZE, "%d\n", is_qxdm_log_en);
+}
+
+static ssize_t enable_qxdm_store(struct kobject *kobj,
+             struct kobj_attribute *attr, const char *buf, size_t count) {
+    sscanf(buf, "%u", &is_qxdm_log_en);
+    printk(KERN_INFO "QXDM Logging %s\n", is_qxdm_log_en ? "enabled" :
+                                                          "disabled");
+    return count;
+}
+
+static struct kobj_attribute qxdm_attribute = __ATTR(enable_qxdm,
+                       0664, enable_qxdm_show, enable_qxdm_store);
+
+#define EVENT_QXDM_SYSFS_CFG_CREATE  "EVENT=EVENT_QXDM_SYSFS_CFG_CREATE"
+
 /*
  * Init function gets called during insmod/modprobe
  */
 static int fpc_qsfp_init(void)
 {
+    int ret = 0;
+
+    // Create a class specifically for sending uevents to user application.
+    uevent_tcvr_class = class_create(THIS_MODULE, "uevent_tcvr_class");
+    if (IS_ERR(uevent_tcvr_class)) {
+        printk(KERN_ERR "Failed to create uevent_tcvr_class: %ld \n",
+                                        PTR_ERR(uevent_tcvr_class));
+        uevent_tcvr_class = NULL;
+    }
+    else {
+        /* Create a device specifically for sending uevents to user
+         * Application via its kobject */
+        uevent_tcvr_device = device_create(uevent_tcvr_class, NULL,
+                             MKDEV(0, 0), NULL, "uevent_tcvr_device");
+        if (IS_ERR(uevent_tcvr_device)) {
+            printk(KERN_ERR "Failed to create uevent_tcvr_device: %ld \n",
+                                            PTR_ERR(uevent_tcvr_device));
+            class_destroy(uevent_tcvr_class);
+            uevent_tcvr_class = NULL;
+            uevent_tcvr_device = NULL;
+        }
+    }
+
+    transceiver_kobj = kobject_create_and_add("transceiver", kernel_kobj);
+    if (!transceiver_kobj) {
+        TRX_LOG_ERR_NODEV("transceiver kobj creation failed");
+        return -ENOMEM;
+    }
+
+    ret = sysfs_create_file(transceiver_kobj, &qxdm_attribute.attr);
+    if (ret) {
+        TRX_LOG_ERR_NODEV("transceiver enable_qxdm sysfs file creation failed");
+        kobject_put(transceiver_kobj);
+        transceiver_kobj = NULL;
+        return ret;
+    } else {
+        char *msg_qxdm_cfg[] = {EVENT_QXDM_SYSFS_CFG_CREATE, NULL};
+        if(uevent_tcvr_device) {
+            kobject_uevent_env(&uevent_tcvr_device->kobj, KOBJ_CHANGE, msg_qxdm_cfg);
+        }
+    }
+
     trx_ipc_log_buf = ipc_log_context_create(TRX_IPC_LOG_PAGES, DRV_NAME, 0);
     if (trx_ipc_log_buf == NULL) {
         TRX_LOG_ERR_NODEV("IPC log creation failed");
@@ -895,6 +962,21 @@ static void fpc_qsfp_exit(void)
 
     if (trx_ipc_log_buf) {
         ipc_log_context_destroy(trx_ipc_log_buf);
+    }
+
+    if (uevent_tcvr_device)
+        device_destroy(uevent_tcvr_class, MKDEV(0, 0));
+
+    if(uevent_tcvr_class)
+        class_destroy(uevent_tcvr_class);
+
+    uevent_tcvr_class = NULL;
+    uevent_tcvr_device = NULL;
+
+    if(transceiver_kobj != NULL) {
+        sysfs_remove_file(transceiver_kobj, &qxdm_attribute.attr);
+        kobject_put(transceiver_kobj);
+        transceiver_kobj = NULL;
     }
 }
 module_exit(fpc_qsfp_exit);

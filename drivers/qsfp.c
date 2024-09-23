@@ -3166,7 +3166,7 @@ int qsfp_probe(struct platform_device *pdev)
 
     qsfp = qsfp_alloc(&pdev->dev);
     if (IS_ERR(qsfp)) {
-        TRX_LOG_ERR(&pdev, "qsfp_alloc failed");
+        TRX_LOG_PDEV_ERR(&pdev, "qsfp_alloc failed");
         return PTR_ERR(qsfp);
     }
 
