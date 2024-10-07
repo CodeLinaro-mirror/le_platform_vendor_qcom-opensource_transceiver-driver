@@ -7,6 +7,8 @@
 #include "transceiver_debugfs.h"
 #include <linux/phylink.h>
 
+extern struct list_head dual_tcvr_list;
+
 static int sff8472_mod_probe(struct qsfp *qsfp)
 {
     /* QSFP module inserted - read I2C data */
@@ -563,6 +565,8 @@ static int sff8472_get_lane_speed(struct qsfp *qsfp,
 
     const struct sfp_eeprom_id *id = &qsfp->id.sff8472;
     trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
+    struct dual_tcvr_entry *entry;
+    bool dual_rate = false;
 
     if (!qsfp->lane[0]) {
         TRX_LOG_ERR(qsfp, "Unable to get the lane");
@@ -610,14 +614,30 @@ static int sff8472_get_lane_speed(struct qsfp *qsfp,
         }
     }
 
-    /* Handle the Dual speed support transceiver that are not
-     * Advertised through EEPROM */
-     if ((strncmp(id->base.vendor_pn,"SFP-10/25GSR-85 ",16) == 0) ||
-          (strncmp(id->base.vendor_pn,"FTLF1436W5BTV",13) == 0) ||
-          (strncmp(id->base.vendor_pn,"M14MK",5) == 0))
-     {
-         lane_speed |= TRX_LANE_SPEED_10G;
-     }
+    if (!list_empty(&dual_tcvr_list)) {
+        /* check for dual rate tcvr */
+        list_for_each_entry(entry, &dual_tcvr_list, list) {
+            if ((entry->name != NULL) &&
+                 (strlen(entry->name) != 0 ) &&
+                 (strncmp(id->base.vendor_pn, entry->name,
+                   strlen(entry->name)) == 0)) {
+                dual_rate = true;
+                TRX_LOG_INFO(qsfp, "%s Matches with  %.*s\n", entry->name,
+                                  (int)sizeof(id->base.vendor_pn),
+                                  id->base.vendor_pn);
+             }
+         }
+    } else {
+        TRX_LOG_ERR(qsfp, "List is Empty\n");
+    }
+
+    if(dual_rate == true) {
+        if (lane_speed & TRX_LANE_SPEED_25G) {
+            lane_speed |= TRX_LANE_SPEED_10G;
+        } else {
+            TRX_LOG_ERR(qsfp, "Max speed not detected \n");
+        }
+    }
 
     *speed_mask = (trx_speed_mask)lane_speed;
     return 0;

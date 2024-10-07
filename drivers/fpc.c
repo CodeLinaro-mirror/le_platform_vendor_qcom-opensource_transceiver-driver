@@ -9,6 +9,8 @@
 #include "trx_sysfs.h"
 
 struct fpc *fpc_global[FPC_MAX_INSTANCES];
+static bool sysfs_update_flag = false;
+static struct timer_list fpc_probe_timer;
 
 const u8 FPC_PORT_REG[][FPC_MAX_PORTS] = {
     /* FPC_LED_MODE_SELECT */
@@ -33,8 +35,10 @@ struct device *uevent_tcvr_device = NULL;
 void *trx_ipc_log_buf = NULL;
 /* Flag to transmit kobject uevents for logging to userspace */
 u8 is_qxdm_log_en = 0;
+#define EVENT_QXDM_SYSFS_CFG_CREATE  "EVENT=EVENT_QXDM_SYSFS_CFG_CREATE"
 
 struct kobject *transceiver_kobj = NULL;
+LIST_HEAD(dual_tcvr_list);
 
 /* fpc_write_nolock needed in case of qsfp i2c bus recovery as caller has already taken i2c bus lock */
 static int fpc_write_nolock(const struct fpc *fpc, u8 dev_addr, void *buf, size_t len)
@@ -628,6 +632,13 @@ static int fpc_probe(struct platform_device *pdev)
     struct device_node *node = pdev->dev.of_node;
     struct device_node *i2c_np;
 
+    if(timer_pending(&fpc_probe_timer) &&
+       (sysfs_update_flag == false)) {
+        TRX_LOG_PDEV_ERR(&pdev, "Defer as dual transceiver "
+                            "sysfs file not yet updated\n");
+        return -EPROBE_DEFER;
+    }
+
     fpc = fpc_alloc(&pdev->dev);
     if (IS_ERR(fpc)) {
         TRX_LOG_PDEV_ERR(&pdev, "fpc_alloc failed");
@@ -891,7 +902,105 @@ static ssize_t enable_qxdm_store(struct kobject *kobj,
 static struct kobj_attribute qxdm_attribute = __ATTR(enable_qxdm,
                        0664, enable_qxdm_show, enable_qxdm_store);
 
-#define EVENT_QXDM_SYSFS_CFG_CREATE  "EVENT=EVENT_QXDM_SYSFS_CFG_CREATE"
+static ssize_t dual_transceivers_show(struct kobject *kobj,
+                           struct kobj_attribute *attr, char *buf) {
+    struct dual_tcvr_entry *entry;
+    size_t count = 0;
+
+    list_for_each_entry(entry, &dual_tcvr_list, list) {
+        count += scnprintf(buf + count, PAGE_SIZE - count, "%s\n",
+                                                     entry->name);
+    }
+
+    return count;
+}
+
+void update_runtime_dual_tcvr(void)
+{
+    struct fpc *fpc = NULL;
+    struct qsfp *qsfp = NULL;
+    int i =0, j=0;
+
+    for (i=0; i<FPC_MAX_INSTANCES; i++)
+    {
+       if(fpc_global[i] != NULL)
+       {
+           fpc = fpc_global[i];
+           for (j=0; j<FPC_MAX_PORTS; j++)
+           {
+              if(fpc->qsfp[j] != NULL)
+              {
+                  qsfp = fpc->qsfp[j];
+                  update_runtime_dual_cfg(qsfp);
+              }
+           }
+       }
+    }
+}
+
+static ssize_t dual_transceivers_store(struct kobject *kobj,
+              struct kobj_attribute *attr, const char *buf, size_t count) {
+    char *kbuf, *token, *rest;
+    struct dual_tcvr_entry *new_transceiver, *tmp;
+
+    kbuf = kmalloc(count + 1, GFP_KERNEL);
+    if (!kbuf)
+        return -ENOMEM;
+
+    strncpy(kbuf, buf, count);
+    kbuf[count] = '\0';
+
+    /* Delete the existing list */
+    list_for_each_entry_safe(new_transceiver, tmp, &dual_tcvr_list, list) {
+        list_del(&new_transceiver->list);
+        kfree(new_transceiver->name);
+        kfree(new_transceiver);
+    }
+
+    new_transceiver = NULL;
+
+    rest = kbuf;
+    while ((token = strsep(&rest, "\n")) != NULL) {
+        new_transceiver = kmalloc(sizeof(*new_transceiver), GFP_KERNEL);
+        if (!new_transceiver) {
+            kfree(kbuf);
+            return -ENOMEM;
+        }
+
+        new_transceiver->name = kstrdup(token, GFP_KERNEL);
+        if (!new_transceiver->name) {
+            kfree(new_transceiver);
+            kfree(kbuf);
+            return -ENOMEM;
+        }
+
+        if(strlen(new_transceiver->name) == 0)
+        {
+            kfree(new_transceiver->name);
+            kfree(new_transceiver);
+            continue;
+        }
+
+        INIT_LIST_HEAD(&new_transceiver->list);
+        list_add_tail(&new_transceiver->list, &dual_tcvr_list);
+    }
+
+    kfree(kbuf);
+
+    if(sysfs_update_flag == true)
+        update_runtime_dual_tcvr();
+
+    sysfs_update_flag = true;
+
+    return count;
+}
+
+static struct kobj_attribute transceiver_attribute = __ATTR(dual_transceivers,
+                       0664, dual_transceivers_show, dual_transceivers_store);
+
+void fpc_probe_timer_callback(struct timer_list *timer) {
+    TRX_LOG_INFO_NODEV("fpc_probe_timer expired\n");
+}
 
 /*
  * Init function gets called during insmod/modprobe
@@ -940,12 +1049,26 @@ static int fpc_qsfp_init(void)
         }
     }
 
+    ret = sysfs_create_file(transceiver_kobj, &transceiver_attribute.attr);
+    if (ret) {
+        TRX_LOG_ERR_NODEV("transceiver dual speed sysfs file creation failed");
+        kobject_put(transceiver_kobj);
+        transceiver_kobj = NULL;
+        return ret;
+    }
+
     trx_ipc_log_buf = ipc_log_context_create(TRX_IPC_LOG_PAGES, DRV_NAME, 0);
     if (trx_ipc_log_buf == NULL) {
         TRX_LOG_ERR_NODEV("IPC log creation failed");
     } else {
         TRX_LOG_INFO_NODEV("IPC log creation successful");
     }
+
+    // Initialize the timer
+    timer_setup(&fpc_probe_timer, fpc_probe_timer_callback, 0);
+
+    // Set the timer to expire after 1 second (1 * HZ jiffies)
+    mod_timer(&fpc_probe_timer, jiffies + 1 * HZ);
 
     transceiver_debugfs_init();
     return platform_driver_register(&fpc_qsfp_driver);
@@ -957,6 +1080,7 @@ module_init(fpc_qsfp_init);
  */
 static void fpc_qsfp_exit(void)
 {
+    struct dual_tcvr_entry *entry, *tmp;
     transceiver_debugfs_exit();
     platform_driver_unregister(&fpc_qsfp_driver);
 
@@ -973,11 +1097,24 @@ static void fpc_qsfp_exit(void)
     uevent_tcvr_class = NULL;
     uevent_tcvr_device = NULL;
 
+    // Delete the timer if it is still active
+    del_timer(&fpc_probe_timer);
+
+    list_for_each_entry_safe(entry, tmp, &dual_tcvr_list, list) {
+        list_del(&entry->list);
+        kfree(entry->name);
+        kfree(entry);
+        entry = NULL;
+    }
+
     if(transceiver_kobj != NULL) {
         sysfs_remove_file(transceiver_kobj, &qxdm_attribute.attr);
+        sysfs_remove_file(transceiver_kobj, &transceiver_attribute.attr);
         kobject_put(transceiver_kobj);
         transceiver_kobj = NULL;
     }
+
+    sysfs_update_flag = false;
 }
 module_exit(fpc_qsfp_exit);
 

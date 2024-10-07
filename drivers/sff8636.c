@@ -8,6 +8,8 @@
 #include "lane.h"
 #include "transceiver_debugfs.h"
 
+extern struct list_head dual_tcvr_list;
+
 static int sff8636_mod_probe(struct qsfp *qsfp)
 {
     /* QSFP module inserted - read I2C data */
@@ -457,13 +459,20 @@ static int sff8636_handle_max_power_exceed(struct qsfp *qsfp)
 
 static int sff8636_mod_high_power(struct qsfp *qsfp)
 {
-    u8 val = SFF8636_POWER_CLASS_HIGH;
+    u8 val = 0;
 
     /* As power class 1 is the highest we can not push module for
      * further high power class
      */
     if (qsfp->module_power_class == 1) {
         return 0;
+    }
+
+    if((qsfp->module_power_class > 1) &&
+       (qsfp->module_power_class <= 4)) {
+        val = SFF8636_POWER_CLASS_1TO4;
+    } else {
+        val = SFF8636_POWER_CLASS_HIGH;
     }
 
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
@@ -1164,6 +1173,8 @@ static int sff8636_get_lane_speed(struct qsfp *qsfp,
                                   trx_speed_mask *speed_mask)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
+    struct dual_tcvr_entry *entry;
+    bool dual_rate = false;
 
     trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
@@ -1185,6 +1196,31 @@ static int sff8636_get_lane_speed(struct qsfp *qsfp,
         lane_speed |= sff8024_link_codes_to_speed(id->ext.link_codes);
     }
 
+    if (!list_empty(&dual_tcvr_list)) {
+        /* check for dual rate tcvr */
+        list_for_each_entry(entry, &dual_tcvr_list, list) {
+            if ((entry->name != NULL) &&
+                 (strlen(entry->name) != 0 ) &&
+                 (strncmp(id->base.vendor_pn, entry->name, strlen(entry->name)) == 0)) {
+                 dual_rate = true;
+                 TRX_LOG_INFO(qsfp, "%s Matches with  %.*s\n", entry->name,
+                             (int)sizeof(id->base.vendor_pn),
+                             id->base.vendor_pn);
+            }
+        }
+    } else {
+        TRX_LOG_ERR(qsfp, "List is Empty\n");
+    }
+
+    if(dual_rate == true) {
+        if (lane_speed & TRX_LANE_SPEED_50G) {
+            lane_speed |= TRX_LANE_SPEED_25G;
+        } else if (lane_speed & TRX_LANE_SPEED_25G) {
+            lane_speed |= TRX_LANE_SPEED_10G;
+        } else {
+            TRX_LOG_ERR(qsfp, "Max speed not detected \n");
+        }
+    }
     *speed_mask = (trx_speed_mask)lane_speed;
     return 0;
 }

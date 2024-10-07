@@ -32,6 +32,7 @@
  */
 
 static void qsfp_sm_event(struct qsfp *qsfp, u8 event);
+extern struct list_head dual_tcvr_list;
 
 static void* phandle_to_drvdata(u32 phandle)
 {
@@ -3062,6 +3063,83 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
     mutex_unlock(&qsfp->sm_mutex);
 
     TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver removed", qsfp->port_num);
+}
+
+void update_runtime_dual_cfg(struct qsfp *qsfp)
+{
+    struct sff8636_eeprom_id *id = NULL;
+    struct cmis_eeprom_id *cmis_id = NULL;
+    struct sfp_eeprom_id *sff8472_id = NULL;
+    char vendor_pn[QSFP_VENDOR_PN_STR_LEN];
+    struct dual_tcvr_entry *entry;
+    u8 *spec_id = (u8*)&qsfp->id;
+
+    if(!qsfp)
+    {
+        TRX_LOG_ERR(qsfp, "QSFP is NULL");
+        return;
+    }
+
+    if((!qsfp->status.present) ||
+       (qsfp->sm_mod_state < QSFP_MOD_PROBE))
+    {
+        TRX_LOG_ERR(qsfp, "module not present or not initialised\n");
+        return;
+    }
+
+    if(qsfp->sm_link_state == QSFP_S_LINK_UP)
+    {
+        TRX_LOG_ERR(qsfp, "Link is up\n");
+        return;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sff8472_id = &qsfp->id.sff8472;
+        strlcpy(vendor_pn, sff8472_id->base.vendor_pn, QSFP_VENDOR_PN_STR_LEN-1);
+        vendor_pn[QSFP_VENDOR_PN_STR_LEN] = '\0';
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        id = &qsfp->id.sff8636;
+        strlcpy(vendor_pn, id->base.vendor_pn, QSFP_VENDOR_PN_STR_LEN-1);
+        vendor_pn[QSFP_VENDOR_PN_STR_LEN] = '\0';
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        strlcpy(vendor_pn, cmis_id->base.vendor_pn, QSFP_VENDOR_PN_STR_LEN-1);
+        vendor_pn[QSFP_VENDOR_PN_STR_LEN] = '\0';
+        break;
+    default:
+        vendor_pn[0] = '\0';
+        return;
+    }
+
+    /* Compare vendor PN with the list */
+    if (!list_empty(&dual_tcvr_list)) {
+        /* check for dual rate tcvr */
+        list_for_each_entry(entry, &dual_tcvr_list, list) {
+            if ((entry->name != NULL) &&
+                (strlen(entry->name) != 0 ) &&
+                (strncmp(vendor_pn, entry->name,
+                   strlen(entry->name)) == 0)) {
+                TRX_LOG_INFO(qsfp, "%s Matches with  %s\n", entry->name,
+                                  vendor_pn);
+                qsfp->sim.remove = 1;
+                qsfp_module_remove_irq(qsfp);
+                TRX_LOG_INFO(qsfp, "------ SIMULATED REMOVE due to"
+                                          " config change ------");
+                qsfp->sim.remove = 0;
+                qsfp_module_insert_irq(qsfp);
+                TRX_LOG_INFO(qsfp, "------ SIMULATED INSERT due to"
+                                          " config change ------");
+             }
+         }
+    } else {
+        TRX_LOG_ERR(qsfp, "List is Empty\n");
+    }
+
 }
 
 /*
