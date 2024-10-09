@@ -609,6 +609,7 @@ extern  const char * const trxtype_to_str[];
 
 #define TRX_EEPROM_PAGE_LENGTH    (256)
 #define TRX_EEPROM_UP_PAGE_LENGTH    (128)
+#define TRX_MAX_DIAG_LOG_MSG_SIZE 512
 
 /* This is used to access the optional upper pages (1 - 17) in the QSFP
  * memory map. Page 1 is available on offset 256 through 383, page 2 -
@@ -620,6 +621,9 @@ extern  const char * const trxtype_to_str[];
                 TRX_EEPROM_UP_PAGE_LENGTH + 1)
 
 extern void *trx_ipc_log_buf;
+extern struct device *uevent_tcvr_device;
+/* Flag to transmit kobject uevents for logging to userspace */
+extern u8 is_qxdm_log_en;
 
 #define TRX_IPC_LOG_PAGES 100
 
@@ -630,48 +634,97 @@ do {\
 
 #define TRX_LOG_INFO(p, fmt, args...) \
 do {\
+    char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+    char *msg[] = {buf, NULL}; \
     dev_notice(p->dev, " %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " %s:%s: " fmt, dev_name(p->dev), __func__\
                                   , ## args); \
     } \
+    if (is_qxdm_log_en) { \
+        snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_IPC_LOG_MSG_INFO=%s:%s: "\
+                     fmt, dev_name(p->dev), __func__, ## args); \
+        kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+    } \
 } while (0)
 
 #define TRX_LOG_WARN(p, fmt, args...) \
 do {\
+    char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+    char *msg[] = {buf, NULL}; \
     dev_warn(p->dev, " %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " %s:%s: " fmt, dev_name(p->dev), __func__\
                                   , ## args); \
     } \
+    if (is_qxdm_log_en) { \
+        snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_IPC_LOG_MSG_WARNING=%s:%s: "\
+                     fmt, dev_name(p->dev), __func__, ## args); \
+        kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+    } \
 } while (0)
 
 #define TRX_LOG_ERR(p, fmt, args...) \
 do {\
+    char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+    char *msg[] = {buf, NULL}; \
     dev_err(p->dev, " %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s:%s: " fmt, dev_name(p->dev), __func__\
                                   , ## args); \
     } \
+    if (is_qxdm_log_en) { \
+        snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_IPC_LOG_MSG_ERROR=%s:%s: "\
+                            fmt,dev_name(p->dev), __func__, ## args); \
+        kobject_uevent_env(&p->dev->kobj, KOBJ_CHANGE, msg); \
+    } \
+} while (0)
+
+#define TRX_LOG_PDEV_ERR(p, fmt, args...) \
+do {\
+    char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+    char *msg[] = {buf, NULL}; \
+    dev_err(p->dev, " %s: " fmt, __func__, ## args);\
+    if (trx_ipc_log_buf) { \
+        TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s:%s: " fmt, dev_name(p->dev), __func__\
+                                  , ## args); \
+    } \
+    if (is_qxdm_log_en) { \
+        snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_IPC_LOG_MSG_ERROR=%s:%s: "\
+                            fmt,dev_name(p->dev), __func__, ## args); \
+        kobject_uevent_env(p->dev.kobj, KOBJ_CHANGE, msg); \
+    } \
 } while (0)
 
 #define TRX_LOG_INFO_NODEV(fmt, args...) \
 do {\
+    char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+    char *msg[] = {buf, NULL}; \
     pr_notice("fpc-qsfp %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " %s: " fmt, __func__, ## args); \
+    } \
+    if(is_qxdm_log_en && uevent_tcvr_device) {\
+        snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_IPC_LOG_MSG_INFO=%s: "\
+                            fmt, __func__, ## args); \
+        kobject_uevent_env(&uevent_tcvr_device->kobj, KOBJ_CHANGE, msg); \
     } \
 } while (0)
 
 #define TRX_LOG_ERR_NODEV(fmt, args...) \
 do {\
+    char buf[TRX_MAX_DIAG_LOG_MSG_SIZE]; \
+    char *msg[] = {buf, NULL}; \
     pr_err("fpc-qsfp %s: " fmt, __func__, ## args);\
     if (trx_ipc_log_buf) { \
         TRX_IPC_Log(trx_ipc_log_buf , " ERR:%s: " fmt, __func__, ## args); \
     } \
+    if(is_qxdm_log_en && uevent_tcvr_device) {\
+        snprintf(buf, TRX_MAX_DIAG_LOG_MSG_SIZE, "TRX_IPC_LOG_MSG_ERROR=%s: "\
+                            fmt, __func__, ## args); \
+        kobject_uevent_env(&uevent_tcvr_device->kobj, KOBJ_CHANGE, msg); \
+    } \
 } while (0)
-
-#define TRX_MAX_DIAG_LOG_MSG_SIZE 512
 
 #define TRX_QXDM_LOG_INFO(p, fmt, args...) \
 do {\

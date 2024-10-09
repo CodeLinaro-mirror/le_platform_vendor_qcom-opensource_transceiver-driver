@@ -516,7 +516,7 @@ int lane_probe(struct platform_device *pdev)
 
     lane = lane_alloc(&pdev->dev);
     if (IS_ERR(lane)) {
-        TRX_LOG_ERR(&pdev, "lane_alloc failed");
+        TRX_LOG_PDEV_ERR(&pdev, "lane_alloc failed");
         return PTR_ERR(lane);
     }
 
