@@ -393,6 +393,8 @@ struct qsfp {
 
     struct lane* lane[MAX_LANES];
     u8 num_lanes;
+    bool is_adapter;
+
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
     struct dentry *module_debugfs_dir;

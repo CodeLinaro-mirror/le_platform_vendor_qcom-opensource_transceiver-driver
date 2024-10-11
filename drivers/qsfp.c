@@ -165,6 +165,12 @@ int qsfp_get_link_type(struct qsfp *qsfp, u8* link_info)
         break;
     }
 
+    /* Assign link type as FIBER for active adapter */
+    if(qsfp->is_adapter == 1)
+    {
+        *link_info = PORT_FIBRE;
+    }
+
     return 0;
 }
 
@@ -1673,6 +1679,7 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->lane_presence = 0;
     qsfp->lane_min_speed = 0;
     qsfp->lane_max_speed = 0;
+    qsfp->is_adapter = 0;
 
     TRX_LOG_INFO(qsfp, "Module removed");
 }
@@ -3177,6 +3184,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->sensor_sysfs_dir = NULL;
     qsfp->lane_min_speed = 0;
     qsfp->lane_max_speed = 0;
+    qsfp->is_adapter = 0;
     memset(&qsfp->param_info, 0, sizeof(qsfp->param_info));
     return qsfp;
 }
