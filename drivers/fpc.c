@@ -631,6 +631,7 @@ static int fpc_probe(struct platform_device *pdev)
     int ret;
     struct device_node *node = pdev->dev.of_node;
     struct device_node *i2c_np;
+    u8 buff = 0;
 
     if(timer_pending(&fpc_probe_timer) &&
        (sysfs_update_flag == false)) {
@@ -711,6 +712,23 @@ static int fpc_probe(struct platform_device *pdev)
         return -EPROBE_DEFER;
     }
 
+    /* The FPC Reserved register at offset 0x03 is used to determine the type
+     * of reset (hard or soft) for the FPC.
+     *    0xFF indicates soft reset is performed.
+     *    0x11 indicates hard reset is performed.
+     */
+    ret = fpc_read(fpc, FPC_RESERVED_REGISTER, &buff, sizeof(buff));
+    if (ret < 0)
+    {
+        TRX_LOG_ERR(fpc, "Failed to read FPC reserved register. ret %d", ret);
+    } else {
+        if(buff == FPC_RESERVED_REG_DEFAULT_VAL)
+            TRX_LOG_INFO(fpc, "FPC power reset completed by triggering a"
+            " hard reset: 0x%X", buff);
+        else if(buff == FPC_RESERVED_REG_UPDATE_VAL)
+            TRX_LOG_INFO(fpc, "FPC power reset not done: 0x%X\n", buff);
+    }
+
     ret = fpc_reset(fpc);
     if (ret < 0) {
         TRX_LOG_ERR(fpc, "Unable to reset FPC402. ret %d", ret);
@@ -771,6 +789,14 @@ static int fpc_probe(struct platform_device *pdev)
     } else {
         TRX_LOG_ERR(fpc, "Instance-num %u already exists", fpc->instance_num);
         return -EINVAL;
+    }
+
+    /* Set FPC Byte offset 0x03 with value 0xFF */
+    buff = FPC_RESERVED_REG_UPDATE_VAL;
+
+    ret = fpc_write(fpc, FPC_RESERVED_REGISTER, &buff, sizeof(buff));
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to write reserved register .", ret);
     }
 
     TRX_LOG_INFO(fpc, "Success");
@@ -836,7 +862,8 @@ static int fpc_remove(struct platform_device *pdev)
 {
     struct fpc *fpc = platform_get_drvdata(pdev);
     struct qsfp *qsfpi;
-    u8 i;
+    u8 i, buff;
+    int ret;
 
     TRX_LOG_INFO(fpc, "");
 
@@ -853,6 +880,14 @@ static int fpc_remove(struct platform_device *pdev)
     }
 
     fpc_reset(fpc);
+
+    /* Set FPC Byte offset 0x03 with value 0xFF */
+    buff = FPC_RESERVED_REG_UPDATE_VAL;
+
+    ret = fpc_write(fpc, FPC_RESERVED_REGISTER, &buff, sizeof(buff));
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to write reserved register .", ret);
+    }
 
     fpc_debugfs_exit(fpc);
 
