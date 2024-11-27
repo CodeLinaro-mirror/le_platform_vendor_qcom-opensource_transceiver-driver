@@ -947,7 +947,7 @@ static ssize_t dual_transceivers_store(struct kobject *kobj,
     if (!kbuf)
         return -ENOMEM;
 
-    strncpy(kbuf, buf, count);
+    strlcpy(kbuf, buf, count);
     kbuf[count] = '\0';
 
     /* Delete the existing list */

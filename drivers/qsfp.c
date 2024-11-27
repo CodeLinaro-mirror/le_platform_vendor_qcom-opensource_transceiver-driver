@@ -3083,7 +3083,7 @@ void update_runtime_dual_cfg(struct qsfp *qsfp)
 
     if(!qsfp)
     {
-        TRX_LOG_ERR(qsfp, "QSFP is NULL");
+        TRX_LOG_ERR_NODEV("QSFP is NULL");
         return;
     }
 
@@ -3105,18 +3105,18 @@ void update_runtime_dual_cfg(struct qsfp *qsfp)
     case SFF8024_ID_SFF_8472:
         sff8472_id = &qsfp->id.sff8472;
         strlcpy(vendor_pn, sff8472_id->base.vendor_pn, QSFP_VENDOR_PN_STR_LEN-1);
-        vendor_pn[QSFP_VENDOR_PN_STR_LEN] = '\0';
+        vendor_pn[QSFP_VENDOR_PN_STR_LEN - 1] = '\0';
         break;
     case SFF8024_ID_QSFP28_8636:
     case SFF8024_ID_QSFP_8436_8636:
         id = &qsfp->id.sff8636;
         strlcpy(vendor_pn, id->base.vendor_pn, QSFP_VENDOR_PN_STR_LEN-1);
-        vendor_pn[QSFP_VENDOR_PN_STR_LEN] = '\0';
+        vendor_pn[QSFP_VENDOR_PN_STR_LEN - 1] = '\0';
         break;
     case SFF8024_ID_QSFPDD_CMIS:
         cmis_id = &qsfp->id.cmis;
         strlcpy(vendor_pn, cmis_id->base.vendor_pn, QSFP_VENDOR_PN_STR_LEN-1);
-        vendor_pn[QSFP_VENDOR_PN_STR_LEN] = '\0';
+        vendor_pn[QSFP_VENDOR_PN_STR_LEN - 1] = '\0';
         break;
     default:
         vendor_pn[0] = '\0';
