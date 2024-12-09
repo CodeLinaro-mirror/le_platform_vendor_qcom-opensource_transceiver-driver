@@ -4241,6 +4241,401 @@ static ssize_t tx_bias_lane8_show(struct kobject *kobj,
     return sysfs_emit(buf, "%ld\n",tx_bias);
 }
 
+static ssize_t tcvr_compliance_code_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    u8 *spec_id;
+    /* Variable to hold compliance code type o-ran-spec enum index */
+    u8 compliance_code;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        if(qsfp->module_revision == SFF8472_REV_9_3) {
+            compliance_code = 1;
+        } else if (qsfp->module_revision == SFF8472_REV_9_5){
+            compliance_code = 2;
+        } else if (qsfp->module_revision == SFF8472_REV_10_2){
+            compliance_code = 3;
+        }  else if (qsfp->module_revision == SFF8472_REV_10_4){
+            compliance_code = 8;
+        } else if (qsfp->module_revision == SFF8472_REV_11_0){
+            compliance_code = 4;
+        } else if (qsfp->module_revision == SFF8472_REV_11_3){
+            compliance_code = 5;
+        } else if (qsfp->module_revision == SFF8472_REV_11_4){
+            compliance_code = 6;
+        } else if (qsfp->module_revision == SFF8472_REV_12_3){
+            compliance_code = 9;
+        } else if (qsfp->module_revision == SFF8472_REV_12_4){
+            compliance_code = 10;
+        } else if(qsfp->module_revision == 0x00){
+            compliance_code = 0;
+        } else {
+            return -EINVAL;
+        }
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+    case SFF8024_ID_QSFPDD_CMIS:
+    default:
+         return -EINVAL;
+    }
+
+    return sysfs_emit(buf, "%u\n",compliance_code);
+}
+
+static ssize_t trx_connector_type_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    u8 *spec_id;
+
+    u8 connector_type = 0;
+    u8 oranConnTypeIdx = 0;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        connector_type = qsfp->id.sff8472.base.connector;
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        connector_type = qsfp->id.sff8636.base.connector;
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        connector_type = qsfp->id.cmis.base.connector;
+        break;
+    default:
+         return -EINVAL;
+    }
+
+    switch(connector_type) {
+    case SFF8024_CONNECTOR_UNSPEC:
+    default:
+        /* [0] unknown */
+        oranConnTypeIdx = 0;
+        break;
+    case SFF8024_CONNECTOR_SC:
+        /* [1] subscrber-connector */
+        oranConnTypeIdx = 1;
+        break;
+    case SFF8024_CONNECTOR_FIBERJACK:
+        /* [2] fiber-jack */
+        oranConnTypeIdx = 2;
+        break;
+    case SFF8024_CONNECTOR_LC:
+        /* [3] lucent-connector */
+        oranConnTypeIdx = 3;
+        break;
+    case SFF8024_CONNECTOR_MT_RJ:
+        /* [4] mt-rj */
+        oranConnTypeIdx = 4;
+        break;
+    case SFF8024_CONNECTOR_MU:
+        /* [5] multiple-optical */
+        oranConnTypeIdx = 5;
+        break;
+    case SFF8024_CONNECTOR_SG:
+        /* [6] sg */
+        oranConnTypeIdx = 6;
+        break;
+    case SFF8024_CONNECTOR_OPTICAL_PIGTAIL:
+        /* [7] optical-pigtail */
+        oranConnTypeIdx = 7;
+        break;
+    case SFF8024_CONNECTOR_MPO_1X12:
+        /*[8] multi-fiber-parralel-optic-1x12 */
+        oranConnTypeIdx = 8;
+        break;
+    case SFF8024_CONNECTOR_MPO_2X16:
+        /* [9] multi-fiber-parralel-optic-2x16 */
+        oranConnTypeIdx = 9;
+        break;
+    case SFF8024_CONNECTOR_HSSDC_II:
+        /* [10] hssdc_2 */
+        oranConnTypeIdx = 10;
+        break;
+    case SFF8024_CONNECTOR_COPPER_PIGTAIL:
+        /* [11] copper-pigtail */
+        oranConnTypeIdx = 11;
+        break;
+    case SFF8024_CONNECTOR_RJ45:
+        /* [12] rj45 */
+        oranConnTypeIdx = 12;
+        break;
+    case SFF8024_CONNECTOR_NOSEPARATE:
+        /* [13] no-separable-connector */
+        oranConnTypeIdx = 13;
+        break;
+    case SFF8024_CONNECTOR_MXC_2X16:
+        /* [14] mxc-2x16 */
+        oranConnTypeIdx = 14;
+        break;
+    }
+    return sysfs_emit(buf, "%u\n",oranConnTypeIdx);
+}
+
+static ssize_t trx_bitrate_margin_low_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    u8 *spec_id;
+    unsigned int br_min = 0, br_nominal = 0;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        br_nominal = qsfp->id.sff8472.base.br_nominal;
+        br_min = qsfp->id.sff8472.ext.br_min;
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+    case SFF8024_ID_QSFPDD_CMIS:
+    default:
+         return -EINVAL;
+    }
+
+    if(br_nominal == 0) {
+        br_min = 0;
+    }
+
+    return sysfs_emit(buf, "%u\n",br_min);
+}
+
+static ssize_t trx_bitrate_margin_high_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    u8 *spec_id;
+    unsigned int br_max = 0,br_nominal = 0, br_min = 0;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        br_nominal = qsfp->id.sff8472.base.br_nominal;
+        br_max = qsfp->id.sff8472.ext.br_max;
+        br_min = qsfp->id.sff8472.ext.br_min;
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+    case SFF8024_ID_QSFPDD_CMIS:
+    default:
+         return -EINVAL;
+    }
+
+    if(br_nominal == 0) {
+        br_max = 0;
+    } else if(br_nominal == 255) {
+        br_max = br_min;
+    }
+
+    return sysfs_emit(buf, "%u\n",br_max);
+}
+
+static ssize_t trx_bitrate_nominal_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    u8 *spec_id;
+    u8 br_nominal = 0, br_max = 0;
+    unsigned int br_nom = 0;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        br_nominal = qsfp->id.sff8472.base.br_nominal;
+        br_max = qsfp->id.sff8472.ext.br_max;
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        br_nominal = qsfp->id.sff8636.base.br_nominal;
+        br_max = qsfp->id.sff8636.ext.baud_rate_nominal;
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+    default:
+         return -EINVAL;
+    }
+
+    if(br_nominal == 0) {
+        br_nom = 0;
+    } else if(br_nominal == 255) {
+        br_nom = br_max * 250;
+    } else {
+        br_nom = br_nominal * 100;
+    }
+
+    return sysfs_emit(buf, "%u\n",br_nom);
+}
+
+static ssize_t trx_rx_power_type_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+    struct sfp_eeprom_id *sfp_id;
+    struct sff8636_eeprom_id *qsfp_id;
+    struct cmis_eeprom_id *cmis_id;
+    u8 *spec_id;
+    /*
+     * Variable to hold receiver power measurement o-ran-spec enum index,
+     *   [0] oma, optical modulation amplitude.
+     *   [1] avp, average power.
+     */
+    u8 rx_power_type = 0;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    switch (*spec_id) {
+    case SFF8024_ID_SFP:
+    case SFF8024_ID_SFF_8472:
+        sfp_id = &qsfp->id.sff8472;
+        if (sfp_id->ext.diagmon & BIT(3)) {
+            // [1] avp, average power.
+            rx_power_type = 1;
+        } else {
+            //  [0] oma, optical modulation amplitude.
+            rx_power_type = 0;
+        }
+        break;
+    case SFF8024_ID_QSFP28_8636:
+    case SFF8024_ID_QSFP_8436_8636:
+        qsfp_id =  &qsfp->id.sff8636;
+        if (qsfp_id->ext.rx_mon_impl) {
+            // [1] avp, average power.
+            rx_power_type = 1;
+        } else {
+            //  [0] oma, optical modulation amplitude.
+            rx_power_type = 0;
+        }
+        break;
+    case SFF8024_ID_QSFPDD_CMIS:
+        cmis_id = &qsfp->id.cmis;
+        if (cmis_id->ext.rx_pow_type) {
+            // [1] avp, average power.
+            rx_power_type = 1;
+        } else {
+            //  [0] oma, optical modulation amplitude.
+            rx_power_type = 0;
+        }
+
+        break;
+    default:
+         return -EINVAL;
+    }
+
+    return sysfs_emit(buf, "%u\n",rx_power_type);
+}
+
+static ssize_t mod_identifier_oran_eidx_show(struct device *dev,
+                    struct device_attribute *attr, char *buf)
+{
+
+    u8 *spec_id;
+    u8 ornModuleTyp = 0;
+
+    struct qsfp *qsfp = dev_get_drvdata(dev);
+    if (!qsfp) {
+        TRX_LOG_ERR_NODEV("qsfp is NULL");
+        return -EINVAL;
+    }
+
+    spec_id = (u8*)&qsfp->id;
+
+    /* Ensure that the transceiver is inserted before processing. */
+    if (qsfp->sm_mod_state == QSFP_MOD_EMPTY) {
+        return -EINVAL;
+    }
+
+    if(*spec_id == SFF8024_ID_SFF_8472) {
+        ornModuleTyp = 2;
+    }
+    else if(*spec_id == SFF8024_ID_SFP) {
+        ornModuleTyp = 3;
+    }
+    else if(*spec_id == SFF8024_ID_QSFP_8436_8636) {
+        ornModuleTyp = 13;
+    }
+    else if(*spec_id == 0x00){
+        ornModuleTyp = 0;
+    }
+    else {
+        return -EINVAL;
+    }
+
+    return sysfs_emit(buf, "%u\n", ornModuleTyp);
+}
+
 static DEVICE_ATTR(state_info, S_IRUGO, trx_state_info_show, NULL);
 static DEVICE_ATTR(led_on_off, 0644, trx_led_on_off_show,
                                    trx_led_on_off_store);
@@ -4256,6 +4651,14 @@ static DEVICE_ATTR(tx_bias_current, S_IRUGO, trx_tx_bias_current_show, NULL);
 static DEVICE_ATTR(tx_power, S_IRUGO, trx_tx_power_show, NULL);
 static DEVICE_ATTR(ddm_thresholds, S_IRUGO, trx_ddm_thresholds_show, NULL);
 static DEVICE_ATTR(vendor_info, S_IRUGO, trx_vendor_info_show, NULL);
+static DEVICE_ATTR(tcvr_compliance_code, S_IRUGO, tcvr_compliance_code_show, NULL);
+static DEVICE_ATTR(connector_type, S_IRUGO, trx_connector_type_show, NULL);
+static DEVICE_ATTR(bitrate_margin_low, S_IRUGO, trx_bitrate_margin_low_show, NULL);
+static DEVICE_ATTR(bitrate_margin_high, S_IRUGO, trx_bitrate_margin_high_show, NULL);
+static DEVICE_ATTR(bitrate_nominal, S_IRUGO, trx_bitrate_nominal_show, NULL);
+static DEVICE_ATTR(rx_power_type, S_IRUGO, trx_rx_power_type_show, NULL);
+static DEVICE_ATTR(mod_identifier_oran_eidx, S_IRUGO, mod_identifier_oran_eidx_show, NULL);
+
 
 /* Transceiver port static attributes */
 static struct attribute *trx_attrs[] = {
@@ -4275,6 +4678,13 @@ static struct attribute *trx_module_attrs[] = {
     &dev_attr_tx_power.attr,
     &dev_attr_ddm_thresholds.attr,
     &dev_attr_vendor_info.attr,
+    &dev_attr_tcvr_compliance_code.attr,
+    &dev_attr_connector_type.attr,
+    &dev_attr_bitrate_margin_low.attr,
+    &dev_attr_bitrate_margin_high.attr,
+    &dev_attr_bitrate_nominal.attr,
+    &dev_attr_rx_power_type.attr,
+    &dev_attr_mod_identifier_oran_eidx.attr,
     NULL
 };
 

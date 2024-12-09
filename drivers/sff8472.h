@@ -30,6 +30,18 @@ enum {
 
 };
 
+enum {
+    SFF8472_REV_9_3         = 1,
+    SFF8472_REV_9_5         = 2,
+    SFF8472_REV_10_2        = 3,
+    SFF8472_REV_10_4        = 4,
+    SFF8472_REV_11_0        = 5,
+    SFF8472_REV_11_3        = 6,
+    SFF8472_REV_11_4        = 7,
+    SFF8472_REV_12_3        = 8,
+    SFF8472_REV_12_4        = 9,
+};
+
 struct sff8472_rxlos_txf {
     /* Device 1 */
     /* byte 110 */

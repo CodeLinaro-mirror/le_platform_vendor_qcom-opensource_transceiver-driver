@@ -8,6 +8,8 @@
 #include "lane.h"
 #include "transceiver_debugfs.h"
 
+extern struct list_head dual_tcvr_list;
+
 static int sff8636_mod_probe(struct qsfp *qsfp)
 {
     /* QSFP module inserted - read I2C data */
@@ -59,6 +61,14 @@ static int sff8636_mod_probe(struct qsfp *qsfp)
     }
 
     qsfp->id = id;
+
+    /* Check for Qsfp Active adapter */
+    if ((strncmp(qsfp->id.sff8636.base.vendor_pn,"QSFP28-SFP28-CVR",16) == 0) ||
+        (strncmp(qsfp->id.sff8636.base.vendor_pn,"CVR-QSFP28-SFP28",16) == 0))
+    {
+        qsfp->is_adapter = 1;
+        TRX_LOG_INFO(qsfp, "QSFP Active adapter found: %d\n", qsfp->is_adapter);
+    }
 
     return 0;
 }
@@ -124,6 +134,12 @@ static int sff8636_update_features_supported(struct qsfp *qsfp)
     support->tx_bias_flags = ext->tx_mon_impl;
     support->rate_select = ext->rate_select_impl;
     support->tx_adap_eq_in_fail = ext->tx_eq_auto_adap || ext->tx_adap_eq_freeze;
+
+    if(qsfp->is_adapter == 1)
+    {
+        support->volt_flags = 1;
+        support->temp_flags = 1;
+    }
 
     return 0;
 }
@@ -457,13 +473,20 @@ static int sff8636_handle_max_power_exceed(struct qsfp *qsfp)
 
 static int sff8636_mod_high_power(struct qsfp *qsfp)
 {
-    u8 val = SFF8636_POWER_CLASS_HIGH;
+    u8 val = 0;
 
     /* As power class 1 is the highest we can not push module for
      * further high power class
      */
     if (qsfp->module_power_class == 1) {
         return 0;
+    }
+
+    if((qsfp->module_power_class > 1) &&
+       (qsfp->module_power_class <= 4)) {
+        val = SFF8636_POWER_CLASS_1TO4;
+    } else {
+        val = SFF8636_POWER_CLASS_HIGH;
     }
 
     return qsfp_write(qsfp, SFF8636_POWER_ENABLE, &val, sizeof(val));
@@ -1164,6 +1187,8 @@ static int sff8636_get_lane_speed(struct qsfp *qsfp,
                                   trx_speed_mask *speed_mask)
 {
     const struct sff8636_eeprom_id *id = &qsfp->id.sff8636;
+    struct dual_tcvr_entry *entry;
+    bool dual_rate = false;
 
     trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
 
@@ -1185,6 +1210,38 @@ static int sff8636_get_lane_speed(struct qsfp *qsfp,
         lane_speed |= sff8024_link_codes_to_speed(id->ext.link_codes);
     }
 
+    if (!list_empty(&dual_tcvr_list)) {
+        /* check for dual rate tcvr */
+        list_for_each_entry(entry, &dual_tcvr_list, list) {
+            if ((entry->name != NULL) &&
+                 (strlen(entry->name) != 0 ) &&
+                 (strncmp(id->base.vendor_pn, entry->name, strlen(entry->name)) == 0)) {
+                 dual_rate = true;
+                 TRX_LOG_INFO(qsfp, "%s Matches with  %.*s\n", entry->name,
+                             (int)sizeof(id->base.vendor_pn),
+                             id->base.vendor_pn);
+            }
+        }
+    } else {
+        TRX_LOG_ERR(qsfp, "List is Empty\n");
+    }
+
+    if(dual_rate == true) {
+        if (lane_speed & TRX_LANE_SPEED_50G) {
+            lane_speed |= TRX_LANE_SPEED_25G;
+        } else if (lane_speed & TRX_LANE_SPEED_25G) {
+            lane_speed |= TRX_LANE_SPEED_10G;
+        } else {
+            TRX_LOG_ERR(qsfp, "Max speed not detected \n");
+        }
+    }
+
+    /* Update lane speed as 25G for active adapter */
+    if(qsfp->is_adapter == 1)
+    {
+        lane_speed = TRX_LANE_SPEED_25G;
+    }
+
     *speed_mask = (trx_speed_mask)lane_speed;
     return 0;
 }
@@ -1202,7 +1259,12 @@ static u8 sff8636_get_transceiver_type(struct qsfp *qsfp)
  */
 static trx_link_length_range sff8636_get_link_length_range(struct qsfp *qsfp)
 {
-    return qsfp_link_code_to_link_length_range(qsfp->id.sff8636.ext.link_codes);
+    if(qsfp->is_adapter == 1)
+    {
+        return TRX_LR;
+    }
+    else
+        return qsfp_link_code_to_link_length_range(qsfp->id.sff8636.ext.link_codes);
 }
 
 /*
@@ -1222,6 +1284,13 @@ static int sff8636_get_lanes_presence(struct qsfp *qsfp,
          * four bytes are required to check for lane presence.
          */
         *laneinfo &= 0x0F;
+    }
+
+    if (qsfp->is_adapter == 1)
+    {
+        /* Only one lane supported by adapter */
+        *laneinfo = 0x1;
+        TRX_LOG_ERR(qsfp, "Lane info for Adapter: 0x%X\n", *laneinfo);
     }
 
     return ret;
