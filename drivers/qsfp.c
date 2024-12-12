@@ -444,6 +444,7 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
     u8 lanes = 0;
     u8 i;
     int ret;
+    bool lane_init_err_flag = 0;
 
     if(eth_notifier == NULL)
     {
@@ -549,10 +550,20 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
                 TRX_LOG_INFO(lane, "Ignoring repeated eth up event");
             } else {
                 lanes |= (1 << lane->lane_num);
-                lane->status.eth_linkup = 1;
-                lane_sm_event(lane, QSFP_E_ETH_UP);
-                TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Link Up",
-                qsfp->port_num, lane->lane_num);
+                /* Receiving the Linkup event from MTIP before sending the
+                  sfp_module_insert event to MTIP. Avoid updating the
+                  link state to 'link up' until the module initialization
+                  is complete.*/
+                if(lane->sm_mod_state > QSFP_MOD_ERROR_I2C) {
+                    lane->status.eth_linkup = 1;
+                    lane_sm_event(lane, QSFP_E_ETH_UP);
+                    TRX_QXDM_LOG_DEBUG(qsfp, "Port-%u: Lane-%u: Link Up",
+                    qsfp->port_num, lane->lane_num);
+                } else {
+                    lane_init_err_flag = 1;
+                    TRX_LOG_INFO(lane, "Ignoring eth up event before "
+                                              "lane initialization.");
+                }
             }
             break;
         }
@@ -607,7 +618,8 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
             qsfp_sm_event(qsfp, QSFP_E_ETH_DOWN);
         }
 
-    } else if (eth_notifier->event == TRX_ETH_LINK_UP) {
+    } else if ((eth_notifier->event == TRX_ETH_LINK_UP) &&
+    (lane_init_err_flag == 0)) {
     /* Enable irq as eth link up successful */
         if (qsfp_atleast_one_flag_supported(qsfp)) {
             /* Read flags to clear it */
