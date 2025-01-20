@@ -330,35 +330,6 @@ int qsfp_trx_get_type(u32 lane_phandle, trx_type* type)
 }
 EXPORT_SYMBOL_GPL(qsfp_trx_get_type);
 
-static void qsfp_clear_lane_flags(struct qsfp *qsfp, u8 lanes)
-{
-    struct qsfp_flags *flags = &qsfp->flags;
-
-    lanes = ~lanes;
-
-    flags->rx_los &= lanes;
-    flags->tx_los &= lanes;
-    flags->tx_fault &= lanes;
-    flags->tx_adap_eq_in_fail &= lanes;
-    flags->rx_cdr_lol &= lanes;
-    flags->tx_cdr_lol &= lanes;
-
-    flags->rx_power_high_alarm &= lanes;
-    flags->rx_power_high_warn &= lanes;
-    flags->rx_power_low_alarm &= lanes;
-    flags->rx_power_low_warn &= lanes;
-
-    flags->tx_power_high_alarm &= lanes;
-    flags->tx_power_high_warn &= lanes;
-    flags->tx_power_low_alarm &= lanes;
-    flags->tx_power_low_warn &= lanes;
-
-    flags->tx_bias_high_alarm &= lanes;
-    flags->tx_bias_high_warn &= lanes;
-    flags->tx_bias_low_alarm &= lanes;
-    flags->tx_bias_low_warn &= lanes;
-}
-
 void qsfp_start_poll(struct qsfp *qsfp, unsigned long delay)
 {
     qsfp->need_poll = true;
@@ -594,6 +565,15 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
     } else if (eth_notifier->event == TRX_ETH_LINK_DOWN) {
         bool qsfp_eth_linkup = false;
 
+        if(qsfp_atleast_one_flag_supported(qsfp)) {
+            /* Delete the timer if it is still active */
+            del_timer(&qsfp->qsfp_flt_lnkd_timer);
+
+            /* Configure the timer to expire after 5 seconds (5 * HZ jiffies)
+             * only for optical modules*/
+             mod_timer(&qsfp->qsfp_flt_lnkd_timer, jiffies + 5 * HZ);
+        }
+
         /* Disable irq as eth link up in progress */
         if (qsfp->spec_ops->disable_enable_lane_irq &&
             qsfp_atleast_one_flag_supported(qsfp)) {
@@ -622,10 +602,6 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
     (lane_init_err_flag == 0)) {
     /* Enable irq as eth link up successful */
         if (qsfp_atleast_one_flag_supported(qsfp)) {
-            /* Read flags to clear it */
-            qsfp->spec_ops->update_flags(qsfp);
-            /* Clear all lane flags to do fresh start of reporting faults */
-            qsfp_clear_lane_flags(qsfp, lanes);
             /* Poll to update flags immediately from HW */
             qsfp_start_poll(qsfp, 0);
 
@@ -2497,9 +2473,14 @@ static void qsfp_lane_fault_report(const struct qsfp *qsfp, u8 chgd,
             continue;
         }
         if (chgd & 1) {
-            if (!lanei->status.eth_linkup) {
-                continue;
+            /* Send lane faults only when the link is up or
+             * the timer is active. */
+            if(!lanei->status.eth_linkup) {
+                if(! timer_pending(&qsfp->qsfp_flt_lnkd_timer)) {
+                    continue;
+                }
             }
+
             if (new_flag & 1) {
                 kobject_uevent_env(&lanei->dev->kobj, KOBJ_CHANGE, msg);
                 TRX_LOG_INFO(lanei, "Fault Report: %s", str);
@@ -3161,6 +3142,10 @@ void update_runtime_dual_cfg(struct qsfp *qsfp)
 
 }
 
+void qsfp_flt_report_timer_callback(struct timer_list *timer) {
+    TRX_LOG_INFO_NODEV("qsfp_fault report timer expired\n");
+}
+
 /*
  * Allocates QSFP instance
  */
@@ -3178,6 +3163,8 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     mutex_init(&qsfp->sm_mutex);
     INIT_DELAYED_WORK(&qsfp->poll, qsfp_poll);
     INIT_DELAYED_WORK(&qsfp->timeout, qsfp_timeout);
+
+    timer_setup(&qsfp->qsfp_flt_lnkd_timer, qsfp_flt_report_timer_callback, 0);
 
     /* valid port numbers are 0,1,2,3.
      * FPC_MAX_PORTS signifies invalid port number
@@ -3209,6 +3196,7 @@ static void qsfp_cleanup(void *data)
 
     cancel_delayed_work_sync(&qsfp->poll);
     cancel_delayed_work_sync(&qsfp->timeout);
+    del_timer(&qsfp->qsfp_flt_lnkd_timer);
 
     kfree(qsfp);
 }

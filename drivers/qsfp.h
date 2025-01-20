@@ -388,6 +388,7 @@ struct qsfp {
     struct delayed_work timeout;
     struct mutex sm_mutex;            /* Protects state machine */
 
+    struct timer_list qsfp_flt_lnkd_timer;
     struct qsfp_eeprom_id id;
     const struct qsfp_spec_ops *spec_ops;
 
