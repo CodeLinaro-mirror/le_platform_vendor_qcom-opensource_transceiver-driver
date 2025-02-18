@@ -748,6 +748,48 @@ static int qsfp_debug_qsfp_flags_show(struct seq_file *s,
 }
 DEFINE_SHOW_ATTRIBUTE(qsfp_debug_qsfp_flags);
 
+static int qsfp_debug_app_fault_flags_show(struct seq_file *s,
+                                      void *data)
+{
+    struct qsfp *qsfp = s->private;
+    struct qsfp_flags flags;
+
+    mutex_lock(&qsfp->sm_mutex);
+    flags = qsfp->flags_reported_faults;
+    mutex_unlock(&qsfp->sm_mutex);
+
+    seq_printf(s,  "Temperature High Alarm: %s\nTemperature Low Alarm: %s\n"
+    "Temperature High Warning: %s\nTemperature Low Warning: %s\n\nVoltage "
+    "High Alarm: %s\nVoltage Low Alarm: %s\nVoltage High Warning: %s\nVoltage "
+    "Low Warning: %s\n\nBelow are Lane flags (LSB for lane0 and MSB for "
+    "lane7)\n\n0x%02X RX LOS\n0x%02X TX Fault\n0x%02X TX LOS\n\n0x%02X RX CDR "
+    "LOL\n0x%02X TX CDR LOL\n0x%02X TX Adaptive EQ IN Fail\n\n0x%02X RX Power "
+    "High Alarm\n0x%02X RX Power Low Alarm\n0x%02X RX Power High Warning\n"
+    "0x%02X RX Power Low Warning\n\n0x%02X TX Power High Alarm\n0x%02X TX "
+    "Power Low Alarm\n0x%02X TX Power High Warning\n0x%02X TX Power Low "
+    "Warning\n\n0x%02X TX Bias High Alarm\n0x%02X TX Bias Low Alarm\n0x%02X TX"
+    " Bias High Warning\n0x%02X TX Bias Low Warning\n\n",
+    (flags.temp & QSFP_TEMP_HIGH_ALARM) ? "Yes" : "No",
+    (flags.temp & QSFP_TEMP_LOW_ALARM) ? "Yes" : "No",
+    (flags.temp & QSFP_TEMP_HIGH_WARN) ? "Yes" : "No",
+    (flags.temp & QSFP_TEMP_LOW_WARN) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_HIGH_ALARM) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_LOW_ALARM) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_HIGH_WARN) ? "Yes" : "No",
+    (flags.volt & QSFP_VOLT_LOW_WARN) ? "Yes" : "No",
+    flags.rx_los, flags.tx_fault, flags.tx_los, flags.rx_cdr_lol,
+    flags.tx_cdr_lol, flags.tx_adap_eq_in_fail, flags.rx_power_high_alarm,
+    flags.rx_power_low_alarm, flags.rx_power_high_warn,
+    flags.rx_power_low_warn, flags.tx_power_high_alarm,
+    flags.tx_power_low_alarm, flags.tx_power_high_warn,
+    flags.tx_power_low_warn, flags.tx_bias_high_alarm,
+    flags.tx_bias_low_alarm, flags.tx_bias_high_warn,
+    flags.tx_bias_low_warn);
+
+    return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(qsfp_debug_app_fault_flags);
+
 static int qsfp_debug_qsfp_module_identifier_info_show(struct seq_file *s,
                                void *data)
 {
@@ -3039,6 +3081,14 @@ void qsfp_debugfs_init(struct qsfp *qsfp)
                    qsfp, &qsfp_debug_qsfp_flags_fops);
     if (!file || IS_ERR(file)) {
         TRX_LOG_ERR(qsfp, "qsfp flags debugfs_create_file"
+                        " fail, error %ld", PTR_ERR(file));
+        goto failed_trx_debugfs_dir;
+    }
+
+    file = debugfs_create_file("fault_app_flags", 0600, qsfp->debugfs_dir,
+                   qsfp, &qsfp_debug_app_fault_flags_fops);
+    if (!file || IS_ERR(file)) {
+        TRX_LOG_ERR(qsfp, "qsfp fault_app_flags debugfs_create_file"
                         " fail, error %ld", PTR_ERR(file));
         goto failed_trx_debugfs_dir;
     }

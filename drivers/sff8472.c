@@ -485,10 +485,21 @@ static void sff8472_update_flags(struct qsfp *qsfp)
         }
     }
 
-    /* As SFF8472 completely rely on interrupt and polling used one time only
-     * after probe, simulation and read fail.
-     */
     if (err) {
+        qsfp->need_poll = true;
+    }
+
+    if (flags->rx_los | flags->tx_los | flags->tx_fault | flags->rx_cdr_lol |
+        flags->tx_cdr_lol | flags->tx_adap_eq_in_fail | flags->temp | flags->volt |
+        flags->rx_power_high_alarm | flags->rx_power_low_alarm |
+        flags->rx_power_high_warn | flags->rx_power_low_warn |
+        flags->tx_power_high_alarm | flags->tx_power_low_alarm |
+        flags->tx_power_high_warn | flags->tx_power_low_warn |
+        flags->tx_bias_high_alarm | flags->tx_bias_low_alarm |
+        flags->tx_bias_high_warn | flags->tx_bias_low_warn) {
+    /* if anyone flag set then enable poll as interrupts are not receiving
+     * for scenarios like RX_CDR LOL change.
+     */
         qsfp->need_poll = true;
     } else {
         qsfp->need_poll = false;

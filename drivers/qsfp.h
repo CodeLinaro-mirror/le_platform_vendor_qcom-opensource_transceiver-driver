@@ -388,6 +388,7 @@ struct qsfp {
     struct delayed_work timeout;
     struct mutex sm_mutex;            /* Protects state machine */
 
+    struct timer_list qsfp_flt_lnkd_timer;
     struct qsfp_eeprom_id id;
     const struct qsfp_spec_ops *spec_ops;
 
@@ -410,6 +411,8 @@ struct qsfp {
    /* Stores presence LOS TX Fault TX Disable status */
    struct qsfp_status status;
    struct qsfp_flags flags;
+   struct qsfp_flags flags_reported_faults;
+
    /* Features supported/implemented */
    struct qsfp_support support;
    struct qsfp_diag diag;
@@ -607,6 +610,7 @@ int parse_sff8636_page20_21(struct qsfp *qsfp);
 int qsfp_module_parse_laser_temp(struct qsfp *qsfp);
 extern long trx_calibrate_temp(__be16 tmp_val);
 extern void update_runtime_dual_cfg(struct qsfp *qsfp);
+void clear_qsfp_reported_faults(struct qsfp *qsfp);
 
 extern const char * const link_length_range_to_str[];
 extern  const char * const link_type_to_str[];
