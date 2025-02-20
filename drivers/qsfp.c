@@ -3267,6 +3267,7 @@ void qsfp_stop_poll(struct qsfp *qsfp)
 
 void qsfp_module_insert_irq(struct qsfp *qsfp)
 {
+    char *msg_insert[] = {QSFP_EVENT_INSERT, NULL};
     TRX_LOG_INFO(qsfp, "");
 
     mutex_lock(&qsfp->sm_mutex);
@@ -3276,11 +3277,15 @@ void qsfp_module_insert_irq(struct qsfp *qsfp)
 
     mutex_unlock(&qsfp->sm_mutex);
 
+    kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_insert);
+    TRX_LOG_INFO(qsfp, "%s event Reported", msg_insert[0]);
+
     TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver inserted", qsfp->port_num);
 }
 
 void qsfp_module_remove_irq(struct qsfp *qsfp)
 {
+    char *msg_remove[] = {QSFP_EVENT_REMOVE, NULL};
     TRX_LOG_INFO(qsfp, "");
 
     qsfp_stop_poll(qsfp);
@@ -3291,6 +3296,9 @@ void qsfp_module_remove_irq(struct qsfp *qsfp)
     qsfp_sm_event(qsfp, QSFP_E_REMOVE);
 
     mutex_unlock(&qsfp->sm_mutex);
+
+    kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_remove);
+    TRX_LOG_INFO(qsfp, "%s event Reported", msg_remove[0]);
 
     TRX_QXDM_LOG_INFO(qsfp, "Port-%u: Transceiver removed", qsfp->port_num);
 }
