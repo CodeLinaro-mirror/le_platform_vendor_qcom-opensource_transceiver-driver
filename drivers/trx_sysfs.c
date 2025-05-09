@@ -890,7 +890,7 @@ static ssize_t trx_rx_power_show(struct device *dev,
             {
                 rx_power_t[0] = (( sfp_rx_power[0] << 8) | sfp_rx_power[1]);
                 /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
-                scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW",
+                scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%04d mW",
                                 rx_power_t[0]/10000,rx_power_t[0]%10000);
                 return scnprintf(buf, PAGE_SIZE, "%s\n", rx_power_data);
             }
@@ -929,10 +929,10 @@ static ssize_t trx_rx_power_show(struct device *dev,
         rx_power_t[3] = (( rx_power[6] << 8) | rx_power[7]);
 
         /* rx power in milliwatts (rx_power_t * 0.1 μW/ 1000) */
-        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW\n"
-                                    "Rx Power Lane2: %d.%03d mW\n"
-                                    "Rx Power Lane3: %d.%03d mW\n"
-                                    "Rx Power Lane4: %d.%03d mW",
+        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%04d mW\n"
+                                    "Rx Power Lane2: %d.%04d mW\n"
+                                    "Rx Power Lane3: %d.%04d mW\n"
+                                    "Rx Power Lane4: %d.%04d mW",
                           rx_power_t[0]/10000,rx_power_t[0]%10000,
                           rx_power_t[1]/10000,rx_power_t[1]%10000,
                           rx_power_t[2]/10000,rx_power_t[2]%10000,
@@ -971,14 +971,14 @@ static ssize_t trx_rx_power_show(struct device *dev,
         cmis_rx_power_t[7] = (( cmis_rx_power[14] << 8) | cmis_rx_power[15]);
 
         /* rx power in milliwatts (rx_power_t * 0.1 μW/ 1000) */
-        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW\n"
-                                    "Rx Power Lane2: %d.%03d mW\n"
-                                    "Rx Power Lane3: %d.%03d mW\n"
-                                    "Rx Power Lane4: %d.%03d mW\n"
-                                    "Rx Power Lane5: %d.%03d mW\n"
-                                    "Rx Power Lane6: %d.%03d mW\n"
-                                    "Rx Power Lane7: %d.%03d mW\n"
-                                    "Rx Power Lane8: %d.%03d mW",
+        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%04d mW\n"
+                                    "Rx Power Lane2: %d.%04d mW\n"
+                                    "Rx Power Lane3: %d.%04d mW\n"
+                                    "Rx Power Lane4: %d.%04d mW\n"
+                                    "Rx Power Lane5: %d.%04d mW\n"
+                                    "Rx Power Lane6: %d.%04d mW\n"
+                                    "Rx Power Lane7: %d.%04d mW\n"
+                                    "Rx Power Lane8: %d.%04d mW",
                           cmis_rx_power_t[0]/10000,cmis_rx_power_t[0]%10000,
                           cmis_rx_power_t[1]/10000,cmis_rx_power_t[1]%10000,
                           cmis_rx_power_t[2]/10000,cmis_rx_power_t[2]%10000,
@@ -1262,7 +1262,7 @@ static ssize_t trx_tx_power_show(struct device *dev,
             if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
             {
                 /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
-                scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW",
+                scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%04d mW",
                                 tx_power_t[0]/10000,tx_power_t[0]%10000);
                 return scnprintf(buf, PAGE_SIZE, "%s\n", tx_power_data);
             }
@@ -1299,10 +1299,10 @@ static ssize_t trx_tx_power_show(struct device *dev,
         tx_power_t[3] = (( tx_power[6] << 8) | tx_power[7]);
 
         /* tx power in milliwatts (tx_power_t * 0.1 μW/ 1000) */
-        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW\n"
-                                    "Tx Power Lane2: %d.%03d mW\n"
-                                    "Tx Power Lane3: %d.%03d mW\n"
-                                    "Tx Power Lane4: %d.%03d mW",
+        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%04d mW\n"
+                                    "Tx Power Lane2: %d.%04d mW\n"
+                                    "Tx Power Lane3: %d.%04d mW\n"
+                                    "Tx Power Lane4: %d.%04d mW",
                           tx_power_t[0]/10000,tx_power_t[0]%10000,
                           tx_power_t[1]/10000,tx_power_t[1]%10000,
                           tx_power_t[2]/10000,tx_power_t[2]%10000,
@@ -1341,14 +1341,14 @@ static ssize_t trx_tx_power_show(struct device *dev,
         cmis_tx_power_t[7] = (( cmis_tx_power[14] << 8) | cmis_tx_power[15]);
 
         /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
-        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW\n"
-                                    "Tx Power Lane2: %d.%03d mW\n"
-                                    "Tx Power Lane3: %d.%03d mW\n"
-                                    "Tx Power Lane4: %d.%03d mW\n"
-                                    "Tx Power Lane5: %d.%03d mW\n"
-                                    "Tx Power Lane6: %d.%03d mW\n"
-                                    "Tx Power Lane7: %d.%03d mW\n"
-                                    "Tx Power Lane8: %d.%03d mW",
+        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%04d mW\n"
+                                    "Tx Power Lane2: %d.%04d mW\n"
+                                    "Tx Power Lane3: %d.%04d mW\n"
+                                    "Tx Power Lane4: %d.%04d mW\n"
+                                    "Tx Power Lane5: %d.%04d mW\n"
+                                    "Tx Power Lane6: %d.%04d mW\n"
+                                    "Tx Power Lane7: %d.%04d mW\n"
+                                    "Tx Power Lane8: %d.%04d mW",
                           cmis_tx_power_t[0]/10000,cmis_tx_power_t[0]%10000,
                           cmis_tx_power_t[1]/10000,cmis_tx_power_t[1]%10000,
                           cmis_tx_power_t[2]/10000,cmis_tx_power_t[2]%10000,
