@@ -388,7 +388,7 @@ char* calc_external_calib_svoltage(struct qsfp* qsfp, u16 sv_ad, char* str)
     supply_voltage_t = supply_voltage_t + offset;
 
     /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
-    scnprintf(str,75,"Supply Voltage: %d.%03d V",
+    scnprintf(str,75,"Supply Voltage: %d.%04d V",
          supply_voltage_t/10000, supply_voltage_t%10000);
 
     return str;
@@ -402,7 +402,7 @@ char* calc_common_svoltage(u16 svolt, char* str)
     supply_voltage_t = be16_to_cpu(svolt & 0XFFFF);
 
     /* supply voltage in volts (supply_voltage_t * 100 μV/ 1000000) */
-    scnprintf(str,75,"Supply Voltage: %d.%03d V",
+    scnprintf(str,75,"Supply Voltage: %d.%04d V",
          supply_voltage_t/10000, supply_voltage_t%10000);
 
     return str;
@@ -462,7 +462,7 @@ char* calc_external_calib_txpwr(struct qsfp* qsfp, u16 txpwr_ad, char* str)
     txpwr_t = txpwr_t + offset;
 
     /* tx power in milliWatts (txpwr_t * 0.1 μW/ 1000) */
-    scnprintf(str,500,"Tx Power Lane1: %d.%03d mW",
+    scnprintf(str,500,"Tx Power Lane1: %d.%04d mW",
                      txpwr_t/10000, txpwr_t%10000);
 
     return str;
@@ -1221,7 +1221,7 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
             {
                 rx_power_t[0] = (( sfp_rx_power[0] << 8) | sfp_rx_power[1]);
                 /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
-                scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW",
+                scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%04d mW",
                           rx_power_t[0]/10000,rx_power_t[0]%10000);
                 seq_printf(s, "%s\n", rx_power_data);
             }
@@ -1262,10 +1262,10 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
         rx_power_t[3] = (( rx_power[6] << 8) | rx_power[7]);
 
         /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
-        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW\n"
-                                    "Rx Power Lane2: %d.%03d mW\n"
-                                    "Rx Power Lane3: %d.%03d mW\n"
-                                    "Rx Power Lane4: %d.%03d mW",
+        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%04d mW\n"
+                                    "Rx Power Lane2: %d.%04d mW\n"
+                                    "Rx Power Lane3: %d.%04d mW\n"
+                                    "Rx Power Lane4: %d.%04d mW",
                           rx_power_t[0]/10000,rx_power_t[0]%10000,
                           rx_power_t[1]/10000,rx_power_t[1]%10000,
                           rx_power_t[2]/10000,rx_power_t[2]%10000,
@@ -1306,14 +1306,14 @@ static int qsfp_debug_device_rx_power_show(struct seq_file *s, void *data)
         cmis_rx_power_t[7] = (( cmis_rx_power[14] << 8) | cmis_rx_power[15]);
 
         /* rx power in milliWatts (rx_power_t * 0.1 μW/ 1000) */
-        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%03d mW\n"
-                                    "Rx Power Lane2: %d.%03d mW\n"
-                                    "Rx Power Lane3: %d.%03d mW\n"
-                                    "Rx Power Lane4: %d.%03d mW\n"
-                                    "Rx Power Lane5: %d.%03d mW\n"
-                                    "Rx Power Lane6: %d.%03d mW\n"
-                                    "Rx Power Lane7: %d.%03d mW\n"
-                                    "Rx Power Lane8: %d.%03d mW",
+        scnprintf(rx_power_data,500,"Rx Power Lane1: %d.%04d mW\n"
+                                    "Rx Power Lane2: %d.%04d mW\n"
+                                    "Rx Power Lane3: %d.%04d mW\n"
+                                    "Rx Power Lane4: %d.%04d mW\n"
+                                    "Rx Power Lane5: %d.%04d mW\n"
+                                    "Rx Power Lane6: %d.%04d mW\n"
+                                    "Rx Power Lane7: %d.%04d mW\n"
+                                    "Rx Power Lane8: %d.%04d mW",
                           cmis_rx_power_t[0]/10000,cmis_rx_power_t[0]%10000,
                           cmis_rx_power_t[1]/10000,cmis_rx_power_t[1]%10000,
                           cmis_rx_power_t[2]/10000,cmis_rx_power_t[2]%10000,
@@ -1603,7 +1603,7 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
             if(sff8472_id->ext.diagmon & SFF8472_DIAGMON_INT_CAL)
             {
                 /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
-                scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW",
+                scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%04d mW",
                         tx_power_t[0]/10000,tx_power_t[0]%10000);
                 seq_printf(s, "%s\n", tx_power_data);
             }
@@ -1642,10 +1642,10 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
         tx_power_t[3] = (( tx_power[6] << 8) | tx_power[7]);
 
         /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
-        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW\n"
-                                    "Tx Power Lane2: %d.%03d mW\n"
-                                    "Tx Power Lane3: %d.%03d mW\n"
-                                    "Tx Power Lane4: %d.%03d mW",
+        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%04d mW\n"
+                                    "Tx Power Lane2: %d.%04d mW\n"
+                                    "Tx Power Lane3: %d.%04d mW\n"
+                                    "Tx Power Lane4: %d.%04d mW",
                           tx_power_t[0]/10000,tx_power_t[0]%10000,
                           tx_power_t[1]/10000,tx_power_t[1]%10000,
                           tx_power_t[2]/10000,tx_power_t[2]%10000,
@@ -1686,14 +1686,14 @@ static int qsfp_debug_device_tx_power_show(struct seq_file *s, void *data)
         cmis_tx_power_t[7] = (( cmis_tx_power[14] << 8) | cmis_tx_power[15]);
 
         /* tx power in milliWatts (tx_power_t * 0.1 μW/ 1000) */
-        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%03d mW\n"
-                                    "Tx Power Lane2: %d.%03d mW\n"
-                                    "Tx Power Lane3: %d.%03d mW\n"
-                                    "Tx Power Lane4: %d.%03d mW\n"
-                                    "Tx Power Lane5: %d.%03d mW\n"
-                                    "Tx Power Lane6: %d.%03d mW\n"
-                                    "Tx Power Lane7: %d.%03d mW\n"
-                                    "Tx Power Lane8: %d.%03d mW",
+        scnprintf(tx_power_data,500,"Tx Power Lane1: %d.%04d mW\n"
+                                    "Tx Power Lane2: %d.%04d mW\n"
+                                    "Tx Power Lane3: %d.%04d mW\n"
+                                    "Tx Power Lane4: %d.%04d mW\n"
+                                    "Tx Power Lane5: %d.%04d mW\n"
+                                    "Tx Power Lane6: %d.%04d mW\n"
+                                    "Tx Power Lane7: %d.%04d mW\n"
+                                    "Tx Power Lane8: %d.%04d mW",
                           cmis_tx_power_t[0]/10000,cmis_tx_power_t[0]%10000,
                           cmis_tx_power_t[1]/10000,cmis_tx_power_t[1]%10000,
                           cmis_tx_power_t[2]/10000,cmis_tx_power_t[2]%10000,
@@ -2099,7 +2099,7 @@ static int qsfp_debug_device_ddm_thresholds_show(struct seq_file *s,
     seq_printf(s, "********** supply voltage threshold limits ****"
                                                       "*******\n");
     seq_printf(s, "volt_high_alarm: %d mV \nvolt_low_alarm : %d mV \n"
-                "volt_high_warn : %d mV \nvolt_low_warn	: %d mV \n\n",
+                "volt_high_warn : %d mV \nvolt_low_warn : %d mV \n\n",
                    trx_calibrate_vcc(cmis_ddm_limits.volt_high_alarm),
                     trx_calibrate_vcc(cmis_ddm_limits.volt_low_alarm),
                     trx_calibrate_vcc(cmis_ddm_limits.volt_high_warn),
