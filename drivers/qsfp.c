@@ -580,6 +580,9 @@ int qsfp_trx_eth_event_notifier(struct trx_eth_event_t* eth_notifier)
             qsfp->spec_ops->disable_enable_lane_irq(qsfp, lanes, false);
             /* Polling needed because of irq disabled for few lanes */
             qsfp_start_poll(qsfp, 0);
+        } else if (qsfp_atleast_one_flag_supported(qsfp)) {
+          /* Polling needed because of irq might miss in some scenarios */
+          qsfp_start_poll(qsfp, 0);
         }
 
         for (i = 0 ; i < qsfp->num_lanes ; i++) {
