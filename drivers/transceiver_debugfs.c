@@ -535,6 +535,8 @@ static int fpc_debug_reset_counter_show(struct seq_file *s, void *data)
             seq_printf(s, "Reset counter:           %u\n", qsfpi->reset_counter);
             seq_printf(s, "I2C stuck counter:       %u\n", qsfpi->i2c_stuck_counter);
             seq_printf(s, "2nd i2c read/write fail: %u\n", qsfpi->read_write_2nd_fail);
+            seq_printf(s, "i2c_fpc_hung_counter:    %u\n", qsfpi->i2c_fpc_hung_counter);
+            seq_printf(s, "i2c_fpc_hung_report_flag:%u\n", qsfpi->i2c_fpc_hung_report_flag);
         }
     }
 

@@ -102,8 +102,11 @@
 #define QSFP_EVENT_INSERT            "EVENT=INSERT"
 #define QSFP_EVENT_REMOVE            "EVENT=REMOVE"
 
+#define QSFP_EVENT_FPC_I2C_HUNG      "EVENT=FPC_I2C_HUNG"
+
 #define QSFP_EVENT_BUF_MAX (50)
 #define QSFP_VENDOR_PN_STR_LEN (17)
+#define QSFP_FPC_I2C_HUNG_COUNTER_MAX (50)
 
 struct dual_tcvr_entry {
     char *name;
@@ -398,6 +401,8 @@ struct qsfp {
     struct lane* lane[MAX_LANES];
     u8 num_lanes;
     bool is_adapter;
+    bool i2c_fpc_hung_report_flag;
+    u16 i2c_fpc_hung_counter;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
     struct dentry *debugfs_dir;
@@ -496,6 +501,7 @@ enum {
 
     /* Module states */
     QSFP_MOD_EMPTY = 0,
+    QSFP_FPC_I2C_HUNG,
     QSFP_MOD_ERROR_I2C,
     QSFP_MOD_ERROR_HPOWER,
     QSFP_MOD_ERROR_TX_ENABLE_FAIL,
