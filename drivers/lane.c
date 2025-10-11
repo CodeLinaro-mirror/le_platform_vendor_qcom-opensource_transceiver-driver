@@ -211,6 +211,7 @@ static void lane_sm_module(struct lane *lane, u32 event)
     case QSFP_MOD_ERROR_I2C:
     case QSFP_MOD_ERROR_HPOWER:
     case QSFP_MOD_ERROR_TX_ENABLE_FAIL:
+    case QSFP_FPC_I2C_HUNG:
         break;
     }
 }

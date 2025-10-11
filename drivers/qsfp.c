@@ -197,6 +197,7 @@ int qsfp_trx_get_lane_down_reason_code(u32 lane_phandle,
     if (lane->sm_mod_state == QSFP_MOD_EMPTY) {
         *reason = TRX_LOCAL_PLUGOUT;
     } else if ((lane->sm_mod_state == QSFP_MOD_ERROR_I2C) ||
+               (lane->sm_mod_state == QSFP_FPC_I2C_HUNG) ||
                (lane->sm_mod_state == QSFP_MOD_ERROR_HPOWER) ||
                (lane->sm_mod_state == QSFP_MOD_ERROR_TX_ENABLE_FAIL)) {
         *reason = TRX_ERROR;
@@ -980,6 +981,7 @@ const char * const trxtype_to_str[] = {
 
 static const char  * const mod_state_strings[] = {
     [QSFP_MOD_EMPTY] = "Empty",
+    [QSFP_FPC_I2C_HUNG] = "FPC_I2C_HUNG",
     [QSFP_MOD_ERROR_I2C] = "I2C_ERROR",
     [QSFP_MOD_ERROR_HPOWER] = "High_Power_ERROR",
     [QSFP_MOD_ERROR_TX_ENABLE_FAIL] = "TX_Enable_ERROR",
@@ -1194,6 +1196,38 @@ static int qsfp_i2c_configure(struct qsfp *qsfp)
     return 0;
 }
 
+static void qsfp_sm_link_next(struct qsfp *qsfp, u8 state)
+{
+    qsfp->sm_link_state = state;
+}
+
+void qsfp_report_fpc_stuck_fault(struct qsfp *qsfp)
+{
+    char *msg_i2c_fpc_hung[] = {QSFP_EVENT_FPC_I2C_HUNG, NULL};
+    struct lane *lanei;
+    u8 i;
+
+    if(qsfp->i2c_fpc_hung_report_flag == 1)
+        return;
+
+    qsfp->i2c_fpc_hung_report_flag = 1;
+
+    qsfp_stop_poll(qsfp);
+    qsfp_sm_mod_next(qsfp, QSFP_FPC_I2C_HUNG, 0);
+
+    kobject_uevent_env(&qsfp->dev->kobj, KOBJ_CHANGE, msg_i2c_fpc_hung);
+    TRX_LOG_INFO(qsfp, "Fault Report: %s", msg_i2c_fpc_hung[0]);
+
+    for (i = 0 ; i < qsfp->num_lanes ; i++) {
+        lanei = qsfp->lane[i];
+        if (lanei && (lanei->status.present)) {
+            lane_sm_mod_error(lanei, QSFP_FPC_I2C_HUNG);
+        }
+    }
+
+    qsfp_sm_link_next(qsfp, QSFP_S_DOWN);
+}
+
 int qsfp_read(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
 {
     int ret;
@@ -1206,7 +1240,6 @@ int qsfp_read(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
     i2c_lock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
 
     ret = qsfp_i2c_read(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
-
     /* On failure try reset of FPC402 for this particular port */
     if (ret) {
         TRX_LOG_ERR(qsfp, "Failed for address 0x%X. ret %d", addr, ret);
@@ -1218,6 +1251,9 @@ int qsfp_read(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
                 TRX_LOG_ERR(qsfp, "Failed in second attempt for address 0x%X. ret %d. Delay %u",
                             addr, ret, qsfp->fpc_qsfp_i2c_recover_delay);
                 qsfp->read_write_2nd_fail++;
+
+                qsfp->i2c_fpc_hung_counter++;
+
                 /* On failure increase fpc_qsfp_i2c_recover_delay */
                 if (qsfp->fpc_qsfp_i2c_recover_delay < FPC_QSFP_I2C_RECOVER_TIME_MAX) {
                     qsfp->fpc_qsfp_i2c_recover_delay += FPC_QSFP_I2C_RECOVER_TIME_STEP;
@@ -1229,9 +1265,15 @@ int qsfp_read(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
     /* On successful i2c read make fpc_qsfp_i2c_recover_delay zero */
     if (ret == 0) {
         qsfp->fpc_qsfp_i2c_recover_delay = 0;
+        qsfp->i2c_fpc_hung_counter = 0;
     }
 
     i2c_unlock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
+
+    if  (qsfp->i2c_fpc_hung_counter > QSFP_FPC_I2C_HUNG_COUNTER_MAX)
+    {
+        qsfp_report_fpc_stuck_fault(qsfp);
+    }
 
     return ret;
 }
@@ -1248,7 +1290,6 @@ int qsfp_write(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
     i2c_lock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
 
     ret = qsfp_i2c_write(qsfp, addr >> 16, addr >> 8, addr & 0xFF, buf, len);
-
     /* On failure try reset of FPC402 for this particular port */
     if (ret) {
         TRX_LOG_ERR(qsfp, "Failed for address 0x%X. ret %d", addr, ret);
@@ -1260,6 +1301,9 @@ int qsfp_write(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
                 TRX_LOG_ERR(qsfp, "Failed in second attempt for address 0x%X. ret %d. Delay %u",
                             addr, ret, qsfp->fpc_qsfp_i2c_recover_delay);
                 qsfp->read_write_2nd_fail++;
+
+               qsfp->i2c_fpc_hung_counter++;
+
                 /* On failure increase fpc_qsfp_i2c_recover_delay */
                 if (qsfp->fpc_qsfp_i2c_recover_delay < FPC_QSFP_I2C_RECOVER_TIME_MAX) {
                     qsfp->fpc_qsfp_i2c_recover_delay += FPC_QSFP_I2C_RECOVER_TIME_STEP;
@@ -1271,9 +1315,15 @@ int qsfp_write(struct qsfp *qsfp, u32 addr, void *buf, size_t len)
     /* On successful i2c write make fpc_qsfp_i2c_recover_delay zero */
     if (ret == 0) {
         qsfp->fpc_qsfp_i2c_recover_delay = 0;
+        qsfp->i2c_fpc_hung_counter = 0;
     }
 
     i2c_unlock_bus(qsfp->i2c, I2C_LOCK_SEGMENT);
+
+    if  (qsfp->i2c_fpc_hung_counter > QSFP_FPC_I2C_HUNG_COUNTER_MAX)
+    {
+        qsfp_report_fpc_stuck_fault(qsfp);
+    }
 
     return ret;
 }
@@ -1357,11 +1407,6 @@ static void qsfp_sm_set_timer(struct qsfp *qsfp, u32 timeout)
     } else {
         cancel_delayed_work(&qsfp->timeout);
     }
-}
-
-static void qsfp_sm_link_next(struct qsfp *qsfp, u8 state)
-{
-    qsfp->sm_link_state = state;
 }
 
 void qsfp_sm_mod_next(struct qsfp *qsfp, u8 state,
@@ -1673,6 +1718,8 @@ static void qsfp_sm_mod_remove(struct qsfp *qsfp)
     qsfp->lane_min_speed = 0;
     qsfp->lane_max_speed = 0;
     qsfp->is_adapter = 0;
+    qsfp->i2c_fpc_hung_counter = 0;
+    qsfp->i2c_fpc_hung_report_flag = 0;
 
     TRX_LOG_INFO(qsfp, "Module removed");
 }
@@ -2152,6 +2199,7 @@ static void qsfp_sm_module(struct qsfp *qsfp, u32 event)
     case QSFP_MOD_ERROR_I2C:
     case QSFP_MOD_ERROR_HPOWER:
     case QSFP_MOD_ERROR_TX_ENABLE_FAIL:
+    case QSFP_FPC_I2C_HUNG:
          break;
     }
 }
@@ -3425,6 +3473,8 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     qsfp->lane_min_speed = 0;
     qsfp->lane_max_speed = 0;
     qsfp->is_adapter = 0;
+    qsfp->i2c_fpc_hung_counter = 0;
+    qsfp->i2c_fpc_hung_report_flag = 0;
     memset(&qsfp->param_info, 0, sizeof(qsfp->param_info));
     return qsfp;
 }
