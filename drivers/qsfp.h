@@ -620,6 +620,7 @@ int qsfp_module_parse_laser_temp(struct qsfp *qsfp);
 extern long trx_calibrate_temp(__be16 tmp_val);
 extern void update_runtime_dual_cfg(struct qsfp *qsfp);
 void clear_qsfp_reported_faults(struct qsfp *qsfp);
+void nop_timer_callback(struct timer_list *timer);
 
 extern const char * const link_length_range_to_str[];
 extern  const char * const link_type_to_str[];

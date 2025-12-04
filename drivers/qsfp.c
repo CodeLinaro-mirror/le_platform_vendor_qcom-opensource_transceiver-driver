@@ -3431,10 +3431,6 @@ void update_runtime_dual_cfg(struct qsfp *qsfp)
 
 }
 
-void qsfp_flt_report_timer_callback(struct timer_list *timer) {
-    TRX_LOG_INFO_NODEV("qsfp_fault report timer expired\n");
-}
-
 /*
  * Allocates QSFP instance
  */
@@ -3453,7 +3449,7 @@ static struct qsfp *qsfp_alloc(struct device *dev)
     INIT_DELAYED_WORK(&qsfp->poll, qsfp_poll);
     INIT_DELAYED_WORK(&qsfp->timeout, qsfp_timeout);
 
-    timer_setup(&qsfp->qsfp_flt_lnkd_timer, qsfp_flt_report_timer_callback, 0);
+    timer_setup(&qsfp->qsfp_flt_lnkd_timer, nop_timer_callback, 0);
 
     /* valid port numbers are 0,1,2,3.
      * FPC_MAX_PORTS signifies invalid port number
