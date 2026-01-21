@@ -571,6 +571,7 @@ static u8 sff8472_get_connector_type(struct qsfp *qsfp)
 static int sff8472_get_lane_speed(struct qsfp *qsfp,
                                   trx_speed_mask *speed_mask)
 {
+    unsigned int br_min, br_nom, br_max;
     phy_interface_t sfp_interface = PHY_INTERFACE_MODE_NA;
     __ETHTOOL_DECLARE_LINK_MODE_MASK(sfp_supported) = { 0, };
 
@@ -607,6 +608,40 @@ static int sff8472_get_lane_speed(struct qsfp *qsfp,
         phylink_test(sfp_supported, 10000baseER_Full) ||
         phylink_test(sfp_supported, 10000baseT_Full)) {
         lane_speed |= TRX_LANE_SPEED_10G;
+    }
+
+    /*
+     * The sfp_parse_support() function evaluates br_nominal only for passive
+     * and active cables.However, certain optical transceivers (e.g.,
+     * FTLX1370W4BTL) support 10Gbps speed but do not advertise Ethernet
+     * compliance codes at address 0x0C in the A0h EEPROM page.
+     * As a result, the upstream Linux implementation may fail to detect 10Gbps
+     * capability for these modules.
+     */
+    if(lane_speed == TRX_LANE_SPEED_UNKNOWN) {
+        /* Decode the bitrate information to MBd
+         * Reference: kernel/msm-5.4:drivers/net/phy/sfp-bus.c
+         */
+        br_min = br_nom = br_max = 0;
+        if (id->base.br_nominal) {
+            if (id->base.br_nominal != 255) {
+                br_nom = id->base.br_nominal * 100;
+                br_min = br_nom - id->base.br_nominal * id->ext.br_min;
+                br_max = br_nom + id->base.br_nominal * id->ext.br_max;
+            } else if (id->ext.br_max) {
+                br_nom = 250 * id->ext.br_max;
+                br_max = br_nom + br_nom * id->ext.br_min / 100;
+                br_min = br_nom - br_nom * id->ext.br_min / 100;
+            }
+
+            if (br_min <= 12000 && br_max >= 10300) {
+               lane_speed |= TRX_LANE_SPEED_10G;
+           }else if (br_min == br_max) {
+               if (br_nom >= 9800 && br_nom <= 10300) {
+                   lane_speed |= TRX_LANE_SPEED_10G;
+               }
+           }
+        }
     }
 
     if (lane_speed == TRX_LANE_SPEED_UNKNOWN) {

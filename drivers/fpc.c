@@ -1033,9 +1033,10 @@ static ssize_t dual_transceivers_store(struct kobject *kobj,
 static struct kobj_attribute transceiver_attribute = __ATTR(dual_transceivers,
                        0664, dual_transceivers_show, dual_transceivers_store);
 
-void fpc_probe_timer_callback(struct timer_list *timer) {
-    TRX_LOG_INFO_NODEV("fpc_probe_timer expired\n");
+/* A no-operation timer callback function */
+void nop_timer_callback(struct timer_list *timer) {
 }
+
 
 /*
  * Init function gets called during insmod/modprobe
@@ -1100,7 +1101,7 @@ static int fpc_qsfp_init(void)
     }
 
     // Initialize the timer
-    timer_setup(&fpc_probe_timer, fpc_probe_timer_callback, 0);
+    timer_setup(&fpc_probe_timer, nop_timer_callback, 0);
 
     // Set the timer to expire after 1 second (1 * HZ jiffies)
     mod_timer(&fpc_probe_timer, jiffies + 1 * HZ);
