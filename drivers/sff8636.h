@@ -29,6 +29,18 @@
 #define SFF8636_PARAM_THRESHOLD_SET_MAX (16)
 #define SFF8636_PARAM_CFG_SET_MAX (24)
 
+/* Nominal baud rate ranges (MBd) */
+#define SFF8636_RATE_10G_LANE_MIN_MBD   9500
+#define SFF8636_RATE_10G_LANE_MAX_MBD   13000
+
+#define SFF8636_RATE_25G_LANE_MIN_MBD   24000
+#define SFF8636_RATE_25G_LANE_MAX_MBD   28000
+
+#define SFF8636_RATE_50G_LANE_MIN_MBD   50000
+#define SFF8636_RATE_50G_LANE_MAX_MBD   56000
+
+#define SFF8024_ENCODING_PAM4   0x08
+
 enum {
     SFF8636_LOS                         = QSFP_ADDR(0, 0,   3),
     SFF8636_TX_FAULT                    = QSFP_ADDR(0, 0,   4),

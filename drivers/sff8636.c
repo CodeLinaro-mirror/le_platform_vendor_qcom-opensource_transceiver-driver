@@ -1180,6 +1180,59 @@ static u8 sff8024_link_codes_to_speed(unsigned short mod_link_codes)
 }
 
 /*
+ * Decode lane speed from nominal signaling rate.
+ *
+ * SFF-8636:
+ *  - Byte 140: nominal signaling rate in 100 MBd units.
+ *    If Byte 140 == 0xFF, use Byte 222.
+ *  - Byte 222: nominal baud rate in 250 MBd units.
+ */
+static trx_lane_speed sff8636_nominal_rate_to_speed(struct qsfp *qsfp,
+                                                 const struct sff8636_eeprom_id *id)
+{
+    u32 rate_mbd = 0;
+    u8 br_100 = id->base.br_nominal;
+    u8 br_250 = id->ext.baud_rate_nominal;
+
+    if (br_100 == 0x00) {
+        /* Unspecified per spec */
+        return TRX_LANE_SPEED_UNKNOWN;
+    }
+
+    if (br_100 != 0xFF) {
+        rate_mbd = (u32)br_100 * 100;         /* 100 MBd units */
+    } else {
+        if (br_250 == 0x00)
+            return TRX_LANE_SPEED_UNKNOWN;
+        rate_mbd = (u32)br_250 * 250;         /* 250 MBd units */
+    }
+
+    if (rate_mbd >= SFF8636_RATE_25G_LANE_MIN_MBD &&
+        rate_mbd <= SFF8636_RATE_25G_LANE_MAX_MBD) {
+        /*
+         * If encoding says PAM4, nominal baud ~26 GBd can correspond to 50G/lane.
+         * Otherwise treat as 25G class lane.
+         */
+        if (id->base.encoding == SFF8024_ENCODING_PAM4)
+            return TRX_LANE_SPEED_50G;
+
+        return TRX_LANE_SPEED_25G;
+    }
+
+    if (rate_mbd >= SFF8636_RATE_10G_LANE_MIN_MBD &&
+        rate_mbd <= SFF8636_RATE_10G_LANE_MAX_MBD) {
+        return TRX_LANE_SPEED_10G;
+    }
+
+    if (rate_mbd >= SFF8636_RATE_50G_LANE_MIN_MBD &&
+        rate_mbd <= SFF8636_RATE_50G_LANE_MAX_MBD) {
+        return TRX_LANE_SPEED_50G;
+     }
+
+    return TRX_LANE_SPEED_UNKNOWN;
+}
+
+/*
  * Function to get the lane supported speed using linkcodes page 00h, byte 192,
  * or ethernet compliance codes page 00h, byte 131.
  */
@@ -1191,6 +1244,7 @@ static int sff8636_get_lane_speed(struct qsfp *qsfp,
     bool dual_rate = false;
 
     trx_lane_speed lane_speed = TRX_LANE_SPEED_UNKNOWN;
+    trx_lane_speed nom_speed = TRX_LANE_SPEED_UNKNOWN;
 
     if ((id->base.e10g_base_lrm == 0x1) ||
              (id->base.e10g_base_lr == 0x1)  ||
@@ -1208,6 +1262,11 @@ static int sff8636_get_lane_speed(struct qsfp *qsfp,
    /* Check ethernet compliance codes page 00h byte 131 */
    if (id->base.ecom_extended == 0x1) {
         lane_speed |= sff8024_link_codes_to_speed(id->ext.link_codes);
+    }
+
+    nom_speed = sff8636_nominal_rate_to_speed(qsfp,id);
+    if (nom_speed != TRX_LANE_SPEED_UNKNOWN) {
+            lane_speed |= nom_speed;
     }
 
     if (!list_empty(&dual_tcvr_list)) {
