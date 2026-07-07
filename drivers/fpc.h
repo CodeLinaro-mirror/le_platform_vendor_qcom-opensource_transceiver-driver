@@ -84,6 +84,9 @@
 #define FPC_OUT_A_DISABLE (0x00)
 #define FPC_OUT_A_ENABLE (0x0F)
 
+#define FPC_OUT_A_MASK (0x0F)
+#define FPC_OUT_B_MASK (0xF0)
+
 enum {
     FPC_LED_MODE_SELECT,
     FPC_INPUT_PIN_INTERRUPT_ENABLE,
