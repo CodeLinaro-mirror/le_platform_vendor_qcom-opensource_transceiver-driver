@@ -21,6 +21,21 @@
 #define SFF8636_POWER_CLASS_6 (0x02)
 #define SFF8636_POWER_CLASS_7 (0x03)
 
+/* Extended Rate Select Compliance, byte 141 */
+#define SFF8636_EXT_RATE_SELECT_V1 (BIT(0))
+#define SFF8636_EXT_RATE_SELECT_V2 (BIT(1))
+
+/* Enhanced Options, byte 221. Extended Rate Select is
+ * declared only when bit 3 = 1 AND bit 2 = 0; bits 2,3 = 1,1 is reserved.
+ */
+#define SFF8636_ENH_OPT_RATE_SELECT_DECL_MASK (BIT(3)|BIT(2))
+#define SFF8636_ENH_OPT_RATE_SELECT_DECL_VAL  (BIT(3))
+
+#define SFF8636_RATE_SELECT_V2_24TO26GBD_ALL_LANES     (0xAA)
+#define SFF8636_RATE_SELECT_V2_UNDER_12GBD_ALL_LANES   (0x00)
+#define SFF8636_RATE_SELECT_V1_6P6GBD_AND_ABOVE_ALL_LANES (0xAA)
+#define SFF8636_RATE_SELECT_V1_UNDER_2P2GBD_ALL_LANES  (0x00)
+
 /* Copper cable, unequalized */
 #define SFF8636_TRANS_COPPER_UNEQUAL    (10 << 4)
 #define VENDOR_CIG "CIG"
@@ -64,6 +79,8 @@ enum {
     SFF8636_TX_POWER_LANE3              = QSFP_ADDR(0, 0,  54),
     SFF8636_TX_POWER_LANE4              = QSFP_ADDR(0, 0,  56),
     SFF8636_TX_DISABLE                  = QSFP_ADDR(0, 0,  86),
+    SFF8636_RX_RATE_SELECT              = QSFP_ADDR(0, 0,  87),
+    SFF8636_TX_RATE_SELECT              = QSFP_ADDR(0, 0,  88),
     SFF8636_POWER_ENABLE                = QSFP_ADDR(0, 0,  93),
     SFF8636_LOS_IRQ_MASK                = QSFP_ADDR(0, 0, 100),
     SFF8636_TX_FAULT_IRQ_MASK           = QSFP_ADDR(0, 0, 101),

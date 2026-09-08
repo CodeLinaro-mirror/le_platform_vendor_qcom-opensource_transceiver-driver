@@ -567,23 +567,44 @@ int fpc_qsfp_i2c_recover(struct qsfp *qsfp)
 static void fpc_reset_qsfp_ports(const struct fpc *fpc)
 {
     int ret;
-    u8 buf;
+    u8 buf, out_b, out_b_oe;
 
-    buf = FPC_QSFP_RESET_SEQUENCE;
+    /* Value register (0x0A) is read once so its OUT_B_VAL nibble
+     * (bits[7:4]) can be preserved across the write.
+     */
+    ret = fpc_read(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to read OUT_A/OUT_B value. ret %d", ret);
+        return;
+    }
+    out_b = buf & FPC_OUT_B_MASK;
+
+    buf = out_b | FPC_QSFP_RESET_SEQUENCE;
     ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
     if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to write Reset sequence. ret %d", ret);
         return;
     }
 
-    buf = FPC_OUT_A_ENABLE;
+    /* Enable register (0x08) has its own OUT_B_OE nibble, distinct in
+     * meaning from OUT_B_VAL above even though it shares the same bit
+     * position, so it must be read from 0x08 itself.
+     */
+    ret = fpc_read(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to read OUT_A/OUT_B enable. ret %d", ret);
+        return;
+    }
+    out_b_oe = buf & FPC_OUT_B_MASK;
+
+    buf = out_b_oe | FPC_OUT_A_ENABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to enable Reset gpio. ret %d", ret);
         return;
     }
 
-    buf = FPC_OUT_A_DISABLE;
+    buf = out_b_oe | FPC_OUT_A_DISABLE;
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
@@ -594,27 +615,86 @@ static void fpc_reset_qsfp_ports(const struct fpc *fpc)
 void fpc_reset_qsfp(const struct qsfp *qsfp)
 {
     int ret;
-    u8 buf;
+    u8 buf, out_b, out_b_oe;
     struct fpc *fpc = qsfp->fpc;
 
-    buf = (1 << qsfp->port_num) ^ 0xF;
+    /* Value register (0x0A) is read once so its OUT_B_VAL nibble
+     * (bits[7:4]) can be preserved across the write.
+     */
+    ret = fpc_read(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to read OUT_A/OUT_B value. ret %d", ret);
+        return;
+    }
+    out_b = buf & FPC_OUT_B_MASK;
+
+    buf = out_b | (((1 << qsfp->port_num) ^ 0xF) & FPC_OUT_A_MASK);
     ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
     if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to write Reset sequence. ret %d", ret);
         return;
     }
 
-    buf = 1 << qsfp->port_num;
+    /* Enable register (0x08) has its own OUT_B_OE nibble, distinct in
+     * meaning from OUT_B_VAL above even though it shares the same bit
+     * position, so it must be read from 0x08 itself.
+     */
+    ret = fpc_read(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_WARN(fpc, "Fail to read OUT_A/OUT_B enable. ret %d", ret);
+        return;
+    }
+    out_b_oe = buf & FPC_OUT_B_MASK;
+
+    buf = out_b_oe | ((1 << qsfp->port_num) & FPC_OUT_A_MASK);
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to enable Reset gpio. ret %d", ret);
         return;
     }
 
-    buf = (1 << qsfp->port_num) ^ 0xF;
+    buf = out_b_oe | (((1 << qsfp->port_num) ^ 0xF) & FPC_OUT_A_MASK);
     ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
     if (ret < 0) {
         TRX_LOG_WARN(fpc, "Fail to disable Reset gpio. ret %d", ret);
+    }
+}
+
+/*
+ * Unconditionally drives OUT_B to its "enable" logic level (0) and enables
+ * the OUT_B output driver for all 4 ports on this FPC402 instance.
+ */
+static void fpc_enable_out_b(const struct fpc *fpc)
+{
+    u8 buf;
+    int ret;
+
+    /* Value register (0x0A) must be configured before the pin is
+     * enabled (register 0x08).
+     */
+    ret = fpc_read(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to read OUT_A/OUT_B value. ret %d", ret);
+        return;
+    }
+
+    buf &= ~FPC_OUT_B_MASK;
+    ret = fpc_write(fpc, FPC_OUT_A_B_VALUE, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to write OUT_B value. ret %d", ret);
+        return;
+    }
+
+    ret = fpc_read(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to read OUT_A/OUT_B enable. ret %d", ret);
+        return;
+    }
+
+    buf |= FPC_OUT_B_MASK;
+    ret = fpc_write(fpc, FPC_OUT_A_B_ENABLE_REGISTER, &buf, sizeof(buf));
+    if (ret < 0) {
+        TRX_LOG_ERR(fpc, "Fail to enable OUT_B. ret %d", ret);
     }
 }
 
@@ -778,6 +858,10 @@ static int fpc_probe(struct platform_device *pdev)
 
     /* Reset all 4 ports using reset gpio line */
     fpc_reset_qsfp_ports(fpc);
+
+    /* Enable OUT_B on all 4 ports.
+     */
+    fpc_enable_out_b(fpc);
 
     fpc_debugfs_init(fpc);
 

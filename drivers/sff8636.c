@@ -1407,7 +1407,76 @@ unsigned long sff8636_irq_delay(struct qsfp *qsfp)
 
 static int sff8636_set_rate_select(struct qsfp *qsfp, bool enable)
 {
-    /* SFF8636 supports Rate select however it is not supported by our driver */
+    struct sff8636_eeprom_ext *ext = &qsfp->id.sff8636.ext;
+    u8 ext_ratesel_spec = qsfp->id.sff8636.base.ext_ratesel_spec;
+    u8 val, prev_rx_val;
+    int ret, revert_ret;
+
+    if ((ext->enh_options & SFF8636_ENH_OPT_RATE_SELECT_DECL_MASK) !=
+        SFF8636_ENH_OPT_RATE_SELECT_DECL_VAL) {
+        /* Extended Rate Select not declared, or declaration bits are in the
+         * reserved 1,1 state. */
+        TRX_LOG_INFO(qsfp, "Extended Rate Select declaration bits not valid "
+                           "(enh_options 0x%02X), skipping", ext->enh_options);
+        return 0;
+    }
+
+    if (ext_ratesel_spec & SFF8636_EXT_RATE_SELECT_V2) {
+        /* Version 2 (byte 141 bit 1, Table 6-11): 10b per lane = "24 up to
+         * 26 GBd" on enable, 00b per lane = "less than 12 GBd" on disable.
+         */
+        val = enable ? SFF8636_RATE_SELECT_V2_24TO26GBD_ALL_LANES
+                      : SFF8636_RATE_SELECT_V2_UNDER_12GBD_ALL_LANES;
+    } else if (ext_ratesel_spec & SFF8636_EXT_RATE_SELECT_V1) {
+        /* Version 1 (byte 141 bit 0, Table 6-11): 10b per lane = "6.6 GBd
+         * signaling rates and above" on enable, 00b per lane = "less than
+         * 2.2 GBd" on disable.
+         */
+        val = enable ? SFF8636_RATE_SELECT_V1_6P6GBD_AND_ABOVE_ALL_LANES
+                      : SFF8636_RATE_SELECT_V1_UNDER_2P2GBD_ALL_LANES;
+    } else {
+        TRX_LOG_INFO(qsfp, "Extended Rate Select declared but no version "
+                           "bit set in byte 141 (0x%02X), skipping",
+                           ext_ratesel_spec);
+        return 0;
+    }
+
+    ret = qsfp_read(qsfp, SFF8636_RX_RATE_SELECT, &prev_rx_val, sizeof(prev_rx_val));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to read current RX Rate Select. ret %d", ret);
+        return ret;
+    }
+
+    ret = qsfp_write(qsfp, SFF8636_RX_RATE_SELECT, &val, sizeof(val));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to write RX Rate Select. ret %d", ret);
+        return ret;
+    }
+
+    ret = qsfp_write(qsfp, SFF8636_TX_RATE_SELECT, &val, sizeof(val));
+    if (ret < 0) {
+        TRX_LOG_ERR(qsfp, "Failed to write TX Rate Select, RX Rate Select "
+                          "already set to 0x%02X. ret %d", val, ret);
+
+        revert_ret = qsfp_write(qsfp, SFF8636_RX_RATE_SELECT, &prev_rx_val,
+                                 sizeof(prev_rx_val));
+        if (revert_ret < 0) {
+            TRX_LOG_ERR(qsfp, "Failed to revert RX Rate Select back to "
+                              "0x%02X after TX Rate Select write failure, "
+                              "RX/TX left mismatched. ret %d", prev_rx_val,
+                              revert_ret);
+        } else {
+            TRX_LOG_INFO(qsfp, "RX Rate Select reverted back to 0x%02X "
+                               "after TX Rate Select write failure",
+                               prev_rx_val);
+        }
+
+        return ret;
+    }
+
+    TRX_LOG_INFO(qsfp, "RX/TX Rate Select set to 0x%02X (RX=0x%02X, "
+                       "TX=0x%02X)", val, val, val);
+
     return 0;
 }
 
